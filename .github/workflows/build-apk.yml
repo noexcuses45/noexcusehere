@@ -1,0 +1,48 @@
+name: Build APK
+
+on:
+  push:
+    branches: [main, master]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Arrange project structure (handles flat-uploaded files)
+        run: |
+          mkdir -p lib/screens lib/services scripts
+          for f in main.dart theme.dart quotes.dart; do [ -f "$f" ] && mv "$f" lib/; done
+          for f in *_screen.dart; do [ -f "$f" ] && mv "$f" lib/screens/; done
+          [ -f steps_service.dart ] && mv steps_service.dart lib/services/
+          [ -f patch_android.py ] && mv patch_android.py scripts/
+          true
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+
+      - name: Generate Android project
+        run: flutter create --platforms android --org com.noexcusehere --project-name noexcusehere .
+
+      - name: Patch Android config (Health Connect)
+        run: python scripts/patch_android.py
+
+      - name: Get dependencies
+        run: flutter pub get
+
+      - name: Build release APK
+        run: flutter build apk --release
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: no-excuse-here-apk
+          path: build/app/outputs/flutter-apk/app-release.apk
