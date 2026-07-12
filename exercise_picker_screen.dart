@@ -3,8 +3,9 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../theme.dart';
 
-/// Full-screen searchable exercise list. Tap an exercise to pick it;
-/// tap the ? button to learn how to do it.
+/// Full-screen searchable exercise list. Favourites pinned to the top.
+/// Tap an exercise to pick it; tap the star to favourite it; tap the
+/// ? button to learn how to do it.
 class ExercisePickerScreen extends StatefulWidget {
   const ExercisePickerScreen({super.key});
 
@@ -14,6 +15,7 @@ class ExercisePickerScreen extends StatefulWidget {
 
 class _ExercisePickerScreenState extends State<ExercisePickerScreen> {
   List<Map<String, dynamic>> _all = [];
+  final Set<int> _favs = {};
   String _query = '';
   bool _loading = true;
 
@@ -24,19 +26,44 @@ class _ExercisePickerScreenState extends State<ExercisePickerScreen> {
   }
 
   Future<void> _load() async {
+    final client = Supabase.instance.client;
     try {
-      final rows = await Supabase.instance.client
+      final rows = await client
           .from('nx_exercises')
           .select('id, name, muscle_group, how_to')
           .order('name');
+      final favRows = await client
+          .from('nx_favorite_exercises')
+          .select('exercise_id')
+          .eq('user_id', client.auth.currentUser!.id);
       if (mounted) {
         setState(() {
           _all = List<Map<String, dynamic>>.from(rows);
+          _favs
+            ..clear()
+            ..addAll(favRows.map<int>((r) => r['exercise_id'] as int));
           _loading = false;
         });
       }
     } catch (_) {
       if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _toggleFav(int exerciseId) async {
+    final client = Supabase.instance.client;
+    final userId = client.auth.currentUser!.id;
+    if (_favs.contains(exerciseId)) {
+      setState(() => _favs.remove(exerciseId));
+      await client
+          .from('nx_favorite_exercises')
+          .delete()
+          .eq('user_id', userId)
+          .eq('exercise_id', exerciseId);
+    } else {
+      setState(() => _favs.add(exerciseId));
+      await client.from('nx_favorite_exercises').upsert(
+          {'user_id': userId, 'exercise_id': exerciseId});
     }
   }
 
@@ -78,16 +105,65 @@ class _ExercisePickerScreenState extends State<ExercisePickerScreen> {
     );
   }
 
+  Widget _sectionLabel(String text) => Padding(
+        padding: const EdgeInsets.fromLTRB(16, 14, 16, 4),
+        child: Text(text,
+            style: TextStyle(
+                fontSize: 12,
+                letterSpacing: 1,
+                fontWeight: FontWeight.w700,
+                color: Colors.grey.shade600)),
+      );
+
+  Widget _tile(Map<String, dynamic> e) {
+    final id = e['id'] as int;
+    final isFav = _favs.contains(id);
+    return ListTile(
+      title: Text(e['name'] as String),
+      subtitle: Text(e['muscle_group'] as String,
+          style: TextStyle(fontSize: 12, color: Colors.grey.shade600)),
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          IconButton(
+            icon: Icon(isFav ? Icons.star : Icons.star_border,
+                color: isFav ? const Color(0xFFEF9F27) : Colors.grey.shade400),
+            tooltip: isFav ? 'Remove favourite' : 'Add to favourites',
+            onPressed: () => _toggleFav(id),
+          ),
+          IconButton(
+            icon: const Icon(Icons.help_outline, color: NxColors.teal),
+            tooltip: 'How to do this exercise',
+            onPressed: () => _showHowTo(e),
+          ),
+        ],
+      ),
+      onTap: () => Navigator.pop(context, e),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final q = _query.trim().toLowerCase();
-    final visible = q.isEmpty
-        ? _all
-        : _all
-            .where((e) =>
-                (e['name'] as String).toLowerCase().contains(q) ||
-                (e['muscle_group'] as String).toLowerCase().contains(q))
-            .toList();
+    bool matches(Map<String, dynamic> e) =>
+        q.isEmpty ||
+        (e['name'] as String).toLowerCase().contains(q) ||
+        (e['muscle_group'] as String).toLowerCase().contains(q);
+
+    final favs = _all
+        .where((e) => _favs.contains(e['id'] as int) && matches(e))
+        .toList();
+    final rest = _all
+        .where((e) => !_favs.contains(e['id'] as int) && matches(e))
+        .toList();
+
+    final children = <Widget>[];
+    if (favs.isNotEmpty) {
+      children.add(_sectionLabel('FAVOURITES'));
+      children.addAll(favs.map(_tile));
+      children.add(_sectionLabel('ALL EXERCISES'));
+    }
+    children.addAll(rest.map(_tile));
 
     return Scaffold(
       appBar: AppBar(
@@ -115,27 +191,7 @@ class _ExercisePickerScreenState extends State<ExercisePickerScreen> {
           Expanded(
             child: _loading
                 ? const Center(child: CircularProgressIndicator())
-                : ListView.separated(
-                    itemCount: visible.length,
-                    separatorBuilder: (_, __) =>
-                        Divider(height: 1, color: Colors.grey.shade200),
-                    itemBuilder: (context, i) {
-                      final e = visible[i];
-                      return ListTile(
-                        title: Text(e['name'] as String),
-                        subtitle: Text(e['muscle_group'] as String,
-                            style: TextStyle(
-                                fontSize: 12, color: Colors.grey.shade600)),
-                        trailing: IconButton(
-                          icon: const Icon(Icons.help_outline,
-                              color: NxColors.teal),
-                          tooltip: 'How to do this exercise',
-                          onPressed: () => _showHowTo(e),
-                        ),
-                        onTap: () => Navigator.pop(context, e),
-                      );
-                    },
-                  ),
+                : ListView(children: children),
           ),
         ],
       ),
