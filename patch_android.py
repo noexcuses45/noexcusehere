@@ -12,6 +12,10 @@ text = manifest.read_text(encoding="utf-8")
 
 additions = """    <uses-permission android:name="android.permission.INTERNET"/>
     <uses-permission android:name="android.permission.health.READ_STEPS"/>
+    <uses-permission android:name="android.permission.health.READ_HEART_RATE"/>
+    <uses-permission android:name="android.permission.health.READ_RESTING_HEART_RATE"/>
+    <uses-permission android:name="android.permission.health.READ_HEART_RATE_VARIABILITY"/>
+    <uses-permission android:name="android.permission.health.READ_SLEEP"/>
     <queries>
         <package android:name="com.google.android.apps.healthdata"/>
     </queries>
