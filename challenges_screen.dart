@@ -63,7 +63,7 @@ class _ChallengesScreenState extends State<ChallengesScreen> {
       }
 
       final sets = await client
-          .from('nx_workout_sets')
+          .from('nx_diary_entries')
           .select('id')
           .eq('user_id', userId);
 
@@ -88,7 +88,7 @@ class _ChallengesScreenState extends State<ChallengesScreen> {
     final badges = [
       _Badge(Icons.local_fire_department, NxColors.coral, '10-day streak',
           _streak >= 10),
-      _Badge(Icons.fitness_center, NxColors.teal, '50 sets logged',
+      _Badge(Icons.fitness_center, NxColors.teal, '50 exercises logged',
           _totalSets >= 50),
       _Badge(Icons.directions_walk, const Color(0xFF534AB7), '1M steps',
           _totalSteps >= 1000000),
