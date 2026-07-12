@@ -77,17 +77,14 @@ class _HomeScreenState extends State<HomeScreen> {
           .maybeSingle();
 
       final monday = today.subtract(Duration(days: today.weekday - 1));
-      final sets = await client
-          .from('nx_workout_sets')
-          .select('performed_at')
+      final diaryEntries = await client
+          .from('nx_diary_entries')
+          .select('day_date')
           .eq('user_id', userId)
-          .gte(
-              'performed_at',
-              DateTime(monday.year, monday.month, monday.day)
-                  .toIso8601String());
+          .gte('day_date', DateFormat('yyyy-MM-dd').format(monday));
       final workoutDays = <String>{};
-      for (final row in sets) {
-        workoutDays.add((row['performed_at'] as String).substring(0, 10));
+      for (final row in diaryEntries) {
+        workoutDays.add(row['day_date'] as String);
       }
 
       if (mounted) {
