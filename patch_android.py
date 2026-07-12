@@ -42,5 +42,36 @@ for name in ("build.gradle.kts", "build.gradle"):
         g = re.sub(r"compileSdk\s*=\s*flutter\.compileSdkVersion", "compileSdk = 36", g)
         g = re.sub(r"compileSdkVersion\s+flutter\.compileSdkVersion", "compileSdkVersion 36", g)
         gradle.write_text(g, encoding="utf-8")
-        print(f"Patched {name} (minSdk 28 for Health Connect)")
+        print(f"Patched {name} (minSdk 28, compileSdk 36 for Health Connect)")
+        break
+
+for name in ("build.gradle.kts", "build.gradle"):
+    root_gradle = root / "android" / name
+    if root_gradle.exists():
+        g = root_gradle.read_text(encoding="utf-8")
+        if "compileSdkVersion(36)" not in g and "compileSdkVersion 36" not in g:
+            if name.endswith(".kts"):
+                snippet = (
+                    "\n"
+                    "subprojects {\n"
+                    "    afterEvaluate {\n"
+                    '        extensions.findByName("android")?.let {\n'
+                    "            (it as com.android.build.gradle.BaseExtension).compileSdkVersion(36)\n"
+                    "        }\n"
+                    "    }\n"
+                    "}\n"
+                )
+            else:
+                snippet = (
+                    "\n"
+                    "subprojects {\n"
+                    "    afterEvaluate { p ->\n"
+                    '        if (p.hasProperty("android")) {\n'
+                    "            p.android.compileSdkVersion 36\n"
+                    "        }\n"
+                    "    }\n"
+                    "}\n"
+                )
+            root_gradle.write_text(g + snippet, encoding="utf-8")
+            print(f"Patched root {name} (force compileSdk 36 for all plugins)")
         break
