@@ -54,22 +54,26 @@ for name in ("build.gradle.kts", "build.gradle"):
                 snippet = (
                     "\n"
                     "subprojects {\n"
-                    "    afterEvaluate {\n"
-                    '        extensions.findByName("android")?.let {\n'
-                    "            (it as com.android.build.gradle.BaseExtension).compileSdkVersion(36)\n"
+                    "    val patchAndroid: (org.gradle.api.Project) -> Unit = { p ->\n"
+                    '        val ext = p.extensions.findByName("android")\n'
+                    "        if (ext is com.android.build.gradle.BaseExtension) {\n"
+                    "            ext.compileSdkVersion(36)\n"
                     "        }\n"
                     "    }\n"
+                    "    if (state.executed) patchAndroid(this) else afterEvaluate { patchAndroid(this) }\n"
                     "}\n"
                 )
             else:
                 snippet = (
                     "\n"
-                    "subprojects {\n"
-                    "    afterEvaluate { p ->\n"
-                    '        if (p.hasProperty("android")) {\n'
-                    "            p.android.compileSdkVersion 36\n"
+                    "subprojects { sp ->\n"
+                    "    def patchAndroid = { p ->\n"
+                    '        def ext = p.extensions.findByName("android")\n'
+                    "        if (ext != null) {\n"
+                    "            ext.compileSdkVersion 36\n"
                     "        }\n"
                     "    }\n"
+                    "    if (sp.state.executed) patchAndroid(sp) else sp.afterEvaluate { patchAndroid(sp) }\n"
                     "}\n"
                 )
             root_gradle.write_text(g + snippet, encoding="utf-8")
