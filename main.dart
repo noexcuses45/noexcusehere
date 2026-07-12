@@ -6,6 +6,7 @@ import 'screens/challenges_screen.dart';
 import 'screens/diary_screen.dart';
 import 'screens/home_screen.dart';
 import 'screens/leaderboard_screen.dart';
+import 'services/update_service.dart';
 import 'theme.dart';
 
 // Backend connection (dedicated no-excuse-here Supabase project).
@@ -62,6 +63,13 @@ class MainShell extends StatefulWidget {
 
 class _MainShellState extends State<MainShell> {
   int _index = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback(
+        (_) => UpdateService.checkForUpdate(context));
+  }
 
   @override
   Widget build(BuildContext context) {
