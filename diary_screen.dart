@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../theme.dart';
+import 'exercise_picker_screen.dart';
 
 class DiaryScreen extends StatefulWidget {
   const DiaryScreen({super.key});
@@ -11,14 +13,10 @@ class DiaryScreen extends StatefulWidget {
 }
 
 class _DiaryScreenState extends State<DiaryScreen> {
-  List<Map<String, dynamic>> _exercises = [];
-  List<Map<String, dynamic>> _todaySets = [];
-  String _group = 'All';
-  int? _selectedId;
-  int _reps = 10;
-  double _kg = 40;
+  List<Map<String, dynamic>> _days = [];
+  List<Map<String, dynamic>> _entries = [];
+  final Map<int, double> _pb = {};
   bool _loading = true;
-  bool _saving = false;
 
   @override
   void initState() {
@@ -30,25 +28,33 @@ class _DiaryScreenState extends State<DiaryScreen> {
     final client = Supabase.instance.client;
     final userId = client.auth.currentUser!.id;
     try {
-      final exercises = await client
-          .from('nx_exercises')
-          .select('id, name, muscle_group')
-          .order('muscle_group')
-          .order('name');
-      final today = DateTime.now();
-      final midnight = DateTime(today.year, today.month, today.day);
-      final sets = await client
-          .from('nx_workout_sets')
-          .select('id, reps, weight_kg, performed_at, nx_exercises(name)')
+      final days = await client
+          .from('nx_diary_days')
+          .select('id, day_date')
           .eq('user_id', userId)
-          .gte('performed_at', midnight.toIso8601String())
-          .order('performed_at', ascending: false);
+          .order('day_date', ascending: true)
+          .order('id', ascending: true);
+      final entries = await client
+          .from('nx_diary_entries')
+          .select(
+              'id, day_id, exercise_id, day_date, time_min, distance_km, sets, reps, weight_kg, nx_exercises(name)')
+          .eq('user_id', userId)
+          .order('created_at', ascending: true);
+
+      _pb.clear();
+      for (final e in entries) {
+        final w = e['weight_kg'];
+        if (w != null) {
+          final wd = double.tryParse(w.toString()) ?? 0;
+          final ex = e['exercise_id'] as int;
+          if (wd > (_pb[ex] ?? 0)) _pb[ex] = wd;
+        }
+      }
+
       if (mounted) {
         setState(() {
-          _exercises = List<Map<String, dynamic>>.from(exercises);
-          _todaySets = List<Map<String, dynamic>>.from(sets);
-          _selectedId ??=
-              _exercises.isNotEmpty ? _exercises.first['id'] as int : null;
+          _days = List<Map<String, dynamic>>.from(days);
+          _entries = List<Map<String, dynamic>>.from(entries);
           _loading = false;
         });
       }
@@ -57,159 +63,401 @@ class _DiaryScreenState extends State<DiaryScreen> {
     }
   }
 
-  Future<void> _logSet() async {
-    if (_selectedId == null || _saving) return;
-    setState(() => _saving = true);
+  bool _isPb(Map<String, dynamic> e) {
+    final w = e['weight_kg'];
+    if (w == null) return false;
+    final wd = double.tryParse(w.toString()) ?? 0;
+    return wd > 0 && wd == (_pb[e['exercise_id']] ?? -1);
+  }
+
+  String _fmtNum(dynamic v) {
+    final d = double.tryParse(v.toString()) ?? 0;
+    return d == d.roundToDouble() ? d.round().toString() : d.toString();
+  }
+
+  String _entryDetails(Map<String, dynamic> e) {
+    final parts = <String>[];
+    if (e['sets'] != null && e['reps'] != null) {
+      parts.add('${e['sets']} x ${e['reps']}');
+    } else if (e['sets'] != null) {
+      parts.add('${e['sets']} sets');
+    } else if (e['reps'] != null) {
+      parts.add('${e['reps']} reps');
+    }
+    if (e['weight_kg'] != null) parts.add('${_fmtNum(e['weight_kg'])} kg');
+    if (e['time_min'] != null) parts.add('${_fmtNum(e['time_min'])} min');
+    if (e['distance_km'] != null) {
+      parts.add('${_fmtNum(e['distance_km'])} km');
+    }
+    return parts.isEmpty ? 'Logged' : parts.join(' | ');
+  }
+
+  Future<void> _addDay() async {
     final client = Supabase.instance.client;
-    try {
-      await client.from('nx_workout_sets').insert({
-        'user_id': client.auth.currentUser!.id,
-        'exercise_id': _selectedId,
-        'reps': _reps,
-        'weight_kg': _kg,
-      });
-      await _load();
-      if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(const SnackBar(content: Text('Set logged')));
-      }
-    } catch (_) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text("Couldn't save. Check connection.")));
-      }
-    } finally {
-      if (mounted) setState(() => _saving = false);
+    await client.from('nx_diary_days').insert({
+      'user_id': client.auth.currentUser!.id,
+      'day_date': DateFormat('yyyy-MM-dd').format(DateTime.now()),
+    });
+    _load();
+  }
+
+  Future<void> _changeDate(Map<String, dynamic> day) async {
+    final current = DateTime.parse(day['day_date'] as String);
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: current,
+      firstDate: DateTime(2000),
+      lastDate: DateTime.now().add(const Duration(days: 366)),
+    );
+    if (picked == null) return;
+    final key = DateFormat('yyyy-MM-dd').format(picked);
+    final client = Supabase.instance.client;
+    await client
+        .from('nx_diary_days')
+        .update({'day_date': key}).eq('id', day['id'] as int);
+    await client
+        .from('nx_diary_entries')
+        .update({'day_date': key}).eq('day_id', day['id'] as int);
+    _load();
+  }
+
+  Future<void> _deleteDay(Map<String, dynamic> day, int dayNumber) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('Delete Day $dayNumber?'),
+        content: const Text(
+            'This removes the day and every exercise logged on it.'),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancel')),
+          FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Delete')),
+        ],
+      ),
+    );
+    if (confirm == true) {
+      await Supabase.instance.client
+          .from('nx_diary_days')
+          .delete()
+          .eq('id', day['id'] as int);
+      _load();
     }
   }
 
-  Future<void> _deleteSet(int id) async {
-    await Supabase.instance.client.from('nx_workout_sets').delete().eq('id', id);
+  Future<void> _deleteEntry(int id) async {
+    await Supabase.instance.client
+        .from('nx_diary_entries')
+        .delete()
+        .eq('id', id);
+    _load();
+  }
+
+  Future<Map<String, dynamic>?> _entryDetailsDialog(String exerciseName) {
+    final sets = TextEditingController();
+    final reps = TextEditingController();
+    final weight = TextEditingController();
+    final time = TextEditingController();
+    final distance = TextEditingController();
+
+    Widget field(TextEditingController c, String label) => Padding(
+          padding: const EdgeInsets.only(bottom: 10),
+          child: TextField(
+            controller: c,
+            keyboardType:
+                const TextInputType.numberWithOptions(decimal: true),
+            decoration: InputDecoration(
+              labelText: label,
+              isDense: true,
+              border: const OutlineInputBorder(),
+            ),
+          ),
+        );
+
+    return showDialog<Map<String, dynamic>>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(exerciseName,
+            style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Padding(
+                padding: EdgeInsets.only(bottom: 12),
+                child: Text('Fill in what applies - leave the rest blank.',
+                    style: TextStyle(fontSize: 12, color: Colors.grey)),
+              ),
+              field(sets, 'Sets'),
+              field(reps, 'Reps'),
+              field(weight, 'Weight (kg)'),
+              field(time, 'Time (minutes)'),
+              field(distance, 'Distance (km)'),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+          FilledButton(
+            onPressed: () {
+              final result = <String, dynamic>{};
+              final s = int.tryParse(sets.text.trim());
+              final r = int.tryParse(reps.text.trim());
+              final w = double.tryParse(weight.text.trim());
+              final t = double.tryParse(time.text.trim());
+              final d = double.tryParse(distance.text.trim());
+              if (s != null) result['sets'] = s;
+              if (r != null) result['reps'] = r;
+              if (w != null) result['weight_kg'] = w;
+              if (t != null) result['time_min'] = t;
+              if (d != null) result['distance_km'] = d;
+              Navigator.pop(ctx, result);
+            },
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _addExercise(Map<String, dynamic> day) async {
+    final exercise = await Navigator.push<Map<String, dynamic>>(
+      context,
+      MaterialPageRoute(builder: (_) => const ExercisePickerScreen()),
+    );
+    if (exercise == null || !mounted) return;
+    final details = await _entryDetailsDialog(exercise['name'] as String);
+    if (details == null) return;
+    final client = Supabase.instance.client;
+    await client.from('nx_diary_entries').insert({
+      'day_id': day['id'],
+      'user_id': client.auth.currentUser!.id,
+      'exercise_id': exercise['id'],
+      'day_date': day['day_date'],
+      ...details,
+    });
     _load();
   }
 
   @override
   Widget build(BuildContext context) {
-    final groups = ['All', ..._exercises.map((e) => e['muscle_group'] as String).toSet()];
-    final visible = _group == 'All'
-        ? _exercises
-        : _exercises.where((e) => e['muscle_group'] == _group).toList();
-
     return Scaffold(
       appBar: AppBar(
-          title: const Text('Exercise diary',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600))),
+        title: const Text('Exercise diary',
+            style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600)),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.add_circle, color: NxColors.teal, size: 28),
+            tooltip: 'Add day',
+            onPressed: _addDay,
+          ),
+        ],
+      ),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
-          : ListView(
-              padding: const EdgeInsets.all(16),
-              children: [
-                SizedBox(
-                  height: 36,
-                  child: ListView(
-                    scrollDirection: Axis.horizontal,
-                    children: groups
-                        .map((g) => Padding(
-                              padding: const EdgeInsets.only(right: 8),
-                              child: ChoiceChip(
-                                label: Text(g),
-                                selected: _group == g,
-                                selectedColor: NxColors.tealLight,
-                                onSelected: (_) => setState(() => _group = g),
+          : _days.isEmpty
+              ? Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(32),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Icons.menu_book,
+                            size: 48, color: NxColors.teal),
+                        const SizedBox(height: 12),
+                        const Text('Your diary is empty',
+                            style: TextStyle(
+                                fontSize: 18, fontWeight: FontWeight.w700)),
+                        const SizedBox(height: 6),
+                        Text('Start Day 1 and log your first exercise.',
+                            style: TextStyle(color: Colors.grey.shade600)),
+                        const SizedBox(height: 16),
+                        FilledButton.icon(
+                          onPressed: _addDay,
+                          icon: const Icon(Icons.add),
+                          label: const Text('Start Day 1'),
+                        ),
+                      ],
+                    ),
+                  ),
+                )
+              : RefreshIndicator(
+                  onRefresh: _load,
+                  child: ListView.builder(
+                    padding: const EdgeInsets.all(16),
+                    itemCount: _days.length,
+                    itemBuilder: (context, i) {
+                      final ascIndex = _days.length - 1 - i;
+                      final day = _days[ascIndex];
+                      final dayNumber = ascIndex + 1;
+                      final dayEntries = _entries
+                          .where((e) => e['day_id'] == day['id'])
+                          .toList();
+                      final date = DateTime.parse(day['day_date'] as String);
+                      return Card(
+                        margin: const EdgeInsets.only(bottom: 14),
+                        child: Padding(
+                          padding: const EdgeInsets.fromLTRB(14, 12, 8, 6),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  Text('Day $dayNumber',
+                                      style: const TextStyle(
+                                          fontSize: 16,
+                                          fontWeight: FontWeight.w700)),
+                                  const SizedBox(width: 10),
+                                  InkWell(
+                                    onTap: () => _changeDate(day),
+                                    borderRadius: BorderRadius.circular(16),
+                                    child: Container(
+                                      padding: const EdgeInsets.symmetric(
+                                          horizontal: 10, vertical: 4),
+                                      decoration: BoxDecoration(
+                                        color: NxColors.tealLight
+                                            .withOpacity(0.4),
+                                        borderRadius:
+                                            BorderRadius.circular(16),
+                                      ),
+                                      child: Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          const Icon(Icons.calendar_today,
+                                              size: 12,
+                                              color: NxColors.tealDark),
+                                          const SizedBox(width: 4),
+                                          Text(
+                                              DateFormat('EEE d MMM yyyy')
+                                                  .format(date),
+                                              style: const TextStyle(
+                                                  fontSize: 12,
+                                                  color: NxColors.tealDark,
+                                                  fontWeight:
+                                                      FontWeight.w600)),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+                                  const Spacer(),
+                                  IconButton(
+                                    icon: Icon(Icons.delete_outline,
+                                        size: 20,
+                                        color: Colors.grey.shade500),
+                                    tooltip: 'Delete day',
+                                    onPressed: () =>
+                                        _deleteDay(day, dayNumber),
+                                  ),
+                                ],
                               ),
-                            ))
-                        .toList(),
+                              if (dayEntries.isEmpty)
+                                Padding(
+                                  padding:
+                                      const EdgeInsets.symmetric(vertical: 8),
+                                  child: Text('No exercises yet.',
+                                      style: TextStyle(
+                                          fontSize: 13,
+                                          color: Colors.grey.shade500)),
+                                ),
+                              ...dayEntries.map((e) {
+                                final pb = _isPb(e);
+                                return Container(
+                                  margin: const EdgeInsets.only(
+                                      bottom: 8, right: 6),
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 12, vertical: 8),
+                                  decoration: BoxDecoration(
+                                    color: pb
+                                        ? NxColors.tealLight.withOpacity(0.25)
+                                        : NxColors.surface,
+                                    borderRadius: BorderRadius.circular(10),
+                                    border: pb
+                                        ? Border.all(
+                                            color: NxColors.teal, width: 1.5)
+                                        : null,
+                                  ),
+                                  child: Row(
+                                    children: [
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                            Row(
+                                              children: [
+                                                Flexible(
+                                                  child: Text(
+                                                      (e['nx_exercises']
+                                                                  as Map?)?[
+                                                              'name'] ??
+                                                          'Exercise',
+                                                      style: const TextStyle(
+                                                          fontWeight:
+                                                              FontWeight
+                                                                  .w600)),
+                                                ),
+                                                if (pb) ...[
+                                                  const SizedBox(width: 6),
+                                                  Container(
+                                                    padding: const EdgeInsets
+                                                        .symmetric(
+                                                        horizontal: 6,
+                                                        vertical: 2),
+                                                    decoration: BoxDecoration(
+                                                      color: NxColors.teal,
+                                                      borderRadius:
+                                                          BorderRadius
+                                                              .circular(8),
+                                                    ),
+                                                    child: const Text('PB',
+                                                        style: TextStyle(
+                                                            fontSize: 10,
+                                                            color:
+                                                                Colors.white,
+                                                            fontWeight:
+                                                                FontWeight
+                                                                    .w700)),
+                                                  ),
+                                                ],
+                                              ],
+                                            ),
+                                            Text(_entryDetails(e),
+                                                style: TextStyle(
+                                                    fontSize: 12,
+                                                    color: Colors
+                                                        .grey.shade600)),
+                                          ],
+                                        ),
+                                      ),
+                                      IconButton(
+                                        icon: Icon(Icons.close,
+                                            size: 16,
+                                            color: Colors.grey.shade400),
+                                        onPressed: () =>
+                                            _deleteEntry(e['id'] as int),
+                                      ),
+                                    ],
+                                  ),
+                                );
+                              }),
+                              Align(
+                                alignment: Alignment.centerLeft,
+                                child: TextButton.icon(
+                                  onPressed: () => _addExercise(day),
+                                  icon: const Icon(Icons.add, size: 18),
+                                  label: const Text('Add exercise'),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      );
+                    },
                   ),
                 ),
-                const SizedBox(height: 12),
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  children: visible.map((e) {
-                    final selected = e['id'] == _selectedId;
-                    return ChoiceChip(
-                      label: Text(e['name'] as String),
-                      selected: selected,
-                      selectedColor: NxColors.teal,
-                      labelStyle: TextStyle(
-                          color: selected ? Colors.white : NxColors.ink),
-                      onSelected: (_) =>
-                          setState(() => _selectedId = e['id'] as int),
-                    );
-                  }).toList(),
-                ),
-                const SizedBox(height: 16),
-                Row(
-                  children: [
-                    Expanded(
-                        child: _stepper('Reps', '$_reps',
-                            () => setState(() => _reps = (_reps - 1).clamp(1, 999).toInt()),
-                            () => setState(() => _reps = (_reps + 1).clamp(1, 999).toInt()))),
-                    const SizedBox(width: 12),
-                    Expanded(
-                        child: _stepper(
-                            'Weight (kg)',
-                            _kg == _kg.roundToDouble()
-                                ? '${_kg.round()}'
-                                : _kg.toStringAsFixed(1),
-                            () => setState(() => _kg = (_kg - 2.5).clamp(0, 999).toDouble()),
-                            () => setState(() => _kg = (_kg + 2.5).clamp(0, 999).toDouble()))),
-                  ],
-                ),
-                const SizedBox(height: 16),
-                FilledButton(
-                  onPressed: _saving ? null : _logSet,
-                  child: Text(_saving ? 'Saving...' : 'Log set'),
-                ),
-                const SizedBox(height: 20),
-                Text("Today's sets",
-                    style: TextStyle(fontSize: 13, color: Colors.grey.shade600)),
-                const SizedBox(height: 8),
-                if (_todaySets.isEmpty)
-                  Text('Nothing logged yet. No excuses.',
-                      style: TextStyle(color: Colors.grey.shade500)),
-                ..._todaySets.map((s) => Card(
-                      margin: const EdgeInsets.only(bottom: 8),
-                      child: ListTile(
-                        dense: true,
-                        title: Text(
-                            (s['nx_exercises'] as Map?)?['name'] ?? 'Exercise'),
-                        subtitle: Text('${s['reps']} reps x ${s['weight_kg']} kg'),
-                        trailing: IconButton(
-                          icon: const Icon(Icons.delete_outline, size: 20),
-                          onPressed: () => _deleteSet(s['id'] as int),
-                        ),
-                      ),
-                    )),
-              ],
-            ),
-    );
-  }
-
-  Widget _stepper(
-      String label, String value, VoidCallback onMinus, VoidCallback onPlus) {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 10),
-        child: Column(
-          children: [
-            Text(label,
-                style: TextStyle(fontSize: 11, color: Colors.grey.shade600)),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                IconButton(
-                    onPressed: onMinus, icon: const Icon(Icons.remove_circle_outline)),
-                Text(value,
-                    style: const TextStyle(
-                        fontSize: 20, fontWeight: FontWeight.w700)),
-                IconButton(
-                    onPressed: onPlus, icon: const Icon(Icons.add_circle_outline)),
-              ],
-            ),
-          ],
-        ),
-      ),
     );
   }
 }
