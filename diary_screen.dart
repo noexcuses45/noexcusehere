@@ -77,11 +77,7 @@ class _DiaryScreenState extends State<DiaryScreen> {
 
   String _entryDetails(Map<String, dynamic> e) {
     final parts = <String>[];
-    if (e['sets'] != null && e['reps'] != null) {
-      parts.add('${e['sets']} x ${e['reps']}');
-    } else if (e['sets'] != null) {
-      parts.add('${e['sets']} sets');
-    } else if (e['reps'] != null) {
+    if (e['reps'] != null) {
       parts.add('${e['reps']} reps');
     }
     if (e['weight_kg'] != null) parts.add('${_fmtNum(e['weight_kg'])} kg');
@@ -155,12 +151,14 @@ class _DiaryScreenState extends State<DiaryScreen> {
     _load();
   }
 
-  Future<Map<String, dynamic>?> _entryDetailsDialog(String exerciseName) {
-    final sets = TextEditingController();
-    final reps = TextEditingController();
-    final weight = TextEditingController();
-    final time = TextEditingController();
-    final distance = TextEditingController();
+  Future<Map<String, dynamic>?> _entryDetailsDialog(String exerciseName,
+      {Map<String, dynamic>? prefill}) {
+    String pre(String key) =>
+        prefill?[key] == null ? '' : _fmtNum(prefill![key]);
+    final reps = TextEditingController(text: pre('reps'));
+    final weight = TextEditingController(text: pre('weight_kg'));
+    final time = TextEditingController(text: pre('time_min'));
+    final distance = TextEditingController(text: pre('distance_km'));
 
     Widget field(TextEditingController c, String label) => Padding(
           padding: const EdgeInsets.only(bottom: 10),
@@ -190,7 +188,6 @@ class _DiaryScreenState extends State<DiaryScreen> {
                 child: Text('Fill in what applies - leave the rest blank.',
                     style: TextStyle(fontSize: 12, color: Colors.grey)),
               ),
-              field(sets, 'Sets'),
               field(reps, 'Reps'),
               field(weight, 'Weight (kg)'),
               field(time, 'Time (minutes)'),
@@ -204,12 +201,10 @@ class _DiaryScreenState extends State<DiaryScreen> {
           FilledButton(
             onPressed: () {
               final result = <String, dynamic>{};
-              final s = int.tryParse(sets.text.trim());
               final r = int.tryParse(reps.text.trim());
               final w = double.tryParse(weight.text.trim());
               final t = double.tryParse(time.text.trim());
               final d = double.tryParse(distance.text.trim());
-              if (s != null) result['sets'] = s;
               if (r != null) result['reps'] = r;
               if (w != null) result['weight_kg'] = w;
               if (t != null) result['time_min'] = t;
@@ -237,6 +232,21 @@ class _DiaryScreenState extends State<DiaryScreen> {
       'user_id': client.auth.currentUser!.id,
       'exercise_id': exercise['id'],
       'day_date': day['day_date'],
+      ...details,
+    });
+    _load();
+  }
+
+  Future<void> _addSet(Map<String, dynamic> entry) async {
+    final name = (entry['nx_exercises'] as Map?)?['name'] as String? ?? 'Exercise';
+    final details = await _entryDetailsDialog(name, prefill: entry);
+    if (details == null) return;
+    final client = Supabase.instance.client;
+    await client.from('nx_diary_entries').insert({
+      'day_id': entry['day_id'],
+      'user_id': client.auth.currentUser!.id,
+      'exercise_id': entry['exercise_id'],
+      'day_date': entry['day_date'],
       ...details,
     });
     _load();
@@ -431,6 +441,17 @@ class _DiaryScreenState extends State<DiaryScreen> {
                                                         .grey.shade600)),
                                           ],
                                         ),
+                                      ),
+                                      TextButton.icon(
+                                        onPressed: () => _addSet(e),
+                                        icon: const Icon(Icons.add, size: 14),
+                                        label: const Text('Add set',
+                                            style: TextStyle(fontSize: 12)),
+                                        style: TextButton.styleFrom(
+                                            padding:
+                                                const EdgeInsets.symmetric(
+                                                    horizontal: 6),
+                                            minimumSize: const Size(0, 30)),
                                       ),
                                       IconButton(
                                         icon: Icon(Icons.close,
