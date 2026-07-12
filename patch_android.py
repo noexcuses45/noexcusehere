@@ -39,6 +39,8 @@ for name in ("build.gradle.kts", "build.gradle"):
         g = gradle.read_text(encoding="utf-8")
         g = re.sub(r"minSdk\s*=\s*flutter\.minSdkVersion", "minSdk = 28", g)
         g = re.sub(r"minSdkVersion\s+flutter\.minSdkVersion", "minSdkVersion 28", g)
+        g = re.sub(r"compileSdk\s*=\s*flutter\.compileSdkVersion", "compileSdk = 36", g)
+        g = re.sub(r"compileSdkVersion\s+flutter\.compileSdkVersion", "compileSdkVersion 36", g)
         gradle.write_text(g, encoding="utf-8")
         print(f"Patched {name} (minSdk 28 for Health Connect)")
         break
