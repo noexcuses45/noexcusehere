@@ -21,6 +21,9 @@ class _HomeScreenState extends State<HomeScreen> {
   int _todaySteps = 0;
   int _streak = 0;
   int _workoutsThisWeek = 0;
+  int? _restingHr;
+  double? _hrvMs;
+  int? _sleepMinutes;
   bool _loading = true;
   bool _syncing = false;
 
@@ -66,13 +69,22 @@ class _HomeScreenState extends State<HomeScreen> {
         cursor = cursor.subtract(const Duration(days: 1));
       }
 
+      final health = await client
+          .from('nx_daily_health')
+          .select('resting_hr, hrv_ms, sleep_minutes')
+          .eq('user_id', userId)
+          .eq('day', todayKey)
+          .maybeSingle();
+
       final monday = today.subtract(Duration(days: today.weekday - 1));
       final sets = await client
           .from('nx_workout_sets')
           .select('performed_at')
           .eq('user_id', userId)
-          .gte('performed_at',
-              DateTime(monday.year, monday.month, monday.day).toIso8601String());
+          .gte(
+              'performed_at',
+              DateTime(monday.year, monday.month, monday.day)
+                  .toIso8601String());
       final workoutDays = <String>{};
       for (final row in sets) {
         workoutDays.add((row['performed_at'] as String).substring(0, 10));
@@ -84,6 +96,11 @@ class _HomeScreenState extends State<HomeScreen> {
           _todaySteps = todaySteps;
           _streak = streak;
           _workoutsThisWeek = workoutDays.length;
+          _restingHr = health?['resting_hr'] as int?;
+          _hrvMs = health?['hrv_ms'] == null
+              ? null
+              : double.tryParse(health!['hrv_ms'].toString());
+          _sleepMinutes = health?['sleep_minutes'] as int?;
           _loading = false;
         });
       }
@@ -94,17 +111,23 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Future<void> _syncFromWatch() async {
     setState(() => _syncing = true);
-    final steps = await _steps.syncTodayFromWatch();
+    final summary = await _steps.syncTodayFromWatch();
     if (mounted) {
       setState(() => _syncing = false);
-      if (steps == null) {
+      if (summary == null) {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
             content: Text(
-                "Couldn't read steps. Install Health Connect and allow access, or add steps manually.")));
+                "Couldn't read your watch data. Install Health Connect and allow access, or add steps manually.")));
       } else {
         _load();
       }
     }
+  }
+
+  String get _sleepLabel {
+    final m = _sleepMinutes;
+    if (m == null) return '--';
+    return '${m ~/ 60}h ${m % 60}m';
   }
 
   Future<void> _addStepsManually() async {
@@ -217,7 +240,8 @@ class _HomeScreenState extends State<HomeScreen> {
                                               .format(_todaySteps),
                                           style: const TextStyle(
                                               fontWeight: FontWeight.w700)),
-                                      Text('/ ${NumberFormat.decimalPattern().format(dailyStepGoal)}',
+                                      Text(
+                                          '/ ${NumberFormat.decimalPattern().format(dailyStepGoal)}',
                                           style: TextStyle(
                                               fontSize: 10,
                                               color: Colors.grey.shade600)),
@@ -286,6 +310,33 @@ class _HomeScreenState extends State<HomeScreen> {
                             'Workouts', '$_workoutsThisWeek this week'),
                       ),
                     ],
+                  ),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: _statCard(Icons.favorite, NxColors.coral,
+                            'Resting HR',
+                            _restingHr == null ? '--' : '$_restingHr bpm'),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: _statCard(Icons.bedtime, const Color(0xFF534AB7),
+                            'Sleep', _sleepLabel),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: _statCard(Icons.monitor_heart, NxColors.teal,
+                            'HRV',
+                            _hrvMs == null ? '--' : '${_hrvMs!.round()} ms'),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    "Heart rate, sleep and HRV come from your watch via Health Connect. Watches that don't track a metric show --.",
+                    style:
+                        TextStyle(fontSize: 11, color: Colors.grey.shade500),
                   ),
                 ],
               ),
