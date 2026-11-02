@@ -156,17 +156,27 @@
 
 <script>
 const $ = s => document.querySelector(s);
-const buzz = ms => navigator.vibrate && navigator.vibrate(ms);
+// When running inside the Android app, window.AndroidRemote is provided natively.
+const native = window.AndroidRemote;
+const buzz = ms => native ? native.haptic(ms) : (navigator.vibrate && navigator.vibrate(ms));
 let toastTimer;
 function toast(msg) {
   const t = $('#toast'); t.textContent = msg; t.classList.add('show');
   clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove('show'), 3000);
 }
+const pending = {}; let seq = 0;
+window.__nativeReply = (id, json) => { const r = pending[id]; delete pending[id]; if (r) r(JSON.parse(json)); };
+function callApi(path, body) {
+  if (native) return new Promise(res => {
+    const id = ++seq; pending[id] = res;
+    native.call(id, path, body === undefined ? '' : JSON.stringify(body));
+  });
+  return fetch('/api/' + path, body === undefined ? {} :
+    { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }).then(r => r.json());
+}
 async function api(path, body) {
   try {
-    const r = await fetch('/api/' + path, body === undefined ? {} :
-      { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
-    const j = await r.json();
+    const j = await callApi(path, body);
     if (j.ok === false && j.msg) toast(j.msg);
     return j;
   } catch (e) { toast('Remote server unreachable'); return { ok: false }; }
@@ -249,7 +259,8 @@ const sheet = $('#sheet');
 $('#statusBtn').onclick = () => sheet.classList.add('open');
 $('#closeSheet').onclick = () => sheet.classList.remove('open');
 $('#connectForm').onsubmit = async e => {
-  e.preventDefault(); $('#connectMsg').textContent = 'Connecting…';
+  e.preventDefault();
+  $('#connectMsg').textContent = 'Connecting… if the TV asks "Allow USB debugging?", choose Allow.';
   const j = await api('connect', { host: $('#hostInput').value });
   $('#connectMsg').textContent = j.msg || '';
   refresh(); if (j.ok) { sheet.classList.remove('open'); toast('Connected'); }

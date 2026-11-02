@@ -1,0 +1,52 @@
+name: Build Firestick Remote APK
+
+on:
+  push:
+    paths:
+      - "firestick-remote/**"
+      - ".github/workflows/firestick-remote.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.9"
+
+      - name: Build APK
+        working-directory: firestick-remote/android
+        env:
+          BUILD_NUMBER: ${{ github.run_number }}
+        run: gradle assembleRelease --no-daemon
+
+      - name: Rename APK
+        run: cp firestick-remote/android/app/build/outputs/apk/release/app-release.apk FirestickRemote.apk
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: firestick-remote-apk
+          path: FirestickRemote.apk
+
+      # Marked as pre-release and not "latest" so the fitness app's
+      # update checker (releases/latest) never picks this up.
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: remote-v${{ github.run_number }}
+          name: Firestick Remote v1.0.${{ github.run_number }}
+          prerelease: true
+          make_latest: false
+          files: FirestickRemote.apk
