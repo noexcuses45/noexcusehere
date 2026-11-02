@@ -20,13 +20,23 @@ Use one of these to do the one-time setup below.
 
 ---
 
+## Get the phone app (Android)
+
+Download **FirestickRemote.apk** from the newest "Firestick Remote" release:
+https://github.com/noexcuses45/noexcusehere/releases
+
+On your phone, open the downloaded file and allow "Install unknown apps" if Android asks.
+The app talks to the Firestick directly, so no computer is needed. Do the Firestick setup below, open the app, then enter the IP or tap **Scan my network**.
+
+(iPhone can't make this kind of connection. On iPhone, use the Amazon Fire TV app, or run the computer version below.)
+
 ## One-time setup on the Firestick
 
 1. **Turn on Developer Options.** Go to *Settings → My Fire TV → About*. Highlight your device name (e.g. "Fire TV Stick 4K") and press **Select 7 times** until it says "You are now a developer".
 2. **Turn on ADB.** Go to *Settings → My Fire TV → Developer Options* and set **ADB debugging** to **ON**.
 3. **Find the IP address.** Go to *Settings → My Fire TV → About → Network* and write down the IP address (e.g. `192.168.1.50`).
 
-## Set up the computer
+## Or: run it from a computer
 
 1. Install **Python 3** from python.org. On Windows, tick "Add to PATH".
 2. Install **adb** in one of these ways:
