@@ -1,0 +1,285 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#16181d">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="manifest" href="/manifest.json">
+<link rel="icon" href="/icon.svg">
+<title>Firestick Remote</title>
+<style>
+  :root {
+    --bg: #0d0e11; --body: #1c1f26; --btn: #2a2e37; --btn-hi: #3a404c;
+    --text: #e8eaee; --muted: #8a909c; --accent: #ff9900; --ok: #3ccf7a; --bad: #ff5c5c;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
+    font: 15px/1.3 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    user-select: none; -webkit-user-select: none; touch-action: manipulation; }
+  .remote { max-width: 380px; margin: 0 auto; padding: max(14px, env(safe-area-inset-top)) 16px 24px;
+    display: flex; flex-direction: column; gap: 18px; }
+  header { display: flex; align-items: center; justify-content: space-between; }
+  .status { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--muted);
+    background: var(--body); padding: 6px 12px; border-radius: 99px; border: 0; cursor: pointer; }
+  .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--bad); }
+  .dot.connected { background: var(--ok); } .dot.unauthorized { background: var(--accent); }
+  button { font: inherit; color: var(--text); background: var(--btn); border: 0; cursor: pointer;
+    transition: background .08s, transform .08s; }
+  button:active, button.pressed { background: var(--btn-hi); transform: scale(.95); }
+  .round { width: 56px; height: 56px; border-radius: 50%; display: grid; place-items: center; }
+  .round svg { width: 24px; height: 24px; fill: currentColor; }
+  .row { display: flex; justify-content: space-between; align-items: center; }
+  .power { background: #3a2222; color: #ff8080; }
+
+  /* D-pad */
+  .dpad { position: relative; width: 260px; height: 260px; margin: 4px auto; border-radius: 50%;
+    background: var(--btn); box-shadow: inset 0 0 0 1px #ffffff10; overflow: hidden; touch-action: none; }
+  .dpad button { position: absolute; background: transparent; display: grid; place-items: center; color: var(--muted); }
+  .dpad button:active, .dpad button.pressed { background: #ffffff14; transform: none; color: var(--text); }
+  .dpad .up    { top: 0; left: 25%; width: 50%; height: 30%; }
+  .dpad .down  { bottom: 0; left: 25%; width: 50%; height: 30%; }
+  .dpad .left  { left: 0; top: 25%; width: 30%; height: 50%; }
+  .dpad .right { right: 0; top: 25%; width: 30%; height: 50%; }
+  .dpad .select { top: 50%; left: 50%; width: 112px; height: 112px; margin: -56px 0 0 -56px; border-radius: 50%;
+    background: var(--body); box-shadow: 0 0 0 1px #ffffff10; color: var(--text); font-weight: 600; letter-spacing: .5px; }
+  .dpad .select:active, .dpad .select.pressed { background: var(--btn-hi); }
+  .dpad svg { width: 28px; height: 28px; fill: currentColor; }
+
+  /* Touchpad */
+  .touchpad { display: none; width: 100%; height: 260px; border-radius: 24px; background: var(--btn);
+    touch-action: none; place-items: center; color: var(--muted); font-size: 13px; text-align: center; padding: 20px; }
+  .mode-touch .dpad { display: none; } .mode-touch .touchpad { display: grid; }
+  .toggle { font-size: 12px; color: var(--muted); background: transparent; padding: 4px 8px; text-decoration: underline; }
+
+  .grid3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; justify-items: center; }
+  .vol { display: flex; flex-direction: column; border-radius: 28px; overflow: hidden; background: var(--btn); }
+  .vol button { width: 56px; height: 56px; background: transparent; display: grid; place-items: center; }
+  .vol button:active { background: var(--btn-hi); }
+  .vol svg { width: 24px; height: 24px; fill: currentColor; }
+  .vol span { text-align: center; font-size: 10px; color: var(--muted); padding: 2px 0; }
+
+  .kb { display: flex; gap: 8px; }
+  .kb input { flex: 1; min-width: 0; font: inherit; color: var(--text); background: var(--body);
+    border: 1px solid #ffffff14; border-radius: 12px; padding: 12px 14px; user-select: text; -webkit-user-select: text; }
+  .kb button { border-radius: 12px; padding: 0 16px; }
+  .accent { background: var(--accent); color: #111; font-weight: 600; }
+  .accent:active { background: #ffb340; }
+
+  h2 { font-size: 12px; color: var(--muted); font-weight: 600; letter-spacing: .8px; text-transform: uppercase; margin: 6px 0 -6px; }
+  .apps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+  .apps button { padding: 12px 6px; border-radius: 12px; font-size: 13px; }
+
+  /* Connect sheet */
+  .sheet { position: fixed; inset: 0; background: #000a; display: none; align-items: flex-end; justify-content: center; z-index: 10; }
+  .sheet.open { display: flex; }
+  .sheet .card { width: 100%; max-width: 420px; background: var(--body); border-radius: 20px 20px 0 0;
+    padding: 20px 16px max(20px, env(safe-area-inset-bottom)); display: flex; flex-direction: column; gap: 12px; }
+  .card h3 { margin: 0; font-size: 18px; }
+  .card p { margin: 0; color: var(--muted); font-size: 13px; }
+  .found { display: flex; flex-wrap: wrap; gap: 8px; }
+  .found button { padding: 8px 12px; border-radius: 10px; font-size: 13px; }
+
+  .toast { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%) translateY(120px);
+    background: #2e323c; color: var(--text); padding: 10px 16px; border-radius: 12px; font-size: 13px;
+    max-width: calc(100% - 32px); transition: transform .25s; z-index: 20; }
+  .toast.show { transform: translateX(-50%) translateY(0); }
+</style>
+</head>
+<body>
+<div class="remote" id="remote">
+  <header>
+    <button class="round power" data-key="sleep" data-long-key="power" aria-label="Power / sleep">
+      <svg viewBox="0 0 24 24"><path d="M13 3h-2v10h2V3zm4.83 2.17-1.42 1.42A6.92 6.92 0 0 1 19 12a7 7 0 1 1-11.42-5.42L6.17 5.17A8.93 8.93 0 0 0 3 12a9 9 0 0 0 18 0c0-2.74-1.23-5.18-3.17-6.83z"/></svg>
+    </button>
+    <button class="status" id="statusBtn"><span class="dot" id="dot"></span><span id="statusText">Not connected</span></button>
+    <button class="round" data-key="search" aria-label="Search">
+      <svg viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27A6.47 6.47 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg>
+    </button>
+  </header>
+
+  <div class="dpad" id="dpad">
+    <button class="up" data-key="up" data-repeat aria-label="Up"><svg viewBox="0 0 24 24"><path d="M7 14l5-5 5 5z"/></svg></button>
+    <button class="left" data-key="left" data-repeat aria-label="Left"><svg viewBox="0 0 24 24"><path d="M14 7l-5 5 5 5z"/></svg></button>
+    <button class="right" data-key="right" data-repeat aria-label="Right"><svg viewBox="0 0 24 24"><path d="M10 17l5-5-5-5z"/></svg></button>
+    <button class="down" data-key="down" data-repeat aria-label="Down"><svg viewBox="0 0 24 24"><path d="M7 10l5 5 5-5z"/></svg></button>
+    <button class="select" data-key="select" data-long-key="select" aria-label="Select">OK</button>
+  </div>
+  <div class="touchpad" id="touchpad">Swipe to move · Tap to select<br>Long-press for options</div>
+  <div style="text-align:center;margin-top:-10px"><button class="toggle" id="modeBtn">Switch to swipe pad</button></div>
+
+  <div class="row">
+    <div class="grid3" style="flex:1;row-gap:16px">
+      <button class="round" data-key="back" aria-label="Back"><svg viewBox="0 0 24 24"><path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z"/></svg></button>
+      <button class="round" data-key="home" aria-label="Home"><svg viewBox="0 0 24 24"><path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z"/></svg></button>
+      <button class="round" data-key="menu" aria-label="Menu"><svg viewBox="0 0 24 24"><path d="M3 18h18v-2H3v2zm0-5h18v-2H3v2zm0-7v2h18V6H3z"/></svg></button>
+      <button class="round" data-key="rewind" data-repeat aria-label="Rewind"><svg viewBox="0 0 24 24"><path d="M11 18V6l-8.5 6 8.5 6zm.5-6 8.5 6V6l-8.5 6z"/></svg></button>
+      <button class="round" data-key="playpause" aria-label="Play / pause"><svg viewBox="0 0 24 24"><path d="M3 5v14l9-7-9-7zm11 0h3v14h-3zm5 0h3v14h-3z"/></svg></button>
+      <button class="round" data-key="fastforward" data-repeat aria-label="Fast forward"><svg viewBox="0 0 24 24"><path d="M4 18l8.5-6L4 6v12zm9-12v12l8.5-6L13 6z"/></svg></button>
+    </div>
+    <div class="vol" style="margin-left:14px">
+      <button data-key="volup" data-repeat aria-label="Volume up"><svg viewBox="0 0 24 24"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/></svg></button>
+      <span>VOL</span>
+      <button data-key="voldown" data-repeat aria-label="Volume down"><svg viewBox="0 0 24 24"><path d="M19 13H5v-2h14v2z"/></svg></button>
+      <button data-key="mute" aria-label="Mute" style="border-top:1px solid #ffffff10"><svg viewBox="0 0 24 24"><path d="M16.5 12A4.5 4.5 0 0 0 14 7.97v2.21l2.45 2.45c.03-.2.05-.41.05-.63zm2.5 0c0 .94-.2 1.82-.54 2.64l1.51 1.51A8.8 8.8 0 0 0 21 12c0-4.28-2.99-7.86-7-8.77v2.06c2.89.86 5 3.54 5 6.71zM4.27 3 3 4.27 7.73 9H3v6h4l5 5v-6.73l4.25 4.25c-.67.52-1.42.93-2.25 1.18v2.06a8.99 8.99 0 0 0 3.69-1.81L19.73 21 21 19.73l-9-9L4.27 3zM12 4 9.91 6.09 12 8.18V4z"/></svg></button>
+    </div>
+  </div>
+
+  <h2>Type on TV</h2>
+  <form class="kb" id="kbForm" autocomplete="off">
+    <input id="kbInput" placeholder="Search text, passwords…" enterkeyhint="send">
+    <button type="button" id="delBtn" aria-label="Delete">⌫</button>
+    <button type="submit" class="accent">Send</button>
+  </form>
+
+  <h2>Apps</h2>
+  <div class="apps" id="apps"></div>
+  <button id="settingsBtn" style="padding:12px;border-radius:12px;font-size:13px">⚙ Fire TV Settings</button>
+</div>
+
+<div class="sheet" id="sheet">
+  <div class="card">
+    <h3>Connect to your Firestick</h3>
+    <p>Enter its IP address. On the Firestick it's under Settings → My Fire TV → About → Network.</p>
+    <form class="kb" id="connectForm">
+      <input id="hostInput" placeholder="192.168.1.50" inputmode="decimal">
+      <button type="submit" class="accent">Connect</button>
+    </form>
+    <button id="scanBtn" style="padding:12px;border-radius:12px">Scan my network</button>
+    <div class="found" id="found"></div>
+    <p id="connectMsg"></p>
+    <button id="closeSheet" style="padding:10px;border-radius:12px;background:transparent;color:var(--muted)">Close</button>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+const $ = s => document.querySelector(s);
+const buzz = ms => navigator.vibrate && navigator.vibrate(ms);
+let toastTimer;
+function toast(msg) {
+  const t = $('#toast'); t.textContent = msg; t.classList.add('show');
+  clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove('show'), 3000);
+}
+async function api(path, body) {
+  try {
+    const r = await fetch('/api/' + path, body === undefined ? {} :
+      { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    const j = await r.json();
+    if (j.ok === false && j.msg) toast(j.msg);
+    return j;
+  } catch (e) { toast('Remote server unreachable'); return { ok: false }; }
+}
+const key = (k, long) => api('key', { key: k, long: !!long });
+
+// Buttons: tap, long-press (data-long-key), hold-to-repeat (data-repeat)
+document.querySelectorAll('[data-key]').forEach(b => {
+  let holdTimer, repeatTimer, longFired;
+  const start = e => {
+    e.preventDefault(); b.classList.add('pressed'); longFired = false; buzz(10);
+    if (b.hasAttribute('data-repeat')) {
+      key(b.dataset.key);
+      holdTimer = setTimeout(() => { repeatTimer = setInterval(() => key(b.dataset.key), 110); }, 400);
+    } else if (b.dataset.longKey) {
+      holdTimer = setTimeout(() => { longFired = true; buzz(30); key(b.dataset.longKey, true); }, 600);
+    }
+  };
+  const end = e => {
+    if (!b.classList.contains('pressed')) return;
+    b.classList.remove('pressed'); clearTimeout(holdTimer); clearInterval(repeatTimer);
+    if (!b.hasAttribute('data-repeat') && !longFired && e.type !== 'pointercancel') key(b.dataset.key);
+  };
+  b.addEventListener('pointerdown', start);
+  b.addEventListener('pointerup', end);
+  b.addEventListener('pointerleave', end);
+  b.addEventListener('pointercancel', end);
+  b.addEventListener('contextmenu', e => e.preventDefault());
+});
+
+// Swipe touchpad
+const pad = $('#touchpad');
+let sx, sy, moved, padLong;
+pad.addEventListener('pointerdown', e => {
+  sx = e.clientX; sy = e.clientY; moved = false;
+  padLong = setTimeout(() => { moved = true; buzz(30); key('menu'); }, 600);
+});
+pad.addEventListener('pointermove', e => {
+  if (sx === undefined) return;
+  const dx = e.clientX - sx, dy = e.clientY - sy, step = 45;
+  if (Math.abs(dx) > step || Math.abs(dy) > step) {
+    clearTimeout(padLong); moved = true; buzz(8);
+    key(Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 'right' : 'left') : (dy > 0 ? 'down' : 'up'));
+    sx = e.clientX; sy = e.clientY;
+  }
+});
+pad.addEventListener('pointerup', () => { clearTimeout(padLong); if (!moved) { buzz(12); key('select'); } sx = undefined; });
+pad.addEventListener('pointercancel', () => { clearTimeout(padLong); sx = undefined; });
+
+const remote = $('#remote');
+function setMode(m) {
+  remote.classList.toggle('mode-touch', m === 'touch');
+  $('#modeBtn').textContent = m === 'touch' ? 'Switch to buttons' : 'Switch to swipe pad';
+  try { localStorage.setItem('mode', m); } catch (e) {}
+}
+$('#modeBtn').onclick = () => setMode(remote.classList.contains('mode-touch') ? 'pad' : 'touch');
+try { setMode(localStorage.getItem('mode') || 'pad'); } catch (e) {}
+
+// Keyboard
+$('#kbForm').onsubmit = async e => {
+  e.preventDefault(); const v = $('#kbInput').value;
+  if (!v) return key('enter');
+  await api('text', { text: v }); $('#kbInput').value = '';
+};
+$('#delBtn').onclick = () => key('delete');
+
+// Physical keyboard support when using a laptop
+const kmap = { ArrowUp: 'up', ArrowDown: 'down', ArrowLeft: 'left', ArrowRight: 'right',
+  Enter: 'select', Escape: 'back', Backspace: 'back', h: 'home', m: 'menu', ' ': 'playpause' };
+document.addEventListener('keydown', e => {
+  if (e.target.tagName === 'INPUT') return;
+  if (kmap[e.key]) { e.preventDefault(); key(kmap[e.key]); }
+});
+
+// Apps + settings
+$('#settingsBtn').onclick = () => api('settings', {});
+
+// Connection
+const sheet = $('#sheet');
+$('#statusBtn').onclick = () => sheet.classList.add('open');
+$('#closeSheet').onclick = () => sheet.classList.remove('open');
+$('#connectForm').onsubmit = async e => {
+  e.preventDefault(); $('#connectMsg').textContent = 'Connecting…';
+  const j = await api('connect', { host: $('#hostInput').value });
+  $('#connectMsg').textContent = j.msg || '';
+  refresh(); if (j.ok) { sheet.classList.remove('open'); toast('Connected'); }
+};
+$('#scanBtn').onclick = async () => {
+  $('#scanBtn').textContent = 'Scanning… (about 10 s)';
+  const j = await api('scan', {});
+  $('#scanBtn').textContent = 'Scan my network';
+  const f = $('#found'); f.innerHTML = '';
+  if (!j.found || !j.found.length) { $('#connectMsg').textContent = 'Nothing found. Is ADB debugging turned on? (see README)'; return; }
+  j.found.forEach(ip => { const b = document.createElement('button'); b.textContent = ip;
+    b.onclick = () => { $('#hostInput').value = ip; $('#connectForm').requestSubmit(); }; f.appendChild(b); });
+};
+
+let appsDrawn = false;
+async function refresh() {
+  const j = await api('status');
+  if (!j.status) return;
+  $('#dot').className = 'dot ' + j.status;
+  $('#statusText').textContent = j.status === 'connected' ? 'Firestick ' + j.tv.replace(':5555', '')
+    : j.status === 'unauthorized' ? 'Press Allow on TV' : 'Not connected';
+  if (j.tv && !$('#hostInput').value) $('#hostInput').value = j.tv.replace(':5555', '');
+  if (!appsDrawn && j.apps) {
+    appsDrawn = true;
+    j.apps.forEach(name => { const b = document.createElement('button'); b.textContent = name;
+      b.onclick = () => { buzz(10); api('app', { name }); }; $('#apps').appendChild(b); });
+  }
+  if (j.status !== 'connected' && !refresh.prompted) { refresh.prompted = true; sheet.classList.add('open'); }
+}
+refresh(); setInterval(refresh, 10000);
+</script>
+</body>
+</html>
