@@ -1,0 +1,33 @@
+<resources>
+    <string name="app_name">No Excuse Recorder</string>
+    <string name="tile_label">Screen record</string>
+    <string name="status_idle">Ready to record</string>
+    <string name="status_recording">Recording… %1$s</string>
+    <string name="status_countdown">Starting in %1$d…</string>
+    <string name="start_recording">Start recording</string>
+    <string name="stop_recording">Stop recording</string>
+    <string name="record_mic">Record microphone</string>
+    <string name="countdown">3 second countdown</string>
+    <string name="quality">Quality</string>
+    <string name="quality_high">High (full resolution, 12 Mbps)</string>
+    <string name="quality_medium">Medium (720p, 6 Mbps)</string>
+    <string name="quality_low">Low (480p, 2.5 Mbps)</string>
+    <string name="recordings">Your recordings</string>
+    <string name="no_recordings">No recordings yet. They are saved to Movies/NoExcuseRecorder and show up in your gallery.</string>
+    <string name="hint">Tap start, then pick \"Entire screen\" or a single app. Stop from the notification, the Quick Settings tile, or by opening this app again.</string>
+    <string name="notification_channel">Screen recording</string>
+    <string name="notification_title">Recording screen</string>
+    <string name="notification_text">Tap Stop when you are done.</string>
+    <string name="notification_countdown">Recording starts in %1$d…</string>
+    <string name="stop">Stop</string>
+    <string name="saved">Recording saved to Movies/NoExcuseRecorder</string>
+    <string name="failed">Recording failed: %1$s</string>
+    <string name="permission_denied">Screen capture permission was not granted.</string>
+    <string name="mic_denied">Microphone permission denied, recording without audio.</string>
+    <string name="play">Play</string>
+    <string name="share">Share</string>
+    <string name="delete">Delete</string>
+    <string name="delete_confirm">Delete this recording?</string>
+    <string name="cancel">Cancel</string>
+    <string name="no_player">No video player found.</string>
+</resources>

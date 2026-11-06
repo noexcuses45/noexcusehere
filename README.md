@@ -48,3 +48,9 @@ Email confirmation: by default Supabase requires new users to confirm their emai
 - `lib/theme.dart` — colours and styling
 - `scripts/patch_android.py` — adds Health Connect permissions after `flutter create`
 - `.github/workflows/build-apk.yml` — the free automatic APK builder
+
+## Bonus app: No Excuse Recorder (screen recorder)
+
+The `screenrecorder/` folder contains a separate, native Android screen-recorder app. It records the whole screen or a single app (Android 14+), with optional microphone audio, quality presets, a countdown, a Quick Settings tile and a Stop button in the notification. Recordings land in `Movies/NoExcuseRecorder` and show in your gallery.
+
+It builds automatically via `.github/workflows/build-screen-recorder.yml`; download `NoExcuseRecorder.apk` from the newest `recorder-v…` entry on the Releases tab. See [`screenrecorder/README.md`](screenrecorder/README.md) for details.
