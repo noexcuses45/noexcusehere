@@ -95,6 +95,9 @@ class PlayerProjection {
   /// Median line (about 50/50).
   double get line => _half(mean);
 
+  /// Stretch line the model gives roughly a 30% chance.
+  double get stretchLine => _half(mean + 0.55 * sd);
+
   static double _half(double x) => (x - 0.5).round() + 0.5;
 
   Map<String, dynamic> toJson() => {

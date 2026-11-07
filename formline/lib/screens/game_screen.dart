@@ -26,6 +26,8 @@ class _GameScreenState extends State<GameScreen> {
   List<Multi> _multis = [];
   List<Leg> _cands = [];
   final Set<String> _selected = {};
+  final Map<String, Leg> _customLegs = {}; // player lines picked from the props table
+  String _stat = 'PTS';
   double? _line;
   final _lineCtrl = TextEditingController();
   bool _loadingPlayers = false;
@@ -66,7 +68,7 @@ class _GameScreenState extends State<GameScreen> {
       }
       final home = await EspnApi.recentPlayerLines(game.league, model, game.home.id);
       final away = await EspnApi.recentPlayerLines(game.league, model, game.away.id);
-      final players = PlayerProps.project(game: game, model: model, homeLines: home, awayLines: away, injuries: _injuries);
+      final players = PlayerProps.project(game: game, model: model, homeLines: home, awayLines: away, injuries: _injuries, maxPlayersPerTeam: 9);
       _pred = GamePrediction(
         game: game,
         muHome: _pred.muHome,
@@ -93,7 +95,7 @@ class _GameScreenState extends State<GameScreen> {
   @override
   Widget build(BuildContext context) {
     final p = _pred;
-    final selectedLegs = _cands.where((l) => _selected.contains(l.key)).toList();
+    final selectedLegs = [..._cands.where((l) => _selected.contains(l.key)), ..._customLegs.values];
     final jointP = selectedLegs.isEmpty ? 0.0 : p.jointProb(selectedLegs);
     final settings = Settings.instance;
     return Scaffold(
@@ -152,7 +154,7 @@ class _GameScreenState extends State<GameScreen> {
             SectionTitle('Player props', trailing: _loadingPlayers ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2)) : null),
             if (_playersNote != null) Muted(_playersNote!),
             if (_loadingPlayers && p.players.isEmpty) const Muted('Reading recent box scores...'),
-            _playersTable(p),
+            _propsSection(p),
           ],
           const SectionTitle('Build your own multi'),
           Card(
@@ -295,40 +297,96 @@ class _GameScreenState extends State<GameScreen> {
         ),
       );
 
-  Widget _playersTable(GamePrediction p) {
+  static const _statLabels = {'PTS': 'Points', 'REB': 'Rebounds', 'AST': 'Assists', '3PM': 'Threes', 'PRA': 'Pts+Reb+Ast'};
+
+  Widget _propsSection(GamePrediction p) {
     if (p.players.isEmpty) return const SizedBox();
-    final names = <String>[];
-    for (final pl in p.players) {
-      if (!names.contains(pl.name)) names.add(pl.name);
-    }
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(10),
-        child: Column(children: [
-          for (final n in names) ...[
-            Builder(builder: (_) {
-              final rows = p.players.where((x) => x.name == n).toList();
-              final side = rows.first.side == Side.home ? game.home.abbr : game.away.abbr;
-              return Padding(
-                padding: const EdgeInsets.symmetric(vertical: 6),
-                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  Row(children: [
-                    Expanded(child: Text('$n · $side', style: const TextStyle(fontWeight: FontWeight.w700))),
-                    Muted('${rows.first.minutes.round()} min · ${rows.first.games} games'),
-                  ]),
-                  if (rows.first.flag != null) Text(rows.first.flag!, style: const TextStyle(color: EdgeColors.coral, fontSize: 12)),
-                  Wrap(spacing: 6, runSpacing: 4, children: [
-                    for (final r in rows)
-                      Chip(
-                        visualDensity: VisualDensity.compact,
-                        label: Text('${r.stat} ${r.overLine}+ ${pct(p.probPlayerOver(r, r.overLine))} · avg ${r.mean.toStringAsFixed(1)}', style: const TextStyle(fontSize: 12)),
-                      ),
-                  ]),
-                ]),
-              );
-            }),
-          ],
+    final rows = p.players.where((x) => x.stat == _stat).toList()..sort((a, b) => b.mean.compareTo(a.mean));
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      SizedBox(
+        height: 40,
+        child: ListView(scrollDirection: Axis.horizontal, children: [
+          for (final st in PlayerProps.stats)
+            Padding(
+              padding: const EdgeInsets.only(right: 8),
+              child: ChoiceChip(
+                label: Text(_statLabels[st] ?? st),
+                selected: st == _stat,
+                visualDensity: VisualDensity.compact,
+                onSelected: (_) => setState(() => _stat = st),
+              ),
+            ),
         ]),
+      ),
+      const SizedBox(height: 4),
+      const Muted('Tap a line to add it to your multi. Lines: likely · even · stretch.'),
+      const SizedBox(height: 6),
+      Card(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(12, 6, 12, 6),
+          child: Column(children: [
+            if (rows.isEmpty) const Padding(padding: EdgeInsets.all(8), child: Muted('No players with enough minutes for this stat.')),
+            for (final r in rows) _propRow(p, r),
+          ]),
+        ),
+      ),
+    ]);
+  }
+
+  Widget _propRow(GamePrediction p, PlayerProjection r) {
+    final side = r.side == Side.home ? game.home.abbr : game.away.abbr;
+    final last = r.lastValues.map((v) => v.toStringAsFixed(0)).join(' ');
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(children: [
+          Expanded(child: Text('${r.name} · $side', style: const TextStyle(fontWeight: FontWeight.w700))),
+          Muted('avg ${r.mean.toStringAsFixed(1)} · ${r.minutes.round()} min'),
+        ]),
+        if (r.flag != null) Text(r.flag!, style: const TextStyle(color: EdgeColors.coral, fontSize: 12)),
+        if (last.isNotEmpty) Muted('Last games: $last'),
+        const SizedBox(height: 4),
+        Row(children: [
+          for (final line in {r.overLine, r.line, r.stretchLine})
+            Padding(
+              padding: const EdgeInsets.only(right: 6),
+              child: _linePill(p, r, line),
+            ),
+        ]),
+      ]),
+    );
+  }
+
+  Widget _linePill(GamePrediction p, PlayerProjection r, double line) {
+    final prob = p.probPlayerOver(r, line);
+    final key = 'custom|${r.name}|${r.stat}|$line';
+    final selected = _customLegs.containsKey(key);
+    final c = probColor(prob);
+    return InkWell(
+      borderRadius: BorderRadius.circular(10),
+      onTap: () => setState(() {
+        if (selected) {
+          _customLegs.remove(key);
+        } else {
+          _customLegs[key] = Leg(
+            type: LegType.playerProp,
+            player: r,
+            over: true,
+            line: line,
+            label: '${r.name.split(' ').last} $line+ ${r.stat}',
+            prob: prob,
+          );
+        }
+      }),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        decoration: BoxDecoration(
+          color: selected ? EdgeColors.lime : c.withValues(alpha: 0.14),
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: selected ? EdgeColors.lime : Colors.transparent),
+        ),
+        child: Text('${num1(line)}+  ${pct(prob)}',
+            style: TextStyle(fontWeight: FontWeight.w800, fontSize: 13, color: selected ? EdgeColors.navy : c)),
       ),
     );
   }
