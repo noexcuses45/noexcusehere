@@ -13,16 +13,16 @@ Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Settings.instance.load();
   await PicksStore.instance.load();
-  runApp(const StatEdgeApp());
+  runApp(const FormlineApp());
 }
 
-class StatEdgeApp extends StatelessWidget {
-  const StatEdgeApp({super.key});
+class FormlineApp extends StatelessWidget {
+  const FormlineApp({super.key});
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'StatEdge',
+      title: 'Formline',
       theme: edgeTheme(),
       debugShowCheckedModeBanner: false,
       home: const MainShell(),
@@ -54,7 +54,7 @@ class _MainShellState extends State<MainShell> {
         title: const Row(children: [
           Icon(Icons.query_stats, color: EdgeColors.lime),
           SizedBox(width: 8),
-          Text('StatEdge', style: TextStyle(fontWeight: FontWeight.w900, letterSpacing: 0.5)),
+          Text('Formline', style: TextStyle(fontWeight: FontWeight.w900, letterSpacing: 0.5)),
         ]),
         actions: [
           IconButton(

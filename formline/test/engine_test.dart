@@ -1,11 +1,11 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:statedge/engine/predictor.dart';
-import 'package:statedge/engine/race_rater.dart';
-import 'package:statedge/engine/ratings.dart';
-import 'package:statedge/engine/stats.dart';
-import 'package:statedge/models/game.dart';
-import 'package:statedge/models/league.dart';
-import 'package:statedge/models/race.dart';
+import 'package:formline/engine/predictor.dart';
+import 'package:formline/engine/race_rater.dart';
+import 'package:formline/engine/ratings.dart';
+import 'package:formline/engine/stats.dart';
+import 'package:formline/models/game.dart';
+import 'package:formline/models/league.dart';
+import 'package:formline/models/race.dart';
 
 void main() {
   group('Stats', () {

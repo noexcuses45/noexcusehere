@@ -1,6 +1,6 @@
-# StatEdge — stats-only predictor for overs/unders, same-game multis and racing
+# Formline — stats-only predictor for overs/unders, same-game multis and racing
 
-StatEdge rates teams and horses from **actual results and form**, never from bookmaker prices.
+Formline rates teams and horses from **actual results and form**, never from bookmaker prices.
 It then tells you, in plain numbers, the best multi for a round, the best same-game multi for
 each game, the over/under lean at any line, and the best horses per leg for a quaddie.
 
@@ -38,15 +38,15 @@ racing feed (fields, form, results). No keys required.
 
 ## Get the APK
 
-Push to `main`/`master` (or run the "Build StatEdge APK" workflow manually). GitHub Actions builds
+Push to `main`/`master` (or run the "Build Formline APK" workflow manually). GitHub Actions builds
 the APK and attaches it to the run under Artifacts, and publishes it as a pre-release tagged
-`statedge-vN`. The app checks those pre-releases and offers one-tap updates.
+`formline-vN`. The app checks those pre-releases and offers one-tap updates.
 
 Build locally:
 
 ```
-cd statedge
-flutter create --platforms android --org com.noexcusehere --project-name statedge .
+cd formline
+flutter create --platforms android --org com.noexcusehere --project-name formline .
 flutter pub get
 flutter build apk --release
 ```

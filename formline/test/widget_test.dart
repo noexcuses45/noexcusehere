@@ -2,8 +2,8 @@
 // default counter-app test, which would not compile against this app.
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:statedge/models/league.dart';
-import 'package:statedge/theme.dart';
+import 'package:formline/models/league.dart';
+import 'package:formline/theme.dart';
 
 void main() {
   test('league ids and ESPN paths are unique', () {
@@ -17,8 +17,8 @@ void main() {
   });
 
   testWidgets('theme builds a dark material app', (tester) async {
-    await tester.pumpWidget(MaterialApp(theme: edgeTheme(), home: const Scaffold(body: Text('StatEdge'))));
-    expect(find.text('StatEdge'), findsOneWidget);
+    await tester.pumpWidget(MaterialApp(theme: edgeTheme(), home: const Scaffold(body: Text('Formline'))));
+    expect(find.text('Formline'), findsOneWidget);
     expect(edgeTheme().brightness, Brightness.dark);
   });
 }
