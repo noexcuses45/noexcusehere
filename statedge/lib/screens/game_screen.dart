@@ -1,0 +1,351 @@
+import 'package:flutter/material.dart';
+
+import '../engine/player_props.dart';
+import '../engine/predictor.dart';
+import '../models/game.dart';
+import '../services/espn_api.dart';
+import '../services/model_store.dart';
+import '../services/picks_store.dart';
+import '../services/settings_service.dart';
+import '../theme.dart';
+import '../widgets/common.dart';
+
+/// One game: projections, over/under at any line, best same-game multis,
+/// player props and a build-your-own multi.
+class GameScreen extends StatefulWidget {
+  const GameScreen({super.key, required this.game, required this.prediction});
+  final Game game;
+  final GamePrediction prediction;
+
+  @override
+  State<GameScreen> createState() => _GameScreenState();
+}
+
+class _GameScreenState extends State<GameScreen> {
+  late GamePrediction _pred;
+  List<Multi> _multis = [];
+  List<Leg> _cands = [];
+  final Set<String> _selected = {};
+  double? _line;
+  final _lineCtrl = TextEditingController();
+  bool _loadingPlayers = false;
+  String? _playersNote;
+  Map<String, String> _injuries = {};
+
+  Game get game => widget.game;
+
+  @override
+  void initState() {
+    super.initState();
+    _pred = widget.prediction;
+    _line = game.marketTotal ?? _roundHalf(_pred.muTotal);
+    _lineCtrl.text = num1(_line!);
+    _recompute();
+    if (game.league.hasPlayerProps && !game.isFinal) _loadPlayers();
+  }
+
+  double _roundHalf(double x) => (x * 2).round() / 2 == x ? x + 0.5 : ((x * 2).round() / 2).roundToDouble() + 0.5;
+
+  void _recompute() {
+    _pred.simCount = Settings.instance.sims;
+    _cands = _pred.candidateLegs(minProb: 0.5);
+    _multis = game.isFinal ? [] : _pred.suggestMultis(perSize: 2);
+    _multis.sort((a, b) => b.prob.compareTo(a.prob));
+    setState(() {});
+  }
+
+  Future<void> _loadPlayers() async {
+    setState(() => _loadingPlayers = true);
+    try {
+      final model = await ModelStore.instance.model(game.league);
+      try {
+        final summary = await EspnApi.summary(game.league, game.eventId);
+        _injuries = summary.injuries;
+      } catch (_) {
+        // Injury list is a nice-to-have; box scores still give us the props.
+      }
+      final home = await EspnApi.recentPlayerLines(game.league, model, game.home.id);
+      final away = await EspnApi.recentPlayerLines(game.league, model, game.away.id);
+      final players = PlayerProps.project(game: game, model: model, homeLines: home, awayLines: away, injuries: _injuries);
+      _pred = GamePrediction(
+        game: game,
+        muHome: _pred.muHome,
+        muAway: _pred.muAway,
+        sdHome: _pred.sdHome,
+        sdAway: _pred.sdAway,
+        rho: _pred.rho,
+        confidence: _pred.confidence,
+        homeGames: _pred.homeGames,
+        awayGames: _pred.awayGames,
+        players: players,
+        baseHome: _pred.baseHome,
+        baseAway: _pred.baseAway,
+        live: _pred.live,
+      );
+      _playersNote = players.isEmpty ? 'No recent box scores found for player props.' : null;
+      _recompute();
+    } catch (_) {
+      _playersNote = 'Player props unavailable right now.';
+    }
+    if (mounted) setState(() => _loadingPlayers = false);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final p = _pred;
+    final selectedLegs = _cands.where((l) => _selected.contains(l.key)).toList();
+    final jointP = selectedLegs.isEmpty ? 0.0 : p.jointProb(selectedLegs);
+    final settings = Settings.instance;
+    return Scaffold(
+      appBar: AppBar(title: Text('${game.away.abbr} @ ${game.home.abbr}')),
+      body: ListView(padding: const EdgeInsets.fromLTRB(12, 0, 12, 32), children: [
+        _header(p),
+        if (!game.isFinal) ...[
+          const SectionTitle('Best same-game multis'),
+          if (_multis.isEmpty) const Muted('No confident combinations for this game.'),
+          for (final m in _multis.take(6)) _multiCard(m),
+          const SectionTitle('Over / under'),
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(14),
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Row(children: [
+                  Expanded(child: Text('Projected total ${num1(p.muTotal)} ${game.league.scoreWord}', style: const TextStyle(fontWeight: FontWeight.w700))),
+                  if (game.marketTotal != null && settings.showMarket) Muted('Bookie ${num1(game.marketTotal!)}'),
+                ]),
+                const SizedBox(height: 10),
+                Row(children: [
+                  SizedBox(
+                    width: 110,
+                    child: TextField(
+                      controller: _lineCtrl,
+                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                      decoration: const InputDecoration(labelText: 'Line', isDense: true, border: OutlineInputBorder()),
+                      onChanged: (v) => setState(() => _line = double.tryParse(v)),
+                    ),
+                  ),
+                  const SizedBox(width: 14),
+                  if (_line != null) ...[
+                    Expanded(child: _ouBox('Over', p.probOver(_line!))),
+                    const SizedBox(width: 8),
+                    Expanded(child: _ouBox('Under', p.probUnder(_line!))),
+                  ],
+                ]),
+                const SizedBox(height: 10),
+                Wrap(spacing: 6, runSpacing: 6, children: [
+                  for (final l in _quickLines(p))
+                    ActionChip(
+                      label: Text('${num1(l)}: O ${pct(p.probOver(l))}'),
+                      visualDensity: VisualDensity.compact,
+                      onPressed: () => setState(() {
+                        _line = l;
+                        _lineCtrl.text = num1(l);
+                      }),
+                    ),
+                ]),
+                const SizedBox(height: 8),
+                Muted('Team totals: ${game.home.abbr} ${num1(p.projHome)} ± ${num1(p.sdHome)} · ${game.away.abbr} ${num1(p.projAway)} ± ${num1(p.sdAway)}'),
+              ]),
+            ),
+          ),
+          if (game.league.hasPlayerProps) ...[
+            SectionTitle('Player props', trailing: _loadingPlayers ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2)) : null),
+            if (_playersNote != null) Muted(_playersNote!),
+            if (_loadingPlayers && p.players.isEmpty) const Muted('Reading recent box scores...'),
+            _playersTable(p),
+          ],
+          const SectionTitle('Build your own multi'),
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(14),
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Wrap(spacing: 6, runSpacing: 6, children: [
+                  for (final l in _cands.where((l) => l.type != LegType.playerProp))
+                    FilterChip(
+                      label: Text('${l.label} ${pct(l.prob)}'),
+                      selected: _selected.contains(l.key),
+                      visualDensity: VisualDensity.compact,
+                      onSelected: (s) => setState(() => s ? _selected.add(l.key) : _selected.remove(l.key)),
+                    ),
+                ]),
+                if (_cands.any((l) => l.type == LegType.playerProp)) ...[
+                  const SizedBox(height: 8),
+                  const Muted('Player legs'),
+                  const SizedBox(height: 4),
+                  Wrap(spacing: 6, runSpacing: 6, children: [
+                    for (final l in _cands.where((l) => l.type == LegType.playerProp && l.over))
+                      FilterChip(
+                        label: Text('${l.label} ${pct(l.prob)}'),
+                        selected: _selected.contains(l.key),
+                        visualDensity: VisualDensity.compact,
+                        onSelected: (s) => setState(() => s ? _selected.add(l.key) : _selected.remove(l.key)),
+                      ),
+                  ]),
+                ],
+                const Divider(height: 20),
+                Row(children: [
+                  Expanded(
+                    child: selectedLegs.isEmpty
+                        ? const Muted('Tap legs to combine them. Correlation between legs is handled by simulation.')
+                        : Text('${selectedLegs.length} legs · ${pct(jointP)} · fair \$${odds(1 / (jointP > 0 ? jointP : 0.001))}',
+                            style: const TextStyle(fontWeight: FontWeight.w800)),
+                  ),
+                  if (selectedLegs.isNotEmpty)
+                    FilledButton.icon(
+                      onPressed: () => _save(Multi(legs: selectedLegs, prob: jointP), 'Custom SGM'),
+                      icon: const Icon(Icons.bookmark_add, size: 18),
+                      label: const Text('Save'),
+                    ),
+                ]),
+              ]),
+            ),
+          ),
+        ],
+        const SectionTitle('How sure is the model?'),
+        InfoBanner(
+          'Based on ${p.homeGames} ${game.home.abbr} and ${p.awayGames} ${game.away.abbr} rated games. '
+          'Confidence ${pct(p.confidence)}. Scores are modelled as ${p.poisson ? 'Poisson goals' : 'correlated normal totals (ρ ${p.rho.toStringAsFixed(2)})'}.'
+          '${_injuries.isNotEmpty ? '\nInjury list: ${_injuries.entries.take(6).map((e) => '${e.key} (${e.value})').join(', ')}' : ''}',
+        ),
+      ]),
+    );
+  }
+
+  List<double> _quickLines(GamePrediction p) {
+    final step = p.poisson ? 0.5 : (p.sdTotal / 3).clamp(1, 10).roundToDouble();
+    final mid = _roundHalf(p.muTotal);
+    return [for (var k = -2; k <= 2; k++) (mid + k * step).clamp(0.5, 9999).toDouble()];
+  }
+
+  Widget _ouBox(String label, double prob) => Container(
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        decoration: BoxDecoration(color: probColor(prob).withValues(alpha: 0.12), borderRadius: BorderRadius.circular(10)),
+        child: Column(children: [
+          Text(label, style: const TextStyle(fontSize: 12, color: EdgeColors.muted)),
+          Text(pct(prob), style: TextStyle(fontSize: 20, fontWeight: FontWeight.w900, color: probColor(prob))),
+          Muted('\$${odds(1 / (prob > 0 ? prob : 0.001))}'),
+        ]),
+      );
+
+  Widget _header(GamePrediction p) {
+    Widget team(TeamRef t, double? score, double proj, double win) => Expanded(
+          child: Column(children: [
+            if (t.logo != null) Image.network(t.logo!, width: 44, height: 44, errorBuilder: (_, _, _) => const SizedBox(height: 44)),
+            const SizedBox(height: 6),
+            Text(t.name, textAlign: TextAlign.center, style: const TextStyle(fontWeight: FontWeight.w800)),
+            if (t.record != null) Muted(t.record!),
+            const SizedBox(height: 6),
+            if (score != null && (game.isLive || game.isFinal))
+              Text(num1(score), style: const TextStyle(fontSize: 30, fontWeight: FontWeight.w900)),
+            if (!game.isFinal) ...[
+              Muted('Projected ${num1(proj)}'),
+              const SizedBox(height: 4),
+              ProbPill(win),
+            ],
+          ]),
+        );
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(children: [
+          Text(game.isLive ? 'LIVE · ${game.statusDetail}' : (game.isFinal ? 'Final' : timeLocal(game.date)),
+              style: TextStyle(color: game.isLive ? EdgeColors.coral : EdgeColors.muted, fontWeight: FontWeight.w700)),
+          const SizedBox(height: 10),
+          Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            team(game.away, game.awayScore, p.projAway, p.probAwayWin),
+            const Padding(padding: EdgeInsets.only(top: 40), child: Text('@', style: TextStyle(color: EdgeColors.muted, fontSize: 18))),
+            team(game.home, game.homeScore, p.projHome, p.probHomeWin),
+          ]),
+          if (!game.isFinal && p.poisson && p.probDraw > 0.02) ...[
+            const SizedBox(height: 6),
+            Muted('Draw ${pct(p.probDraw)}'),
+          ],
+          if (!game.isFinal) ...[
+            const SizedBox(height: 8),
+            Text('Model line: ${p.muMargin >= 0 ? game.home.abbr : game.away.abbr} by ${num1(p.muMargin.abs())}'
+                '${game.marketSpread != null && Settings.instance.showMarket ? ' · bookie ${game.home.abbr} ${game.marketSpread! > 0 ? '+' : ''}${num1(game.marketSpread!)}' : ''}'),
+          ],
+        ]),
+      ),
+    );
+  }
+
+  Widget _multiCard(Multi m) => Padding(
+        padding: const EdgeInsets.only(bottom: 8),
+        child: Card(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(14, 10, 8, 8),
+            child: Row(children: [
+              Expanded(
+                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  for (final l in m.legs) LegRow(l.label, l.prob),
+                  Muted('${m.legs.length} legs · fair \$${odds(m.fairOdds)}'),
+                ]),
+              ),
+              Column(children: [
+                ProbPill(m.prob, big: true),
+                IconButton(
+                  icon: const Icon(Icons.bookmark_add_outlined),
+                  tooltip: 'Save',
+                  onPressed: () => _save(m, 'Same-game multi'),
+                ),
+              ]),
+            ]),
+          ),
+        ),
+      );
+
+  Widget _playersTable(GamePrediction p) {
+    if (p.players.isEmpty) return const SizedBox();
+    final names = <String>[];
+    for (final pl in p.players) {
+      if (!names.contains(pl.name)) names.add(pl.name);
+    }
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(10),
+        child: Column(children: [
+          for (final n in names) ...[
+            Builder(builder: (_) {
+              final rows = p.players.where((x) => x.name == n).toList();
+              final side = rows.first.side == Side.home ? game.home.abbr : game.away.abbr;
+              return Padding(
+                padding: const EdgeInsets.symmetric(vertical: 6),
+                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Row(children: [
+                    Expanded(child: Text('$n · $side', style: const TextStyle(fontWeight: FontWeight.w700))),
+                    Muted('${rows.first.minutes.round()} min · ${rows.first.games} games'),
+                  ]),
+                  if (rows.first.flag != null) Text(rows.first.flag!, style: const TextStyle(color: EdgeColors.coral, fontSize: 12)),
+                  Wrap(spacing: 6, runSpacing: 4, children: [
+                    for (final r in rows)
+                      Chip(
+                        visualDensity: VisualDensity.compact,
+                        label: Text('${r.stat} ${r.overLine}+ ${pct(p.probPlayerOver(r, r.overLine))} · avg ${r.mean.toStringAsFixed(1)}', style: const TextStyle(fontSize: 12)),
+                      ),
+                  ]),
+                ]),
+              );
+            }),
+          ],
+        ]),
+      ),
+    );
+  }
+
+  Future<void> _save(Multi m, String kind) async {
+    await PicksStore.instance.add(Pick(
+      id: '${DateTime.now().microsecondsSinceEpoch}',
+      kind: 'sport',
+      createdAt: DateTime.now(),
+      title: '${game.away.abbr} @ ${game.home.abbr}: ${m.legs.map((l) => l.label).join(' + ')}',
+      detail: '$kind · ${game.league.name} · ${timeLocal(game.date)}',
+      prob: m.prob,
+      leagueId: game.league.id,
+      eventId: game.eventId,
+      eventDate: game.date,
+      legs: m.legs,
+    ));
+    if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Saved to My picks')));
+  }
+}
