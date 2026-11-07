@@ -13,9 +13,10 @@ import '../widgets/common.dart';
 /// One game: projections, over/under at any line, best same-game multis,
 /// player props and a build-your-own multi.
 class GameScreen extends StatefulWidget {
-  const GameScreen({super.key, required this.game, required this.prediction});
+  const GameScreen({super.key, required this.game, required this.prediction, this.autoBuild});
   final Game game;
   final GamePrediction prediction;
+  final int? autoBuild; // build an AI multi with this many legs on open
 
   @override
   State<GameScreen> createState() => _GameScreenState();
@@ -33,6 +34,9 @@ class _GameScreenState extends State<GameScreen> {
   bool _loadingPlayers = false;
   String? _playersNote;
   Map<String, String> _injuries = {};
+  Multi? _aiMulti;
+  int? _aiBuilding;
+  int? _pendingBuild;
 
   Game get game => widget.game;
 
@@ -43,7 +47,24 @@ class _GameScreenState extends State<GameScreen> {
     _line = game.marketTotal ?? _roundHalf(_pred.muTotal);
     _lineCtrl.text = num1(_line!);
     _recompute();
-    if (game.league.hasPlayerProps && !game.isFinal) _loadPlayers();
+    _pendingBuild = widget.autoBuild;
+    if (game.league.hasPlayerProps && !game.isFinal) {
+      _loadPlayers();
+    } else if (_pendingBuild != null) {
+      _buildAi(_pendingBuild!);
+    }
+  }
+
+  Future<void> _buildAi(int legs) async {
+    _pendingBuild = null;
+    setState(() => _aiBuilding = legs);
+    await Future.delayed(const Duration(milliseconds: 50)); // let the spinner paint
+    final m = _pred.buildMulti(legs);
+    if (!mounted) return;
+    setState(() {
+      _aiMulti = m;
+      _aiBuilding = null;
+    });
   }
 
   double _roundHalf(double x) => (x * 2).round() / 2 == x ? x + 0.5 : ((x * 2).round() / 2).roundToDouble() + 0.5;
@@ -90,6 +111,7 @@ class _GameScreenState extends State<GameScreen> {
       _playersNote = 'Player props unavailable right now.';
     }
     if (mounted) setState(() => _loadingPlayers = false);
+    if (_pendingBuild != null) _buildAi(_pendingBuild!);
   }
 
   @override
@@ -103,6 +125,8 @@ class _GameScreenState extends State<GameScreen> {
       body: ListView(padding: const EdgeInsets.fromLTRB(12, 0, 12, 32), children: [
         _header(p),
         if (!game.isFinal) ...[
+          const SizedBox(height: 10),
+          _aiCard(),
           const SectionTitle('Best same-game multis'),
           if (_multis.isEmpty) const Muted('No confident combinations for this game.'),
           for (final m in _multis.take(6)) _multiCard(m),
@@ -297,6 +321,63 @@ class _GameScreenState extends State<GameScreen> {
         ),
       );
 
+  Widget _aiCard() {
+    final m = _aiMulti;
+    final loadingProps = _loadingPlayers && game.league.hasPlayerProps;
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Row(children: [
+            const Icon(Icons.smart_toy_outlined, color: EdgeColors.lime, size: 20),
+            const SizedBox(width: 8),
+            const Expanded(child: Text('AI same-game multi', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 15))),
+            if (_aiBuilding != null || (loadingProps && _pendingBuild != null))
+              const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2)),
+          ]),
+          const SizedBox(height: 4),
+          const Muted('Builds the multi with the best chance of landing from player props, totals, winner and team totals. Pick how many legs.'),
+          const SizedBox(height: 8),
+          Row(children: [
+            for (final n in [3, 5, 10])
+              Padding(
+                padding: const EdgeInsets.only(right: 8),
+                child: FilledButton.tonal(
+                  style: FilledButton.styleFrom(
+                    backgroundColor: m != null && m.legs.length == n ? EdgeColors.lime : EdgeColors.lime.withValues(alpha: 0.15),
+                    foregroundColor: m != null && m.legs.length == n ? EdgeColors.navy : EdgeColors.lime,
+                  ),
+                  onPressed: _aiBuilding != null ? null : () => loadingProps ? setState(() => _pendingBuild = n) : _buildAi(n),
+                  child: Text('$n legs'),
+                ),
+              ),
+          ]),
+          if (loadingProps && _pendingBuild != null) const Padding(padding: EdgeInsets.only(top: 8), child: Muted('Waiting for player box scores...')),
+          if (m != null) ...[
+            const Divider(height: 20),
+            Row(children: [
+              Expanded(child: Text(m.title, style: const TextStyle(fontWeight: FontWeight.w800))),
+              ProbPill(m.prob, big: true),
+            ]),
+            const SizedBox(height: 6),
+            for (final l in m.legs) LegRow(l.label, l.prob),
+            const SizedBox(height: 6),
+            Row(children: [
+              Expanded(child: Muted('Fair odds \$${odds(m.fairOdds)} · only bet it if your bookie pays more.')),
+              FilledButton.icon(
+                onPressed: () => _save(m, m.title),
+                icon: const Icon(Icons.bookmark_add, size: 18),
+                label: const Text('Save'),
+              ),
+            ]),
+            if (m.legs.length < (_aiBuilding ?? m.legs.length) || m.legs.length < 3)
+              const Padding(padding: EdgeInsets.only(top: 6), child: Muted('Fewer legs than asked: not enough confident selections in this game.')),
+          ],
+        ]),
+      ),
+    );
+  }
+
   static const _statLabels = {'PTS': 'Points', 'REB': 'Rebounds', 'AST': 'Assists', '3PM': 'Threes', 'PRA': 'Pts+Reb+Ast'};
 
   Widget _propsSection(GamePrediction p) {
@@ -373,7 +454,7 @@ class _GameScreenState extends State<GameScreen> {
             player: r,
             over: true,
             line: line,
-            label: '${r.name.split(' ').last} $line+ ${r.stat}',
+            label: '${r.shortName} $line+ ${r.stat}',
             prob: prob,
           );
         }

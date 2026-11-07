@@ -366,8 +366,17 @@ class _SportsScreenState extends State<SportsScreen> {
                     padding: const EdgeInsets.only(top: 4),
                     child: Muted('Live projection: ${num1(p.projAway)} - ${num1(p.projHome)} final'),
                   ),
+                if (!g.isLive)
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: TextButton.icon(
+                      style: TextButton.styleFrom(foregroundColor: EdgeColors.lime, visualDensity: VisualDensity.compact),
+                      onPressed: () => _askAiLegs(g, p),
+                      icon: const Icon(Icons.smart_toy_outlined, size: 18),
+                      label: const Text('AI multi'),
+                    ),
+                  ),
                 if (sgm != null) ...[
-                  const SizedBox(height: 8),
                   Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
                     const Icon(Icons.auto_awesome, size: 16, color: EdgeColors.lime),
                     const SizedBox(width: 6),
@@ -390,6 +399,33 @@ class _SportsScreenState extends State<SportsScreen> {
         ),
       ),
     );
+  }
+
+  Future<void> _askAiLegs(Game g, GamePrediction p) async {
+    final n = await showModalBottomSheet<int>(
+      context: context,
+      backgroundColor: EdgeColors.navyCard,
+      builder: (_) => Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text('Build a same-game multi for ${g.away.abbr} @ ${g.home.abbr}', style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16)),
+          const SizedBox(height: 4),
+          const Muted('Best chance of landing, using player props, totals, winner and team totals. How many legs?'),
+          const SizedBox(height: 14),
+          Row(children: [
+            for (final n in [3, 5, 10])
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 4),
+                  child: FilledButton(onPressed: () => Navigator.pop(context, n), child: Text('$n legs')),
+                ),
+              ),
+          ]),
+        ]),
+      ),
+    );
+    if (n == null || !mounted) return;
+    Navigator.push(context, MaterialPageRoute(builder: (_) => GameScreen(game: g, prediction: p, autoBuild: n)));
   }
 
   Widget _statusChip(Game g) {

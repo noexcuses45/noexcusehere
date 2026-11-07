@@ -127,6 +127,25 @@ void main() {
       }
     });
 
+    test('AI multi builder returns the requested legs with a coherent probability', () {
+      final p = GamePrediction(game: game(Leagues.nba), muHome: 115, muAway: 108, sdHome: 12, sdAway: 12, rho: 0.25, confidence: 1, players: [
+        PlayerProjection(name: 'A One', side: Side.home, stat: 'PTS', mean: 24, sd: 7),
+        PlayerProjection(name: 'A One', side: Side.home, stat: 'REB', mean: 8, sd: 3),
+        PlayerProjection(name: 'B Two', side: Side.away, stat: 'AST', mean: 7, sd: 2.5),
+        PlayerProjection(name: 'C Three', side: Side.away, stat: 'PTS', mean: 18, sd: 6),
+      ]);
+      p.simCount = 4000;
+      final m = p.buildMulti(5);
+      expect(m.legs.length, 5);
+      expect(m.legs.map((l) => l.player?.name).whereType<String>().toSet().length,
+          m.legs.where((l) => l.type == LegType.playerProp).length, reason: 'one leg per player');
+      expect(m.prob, greaterThan(0.05));
+      expect(m.prob, lessThanOrEqualTo(m.legs.map((l) => l.prob).reduce((a, b) => a < b ? a : b) + 1e-9));
+      final m3 = p.buildMulti(3);
+      expect(m3.legs.length, 3);
+      expect(m3.prob, greaterThanOrEqualTo(m.prob));
+    });
+
     test('live game projection respects points on the board', () {
       final model = LeagueModel(Leagues.nba)..fit([]);
       final g = Game(

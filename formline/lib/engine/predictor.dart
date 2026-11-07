@@ -86,6 +86,16 @@ class PlayerProjection {
   final List<double> lastValues;
   final String? flag; // e.g. injury note
 
+  /// Surname for compact labels, skipping suffixes like Jr. or III.
+  String get shortName {
+    final parts = name.split(' ').where((x) => x.isNotEmpty).toList();
+    const suffixes = {'jr.', 'jr', 'sr.', 'sr', 'ii', 'iii', 'iv', 'v'};
+    while (parts.length > 1 && suffixes.contains(parts.last.toLowerCase())) {
+      parts.removeLast();
+    }
+    return parts.isEmpty ? name : parts.last;
+  }
+
   /// Half-point line the model expects the player to beat about 70% of the time.
   double get overLine => _half(mean - 0.55 * sd).clamp(0.5, 999);
 
@@ -453,7 +463,7 @@ class GamePrediction {
     }
     // Player props at the nearest half line.
     for (final p in players) {
-      final nm = p.name.split(' ').last;
+      final nm = p.shortName;
       // Overs only (that is how player legs are bet in multis), and only lines
       // that mean something: nobody wants "0.5+ threes" in a multi.
       const minLine = {'PTS': 9.5, 'REB': 3.5, 'AST': 2.5, '3PM': 1.5, 'PRA': 14.5};
@@ -506,6 +516,43 @@ class GamePrediction {
       out.addAll(combos.take(perSize));
     }
     return out;
+  }
+
+  /// Builds the same-game multi with the best chance of landing for a
+  /// given number of legs: greedy search over compatible legs (player
+  /// props included), scoring each step by the simulated joint probability.
+  Multi buildMulti(int legs) {
+    final cands = candidateLegs(minProb: 0.5);
+    // Keep the search fast: strongest 48 legs, one per player.
+    final seenPlayers = <String>{};
+    final pool = <Leg>[];
+    for (final l in cands) {
+      if (l.type == LegType.playerProp) {
+        if (!seenPlayers.add(l.player!.name)) continue;
+      }
+      pool.add(l);
+      if (pool.length >= 48) break;
+    }
+    final chosen = <Leg>[];
+    var best = 0.0;
+    while (chosen.length < legs) {
+      Leg? pick;
+      var pickProb = -1.0;
+      for (final l in pool) {
+        if (chosen.contains(l)) continue;
+        if (!chosen.every((c) => _compatible(c, l))) continue;
+        final p = jointProb([...chosen, l]);
+        if (p > pickProb) {
+          pickProb = p;
+          pick = l;
+        }
+      }
+      if (pick == null) break;
+      chosen.add(pick);
+      best = pickProb;
+    }
+    if (chosen.length == 1) best = chosen.first.prob;
+    return Multi(legs: chosen, prob: best, title: '${chosen.length}-leg AI multi');
   }
 
   /// Plain-English lean on the total at [line].
