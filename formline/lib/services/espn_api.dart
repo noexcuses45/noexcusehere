@@ -261,10 +261,20 @@ class EspnApi {
   }
 
   /// Box score lines + injuries + market line for an event.
-  static Future<EventSummary> summary(League league, String eventId, {bool finished = false}) async {
-    final j = await _getJson('$_base/${league.path}/summary?event=$eventId',
-        ttl: finished ? const Duration(days: 60) : const Duration(minutes: 15), cacheKey: 'sum:${league.id}:$eventId');
+  /// [live] fetches fresh data every 20 seconds without persisting it.
+  static Future<EventSummary> summary(League league, String eventId, {bool finished = false, bool live = false}) async {
+    final ttl = live ? const Duration(seconds: 20) : (finished ? const Duration(days: 60) : const Duration(minutes: 15));
+    final j = await _getJson('$_base/${league.path}/summary?event=$eventId', ttl: ttl, cacheKey: 'sum:${league.id}:$eventId');
     return EventSummary.parse(j);
+  }
+
+  /// Latest scoreboard entry for one event (score, clock, state).
+  static Future<Game?> refreshGame(Game game) async {
+    final games = await scoreboard(game.league, game.date.toLocal());
+    for (final g in games) {
+      if (g.eventId == game.eventId) return g;
+    }
+    return null;
   }
 
   /// Recent box scores for a team's last [n] finished games.
@@ -282,10 +292,51 @@ class EspnApi {
   }
 }
 
+/// One player's row in a live/final box score, any sport.
+class BoxRow {
+  BoxRow({
+    required this.name,
+    required this.stats,
+    this.position = '',
+    this.active = false,
+    this.starter = false,
+    this.dnp = false,
+    this.onField = false,
+  });
+  final String name;
+  final List<String> stats;
+  final String position;
+  final bool active;
+  final bool starter;
+  final bool dnp;
+  final bool onField; // currently on the court / pitch (best effort)
+
+  String stat(List<String> columns, String col) {
+    final i = columns.indexOf(col);
+    return i >= 0 && i < stats.length ? stats[i] : '';
+  }
+
+  double statNum(List<String> columns, String col) {
+    final v = stat(columns, col);
+    return double.tryParse(v.split('-').first.split('/').first) ?? 0;
+  }
+}
+
+/// A box score table (one team, one stat category).
+class BoxTable {
+  BoxTable({required this.teamId, required this.teamAbbr, required this.title, required this.columns, required this.rows});
+  final String teamId;
+  final String teamAbbr;
+  final String title;
+  final List<String> columns;
+  final List<BoxRow> rows;
+}
+
 class EventSummary {
   EventSummary({
     required this.playerLines,
     required this.injuries,
+    this.tables = const [],
     this.marketTotal,
     this.marketSpread,
     this.marketProvider,
@@ -295,6 +346,7 @@ class EventSummary {
   });
   final List<PlayerGameLine> playerLines;
   final Map<String, String> injuries; // player name -> status
+  final List<BoxTable> tables; // generic box score, any sport
   final double? marketTotal, marketSpread;
   final String? marketProvider;
   final double? homeScore, awayScore;
@@ -344,6 +396,73 @@ class EventSummary {
         }
       }
     } catch (_) {}
+    final tables = <BoxTable>[];
+    final live = !completed;
+    try {
+      for (final team in (j['boxscore']['players'] as List? ?? [])) {
+        final teamId = '${team['team']['id']}';
+        final abbr = team['team']['abbreviation'] as String? ?? '';
+        for (final stat in (team['statistics'] as List? ?? [])) {
+          final name = stat['name'] as String? ?? '';
+          if (name == 'skaters') continue; // NHL duplicates forwards + defenses
+          final cols = ((stat['labels'] ?? stat['names']) as List? ?? []).cast<String>();
+          final rows = <BoxRow>[];
+          for (final a in (stat['athletes'] as List? ?? [])) {
+            final stats = (a['stats'] as List? ?? []).map((x) => '$x').toList();
+            final dnp = a['didNotPlay'] == true;
+            final pos = a['athlete']?['position'];
+            final active = a['active'] == true;
+            rows.add(BoxRow(
+              name: a['athlete']?['displayName'] as String? ?? '',
+              stats: stats,
+              position: pos is Map ? (pos['abbreviation'] as String? ?? '') : '',
+              active: active,
+              starter: a['starter'] == true,
+              dnp: dnp,
+              onField: live && active && !dnp,
+            ));
+          }
+          if (rows.isNotEmpty) {
+            tables.add(BoxTable(
+              teamId: teamId,
+              teamAbbr: abbr,
+              title: (stat['text'] as String?) ?? (name.isEmpty ? 'Players' : name[0].toUpperCase() + name.substring(1)),
+              columns: cols,
+              rows: rows,
+            ));
+          }
+        }
+      }
+      // Soccer: rosters with on-pitch flags.
+      for (final r in (j['rosters'] as List? ?? [])) {
+        final teamId = '${r['team']?['id']}';
+        final abbr = r['team']?['abbreviation'] as String? ?? '';
+        const wanted = ['G', 'SHOT', 'SOG', 'A', 'FC', 'YC', 'SV'];
+        final rows = <BoxRow>[];
+        for (final x in (r['roster'] as List? ?? [])) {
+          final statList = (x['stats'] as List? ?? []).cast<Map>();
+          String val(String abb) {
+            for (final st in statList) {
+              if (st['abbreviation'] == abb) return '${st['displayValue'] ?? st['value'] ?? ''}';
+            }
+            return '';
+          }
+          final starter = x['starter'] == true, subbedIn = x['subbedIn'] == true, subbedOut = x['subbedOut'] == true;
+          final pos = x['position'];
+          rows.add(BoxRow(
+            name: x['athlete']?['displayName'] as String? ?? '',
+            stats: wanted.map(val).toList(),
+            position: pos is Map ? (pos['abbreviation'] as String? ?? '') : '',
+            active: x['active'] == true,
+            starter: starter,
+            dnp: !starter && !subbedIn,
+            onField: live && ((starter && !subbedOut) || (subbedIn && !subbedOut)),
+          ));
+        }
+        rows.sort((a, b) => (b.onField ? 1 : 0).compareTo(a.onField ? 1 : 0));
+        if (rows.isNotEmpty) tables.add(BoxTable(teamId: teamId, teamAbbr: abbr, title: 'Players', columns: wanted, rows: rows));
+      }
+    } catch (_) {}
     final injuries = <String, String>{};
     try {
       for (final t in (j['injuries'] as List? ?? [])) {
@@ -367,6 +486,7 @@ class EventSummary {
     return EventSummary(
       playerLines: lines,
       injuries: injuries,
+      tables: tables,
       marketTotal: mt,
       marketSpread: ms,
       marketProvider: prov,

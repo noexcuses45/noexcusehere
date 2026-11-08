@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../engine/player_props.dart';
@@ -37,13 +39,23 @@ class _GameScreenState extends State<GameScreen> {
   Multi? _aiMulti;
   int? _aiBuilding;
   int? _pendingBuild;
+  late Game _game;
+  List<PlayerProjection> _preProps = []; // pre-game projections (for the live box chips)
+  EventSummary? _box;
+  Timer? _liveTimer;
+  int _boxTeam = 0; // 0 away, 1 home
 
-  Game get game => widget.game;
+  Game get game => _game;
 
   @override
   void initState() {
     super.initState();
+    _game = widget.game;
     _pred = widget.prediction;
+    if (_game.isLive || _game.isFinal) {
+      _refreshLive();
+      if (_game.isLive) _liveTimer = Timer.periodic(const Duration(seconds: 30), (_) => _refreshLive());
+    }
     _line = game.marketTotal ?? _roundHalf(_pred.muTotal);
     _lineCtrl.text = num1(_line!);
     _recompute();
@@ -53,6 +65,59 @@ class _GameScreenState extends State<GameScreen> {
     } else if (_pendingBuild != null) {
       _buildAi(_pendingBuild!);
     }
+  }
+
+  @override
+  void dispose() {
+    _liveTimer?.cancel();
+    _lineCtrl.dispose();
+    super.dispose();
+  }
+
+  /// Swap in live-adjusted player projections when the game is under way.
+  void _applyLiveProps() {
+    if (!game.isLive || _box == null || _preProps.isEmpty) return;
+    final live = PlayerProps.liveAdjust(_preProps,
+        tables: _box!.tables, homeTeamId: game.home.id, awayTeamId: game.away.id, remaining: game.remainingFraction());
+    _pred = GamePrediction(
+      game: game,
+      muHome: _pred.muHome,
+      muAway: _pred.muAway,
+      sdHome: _pred.sdHome,
+      sdAway: _pred.sdAway,
+      rho: _pred.rho,
+      confidence: _pred.confidence,
+      homeGames: _pred.homeGames,
+      awayGames: _pred.awayGames,
+      players: live,
+      baseHome: _pred.baseHome,
+      baseAway: _pred.baseAway,
+      live: _pred.live,
+    );
+  }
+
+  Future<void> _refreshLive() async {
+    try {
+      final box = await EspnApi.summary(game.league, game.eventId, finished: game.isFinal, live: game.isLive);
+      Game? fresh;
+      if (game.isLive) fresh = await EspnApi.refreshGame(game);
+      if (!mounted) return;
+      setState(() {
+        _box = box;
+        if (fresh != null) {
+          _game = fresh;
+          final model = ModelStore.instance.cached(game.league);
+          if (model != null) {
+            _pred = Predictor(model).predict(fresh, sims: _pred.simCount);
+          }
+          if (!fresh.isLive) _liveTimer?.cancel();
+        }
+        _applyLiveProps();
+        _cands = _pred.candidateLegs(minProb: 0.5);
+        _multis = game.isFinal ? [] : _pred.suggestMultis(perSize: 2)
+          ..sort((a, b) => b.prob.compareTo(a.prob));
+      });
+    } catch (_) {}
   }
 
   Future<void> _buildAi(int legs) async {
@@ -90,6 +155,7 @@ class _GameScreenState extends State<GameScreen> {
       final home = await EspnApi.recentPlayerLines(game.league, model, game.home.id);
       final away = await EspnApi.recentPlayerLines(game.league, model, game.away.id);
       final players = PlayerProps.project(game: game, model: model, homeLines: home, awayLines: away, injuries: _injuries, maxPlayersPerTeam: 9);
+      _preProps = players;
       _pred = GamePrediction(
         game: game,
         muHome: _pred.muHome,
@@ -105,6 +171,7 @@ class _GameScreenState extends State<GameScreen> {
         baseAway: _pred.baseAway,
         live: _pred.live,
       );
+      _applyLiveProps();
       _playersNote = players.isEmpty ? 'No recent box scores found for player props.' : null;
       _recompute();
     } catch (_) {
@@ -124,6 +191,11 @@ class _GameScreenState extends State<GameScreen> {
       appBar: AppBar(title: Text('${game.away.abbr} @ ${game.home.abbr}')),
       body: ListView(padding: const EdgeInsets.fromLTRB(12, 0, 12, 32), children: [
         _header(p),
+        if (game.isLive || game.isFinal) ...[
+          SectionTitle(game.isLive ? 'Live box score' : 'Box score',
+              trailing: game.isLive ? const Muted('updates every 30s') : null),
+          _liveBox(p),
+        ],
         if (!game.isFinal) ...[
           const SizedBox(height: 10),
           _aiCard(),
@@ -320,6 +392,134 @@ class _GameScreenState extends State<GameScreen> {
           ),
         ),
       );
+
+  Widget _liveBox(GamePrediction p) {
+    final box = _box;
+    if (box == null) return const Padding(padding: EdgeInsets.all(8), child: Muted('Loading box score...'));
+    final teams = [game.away, game.home];
+    final team = teams[_boxTeam];
+    final tables = box.tables.where((t) => t.teamId == team.id).toList();
+    final remaining = game.remainingFraction();
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Row(children: [
+        for (var i = 0; i < 2; i++)
+          Padding(
+            padding: const EdgeInsets.only(right: 8),
+            child: ChoiceChip(
+              label: Text(teams[i].abbr),
+              selected: _boxTeam == i,
+              visualDensity: VisualDensity.compact,
+              onSelected: (_) => setState(() => _boxTeam = i),
+            ),
+          ),
+        const Spacer(),
+        if (game.isLive && tables.any((t) => t.rows.any((r) => r.onField)))
+          const Row(children: [Icon(Icons.circle, size: 8, color: EdgeColors.win), SizedBox(width: 4), Muted('on court / pitch')]),
+      ]),
+      const SizedBox(height: 8),
+      if (tables.isEmpty) const Muted('No player box score for this competition yet.'),
+      if (game.league.hasPlayerProps && tables.isNotEmpty && _preProps.isNotEmpty)
+        _basketballLive(p, team, tables.first, remaining)
+      else
+        for (final t in tables) _genericTable(t),
+    ]);
+  }
+
+  /// Basketball: each player's live numbers against their expected line.
+  Widget _basketballLive(GamePrediction p, TeamRef team, BoxTable t, double remaining) {
+    final side = team.id == game.home.id ? Side.home : Side.away;
+    final rows = t.rows.where((r) => !r.dnp).toList()
+      ..sort((a, b) {
+        final c = (b.onField ? 1 : 0).compareTo(a.onField ? 1 : 0);
+        return c != 0 ? c : b.statNum(t.columns, 'MIN').compareTo(a.statNum(t.columns, 'MIN'));
+      });
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(12, 6, 12, 6),
+        child: Column(children: [
+          for (final r in rows)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 6),
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Row(children: [
+                  if (r.onField) const Padding(padding: EdgeInsets.only(right: 6), child: Icon(Icons.circle, size: 8, color: EdgeColors.win)),
+                  Expanded(child: Text(r.name, style: const TextStyle(fontWeight: FontWeight.w700))),
+                  Muted('${r.stat(t.columns, 'MIN')} min · ${r.stat(t.columns, 'PTS')} pts · ${r.stat(t.columns, 'REB')} reb · ${r.stat(t.columns, 'AST')} ast'),
+                ]),
+                Builder(builder: (_) {
+                  final projs = _preProps.where((x) => x.name == r.name && x.side == side).toList();
+                  if (projs.isEmpty) return const SizedBox();
+                  final played = r.statNum(t.columns, 'MIN') > 0;
+                  return Padding(
+                    padding: const EdgeInsets.only(top: 4),
+                    child: Wrap(spacing: 6, runSpacing: 4, children: [
+                      for (final pr in projs)
+                        Builder(builder: (_) {
+                          final cur = switch (pr.stat) {
+                            'PTS' => r.statNum(t.columns, 'PTS'),
+                            'REB' => r.statNum(t.columns, 'REB'),
+                            'AST' => r.statNum(t.columns, 'AST'),
+                            '3PM' => r.statNum(t.columns, '3PT'),
+                            _ => r.statNum(t.columns, 'PTS') + r.statNum(t.columns, 'REB') + r.statNum(t.columns, 'AST'),
+                          };
+                          final line = pr.line;
+                          final prob = game.isFinal ? (cur >= line ? 1.0 : 0.0) : GamePrediction.liveReachProb(pr, cur, line, remaining, played: played);
+                          final c = probColor(prob);
+                          return Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                            decoration: BoxDecoration(color: c.withValues(alpha: 0.14), borderRadius: BorderRadius.circular(8)),
+                            child: Text('${pr.stat} ${num1(cur)} → ${num1(line)}  ${pct(prob)}',
+                                style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: c)),
+                          );
+                        }),
+                    ]),
+                  );
+                }),
+              ]),
+            ),
+          const Padding(padding: EdgeInsets.only(top: 4), child: Muted('now → expected line, with the live chance of getting there')),
+        ]),
+      ),
+    );
+  }
+
+  Widget _genericTable(BoxTable t) {
+    final cols = t.columns.take(8).toList();
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Card(
+        child: Padding(
+          padding: const EdgeInsets.all(10),
+          child: SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: DataTable(
+              headingRowHeight: 32,
+              dataRowMinHeight: 30,
+              dataRowMaxHeight: 34,
+              columnSpacing: 14,
+              horizontalMargin: 4,
+              headingTextStyle: const TextStyle(color: EdgeColors.muted, fontSize: 11, fontWeight: FontWeight.w700),
+              dataTextStyle: const TextStyle(fontSize: 12.5),
+              columns: [
+                DataColumn(label: Text(t.title)),
+                for (final c in cols) DataColumn(label: Text(c)),
+              ],
+              rows: [
+                for (final r in t.rows.where((r) => !r.dnp || !game.isLive))
+                  DataRow(cells: [
+                    DataCell(Row(children: [
+                      if (r.onField) const Padding(padding: EdgeInsets.only(right: 4), child: Icon(Icons.circle, size: 7, color: EdgeColors.win)),
+                      Text(r.position.isNotEmpty ? '${r.name} (${r.position})' : r.name, style: const TextStyle(fontWeight: FontWeight.w600)),
+                    ])),
+                    for (var i = 0; i < cols.length; i++) DataCell(Text(i < r.stats.length ? r.stats[i] : '')),
+                  ]),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 
   Widget _aiCard() {
     final m = _aiMulti;

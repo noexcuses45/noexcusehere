@@ -6,6 +6,8 @@ import 'package:formline/engine/stats.dart';
 import 'package:formline/models/game.dart';
 import 'package:formline/models/league.dart';
 import 'package:formline/models/race.dart';
+import 'package:formline/engine/player_props.dart';
+import 'package:formline/services/espn_api.dart';
 
 void main() {
   group('Stats', () {
@@ -144,6 +146,28 @@ void main() {
       final m3 = p.buildMulti(3);
       expect(m3.legs.length, 3);
       expect(m3.prob, greaterThanOrEqualTo(m.prob));
+    });
+
+    test('live reach probability behaves sensibly', () {
+      final pr = PlayerProjection(name: 'X', side: Side.home, stat: 'PTS', mean: 20, sd: 6);
+      expect(GamePrediction.liveReachProb(pr, 22, 19.5, 0.5), 1);
+      expect(GamePrediction.liveReachProb(pr, 5, 19.5, 0), 0);
+      final half = GamePrediction.liveReachProb(pr, 10, 19.5, 0.5);
+      expect(half, closeTo(0.5, 0.1)); // on pace: needs 9.5 more with 10 expected
+      expect(GamePrediction.liveReachProb(pr, 4, 19.5, 0.5), lessThan(half));
+      expect(GamePrediction.liveReachProb(pr, 0, 19.5, 0.3, played: false), lessThan(GamePrediction.liveReachProb(pr, 0, 19.5, 0.3)));
+    });
+
+    test('live-adjusted projections add current stats to the remaining share', () {
+      final pre = [PlayerProjection(name: 'Star', side: Side.home, stat: 'PTS', mean: 20, sd: 6), PlayerProjection(name: 'Out', side: Side.home, stat: 'PTS', mean: 10, sd: 4)];
+      final table = BoxTable(teamId: 'H', teamAbbr: 'H', title: 'Players', columns: ['MIN', 'PTS'], rows: [
+        BoxRow(name: 'Star', stats: ['18', '14'], active: true),
+        BoxRow(name: 'Out', stats: [], dnp: true),
+      ]);
+      final live = PlayerProps.liveAdjust(pre, tables: [table], homeTeamId: 'H', awayTeamId: 'A', remaining: 0.5);
+      expect(live.length, 1);
+      expect(live.first.mean, closeTo(24, 1e-9));
+      expect(live.first.sd, closeTo(6 * 0.7071, 1e-3));
     });
 
     test('live game projection respects points on the board', () {

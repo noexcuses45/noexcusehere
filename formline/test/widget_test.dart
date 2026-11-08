@@ -3,6 +3,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:formline/models/league.dart';
+import 'package:formline/services/espn_api.dart';
 import 'package:formline/theme.dart';
 
 void main() {
@@ -14,6 +15,59 @@ void main() {
     for (final id in Leagues.defaultFavourites) {
       expect(Leagues.byId(id), isNotNull, reason: id);
     }
+  });
+
+  test('box score parser handles basketball players and soccer rosters', () {
+    final summary = EventSummary.parse({
+      'header': {
+        'competitions': [
+          {
+            'date': '2026-11-08T09:00Z',
+            'status': {'type': {'completed': false}},
+            'competitors': [
+              {'homeAway': 'home', 'score': '55'},
+              {'homeAway': 'away', 'score': '50'}
+            ]
+          }
+        ]
+      },
+      'boxscore': {
+        'players': [
+          {
+            'team': {'id': '1', 'abbreviation': 'AAA'},
+            'statistics': [
+              {
+                'names': ['MIN', 'PTS', 'REB'],
+                'athletes': [
+                  {'athlete': {'displayName': 'On Court'}, 'active': true, 'starter': true, 'stats': ['20', '12', '4']},
+                  {'athlete': {'displayName': 'Benched'}, 'active': false, 'didNotPlay': true, 'stats': []},
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      'rosters': [
+        {
+          'team': {'id': '7', 'abbreviation': 'SOC'},
+          'roster': [
+            {'athlete': {'displayName': 'Keeper'}, 'starter': true, 'active': true, 'position': {'abbreviation': 'G'}, 'stats': [{'abbreviation': 'SV', 'displayValue': '3'}]},
+            {'athlete': {'displayName': 'Subbed'}, 'starter': true, 'subbedOut': true, 'stats': []},
+            {'athlete': {'displayName': 'Sub On'}, 'subbedIn': true, 'stats': [{'abbreviation': 'G', 'displayValue': '1'}]},
+            {'athlete': {'displayName': 'Unused'}, 'stats': []},
+          ]
+        }
+      ]
+    });
+    final hoops = summary.tables.firstWhere((t) => t.teamId == '1');
+    expect(hoops.rows.first.onField, isTrue);
+    expect(hoops.rows.first.statNum(hoops.columns, 'PTS'), 12);
+    expect(hoops.rows.last.dnp, isTrue);
+    final soccer = summary.tables.firstWhere((t) => t.teamId == '7');
+    final onPitch = soccer.rows.where((r) => r.onField).map((r) => r.name).toSet();
+    expect(onPitch, {'Keeper', 'Sub On'});
+    expect(soccer.rows.firstWhere((r) => r.name == 'Keeper').stat(soccer.columns, 'SV'), '3');
+    expect(summary.homeScore, 55);
   });
 
   testWidgets('theme builds a dark material app', (tester) async {

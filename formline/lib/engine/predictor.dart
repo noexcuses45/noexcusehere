@@ -555,6 +555,18 @@ class GamePrediction {
     return Multi(legs: chosen, prob: best, title: '${chosen.length}-leg AI multi');
   }
 
+  /// Live chance a player finishes at or above [line], given [current] so far,
+  /// the pre-game projection and the fraction of the game [remaining].
+  /// [played] is false when the player has not been on yet.
+  static double liveReachProb(PlayerProjection p, double current, double line, double remaining, {bool played = true}) {
+    if (current >= line) return 1;
+    if (remaining <= 0) return 0;
+    final factor = played ? 1.0 : (remaining > 0.75 ? 1.0 : 0.4);
+    final meanRem = p.mean * remaining * factor;
+    final sdRem = math.max(p.sd * math.sqrt(remaining), 0.3);
+    return Stats.normalTail(line - current, meanRem, sdRem);
+  }
+
   /// Plain-English lean on the total at [line].
   String totalLean(double line) {
     final o = probOver(line);

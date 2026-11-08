@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 
 import '../models/game.dart';
+import '../services/espn_api.dart' show BoxTable;
 import 'predictor.dart';
 import 'ratings.dart';
 import 'stats.dart';
@@ -29,6 +30,70 @@ class PlayerGameLine {
 /// Turns recent box scores into projections for the upcoming game.
 class PlayerProps {
   static const stats = ['PTS', 'REB', 'AST', '3PM', 'PRA'];
+
+  /// Current value of [stat] for a box score row.
+  static double currentValue(BoxTable t, String name, String stat) {
+    for (final r in t.rows) {
+      if (r.name != name) continue;
+      switch (stat) {
+        case 'PTS':
+          return r.statNum(t.columns, 'PTS');
+        case 'REB':
+          return r.statNum(t.columns, 'REB');
+        case 'AST':
+          return r.statNum(t.columns, 'AST');
+        case '3PM':
+          return r.statNum(t.columns, '3PT');
+        default:
+          return r.statNum(t.columns, 'PTS') + r.statNum(t.columns, 'REB') + r.statNum(t.columns, 'AST');
+      }
+    }
+    return 0;
+  }
+
+  /// Re-centres pre-game projections on what has already happened:
+  /// final = current + remaining share of the pre-game expectation.
+  static List<PlayerProjection> liveAdjust(
+    List<PlayerProjection> pre, {
+    required List<BoxTable> tables,
+    required String homeTeamId,
+    required String awayTeamId,
+    required double remaining,
+  }) {
+    final out = <PlayerProjection>[];
+    for (final p in pre) {
+      final teamId = p.side == Side.home ? homeTeamId : awayTeamId;
+      BoxTable? table;
+      for (final t in tables) {
+        if (t.teamId == teamId) {
+          table = t;
+          break;
+        }
+      }
+      if (table == null) {
+        out.add(p);
+        continue;
+      }
+      final row = table.rows.where((r) => r.name == p.name).toList();
+      final played = row.isNotEmpty && row.first.statNum(table.columns, 'MIN') > 0;
+      if (row.isNotEmpty && row.first.dnp) continue; // not playing tonight
+      final factor = played ? 1.0 : (remaining > 0.75 ? 1.0 : 0.4);
+      final cur = currentValue(table, p.name, p.stat);
+      out.add(PlayerProjection(
+        name: p.name,
+        side: p.side,
+        stat: p.stat,
+        mean: cur + p.mean * remaining * factor,
+        sd: math.max(p.sd * math.sqrt(remaining), 0.3),
+        games: p.games,
+        minutes: p.minutes,
+        teamCorr: p.teamCorr,
+        lastValues: p.lastValues,
+        flag: p.flag,
+      ));
+    }
+    return out;
+  }
 
   static List<PlayerProjection> project({
     required Game game,
