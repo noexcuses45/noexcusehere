@@ -42,6 +42,13 @@ jobs:
           m.write_text(t)
           EOF
 
+      - name: Use Gradle's own distribution server (GitHub mirror has been flaky)
+        run: |
+          f=android/gradle/wrapper/gradle-wrapper.properties
+          v=$(grep -oE 'gradle-[0-9.]+-(all|bin)\.zip' "$f" | head -1 | sed -E 's/gradle-([0-9.]+)-.*/\1/')
+          sed -i "s|^distributionUrl=.*|distributionUrl=https\\://services.gradle.org/distributions/gradle-${v}-bin.zip|" "$f"
+          cat "$f"
+
       - name: Get dependencies
         run: flutter pub get
 
