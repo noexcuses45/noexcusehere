@@ -42,12 +42,20 @@ jobs:
           m.write_text(t)
           EOF
 
-      - name: Use Gradle's own distribution server (GitHub mirror has been flaky)
+      - name: Fetch Gradle (retry, then fall back to the runner's preinstalled Gradle)
+        working-directory: formline/android
         run: |
-          f=android/gradle/wrapper/gradle-wrapper.properties
-          v=$(grep -oE 'gradle-[0-9.]+-(all|bin)\.zip' "$f" | head -1 | sed -E 's/gradle-([0-9.]+)-.*/\1/')
-          sed -i "s|^distributionUrl=.*|distributionUrl=https\\://services.gradle.org/distributions/gradle-${v}-bin.zip|" "$f"
-          cat "$f"
+          ok=0
+          for i in 1 2 3 4 5 6; do
+            if ./gradlew --version >/dev/null 2>&1; then ok=1; break; fi
+            echo "Gradle download attempt $i failed; retrying in 45s..."
+            sleep 45
+          done
+          if [ "$ok" != "1" ]; then
+            echo "Falling back to the preinstalled Gradle: $(gradle --version | grep Gradle)"
+            printf '#!/bin/sh\nexec gradle "$@"\n' > gradlew
+            chmod +x gradlew
+          fi
 
       - name: Get dependencies
         run: flutter pub get
