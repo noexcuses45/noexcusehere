@@ -2,17 +2,20 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../engine/bookie.dart';
 import '../engine/predictor.dart';
 import '../engine/ratings.dart';
 import '../models/game.dart';
 import '../models/league.dart';
 import '../services/espn_api.dart';
 import '../services/model_store.dart';
+import '../services/odds_api.dart';
 import '../services/picks_store.dart';
 import '../services/settings_service.dart';
 import '../theme.dart';
 import '../widgets/common.dart';
 import 'game_screen.dart';
+import 'settings_screen.dart';
 
 /// Sports tab: pick a league and a day, see live scores, the model's
 /// projections, the best same-game multi per game and the best round multi.
@@ -30,6 +33,8 @@ class _SportsScreenState extends State<SportsScreen> {
   final Map<String, GamePrediction> _preds = {};
   final Map<String, Multi?> _bestSgm = {};
   List<Multi> _roundMultis = [];
+  List<OddsEvent> _odds = [];
+  String? _oddsError;
   bool _loadingGames = false;
   bool _building = false;
   String? _error;
@@ -44,6 +49,7 @@ class _SportsScreenState extends State<SportsScreen> {
     final fav = Settings.instance.favourites;
     if (fav.isNotEmpty) _league = Leagues.byId(fav.first) ?? Leagues.nba;
     ModelStore.instance.addListener(_onStore);
+    Settings.instance.addListener(_onStore);
     _load();
     _timer = Timer.periodic(const Duration(seconds: 30), (_) {
       if (_games.any((g) => g.isLive) || _dayOffset == 0) _refreshScores();
@@ -54,6 +60,7 @@ class _SportsScreenState extends State<SportsScreen> {
   void dispose() {
     _timer?.cancel();
     ModelStore.instance.removeListener(_onStore);
+    Settings.instance.removeListener(_onStore);
     super.dispose();
   }
 
@@ -68,7 +75,10 @@ class _SportsScreenState extends State<SportsScreen> {
       _preds.clear();
       _bestSgm.clear();
       _roundMultis = [];
+      _odds = [];
+      _oddsError = null;
     });
+    _loadOdds(token);
     try {
       final games = await EspnApi.scoreboard(_league, _day);
       if (token != _loadToken) return;
@@ -84,6 +94,27 @@ class _SportsScreenState extends State<SportsScreen> {
         _error = 'Could not load games. Check your connection.';
       });
     }
+  }
+
+  Future<void> _loadOdds(int token) async {
+    if (!Settings.instance.hasOddsKey || _league.oddsKey == null) return;
+    try {
+      final ev = await OddsApi.instance.events(_league);
+      if (token != _loadToken || !mounted) return;
+      setState(() => _odds = ev);
+    } catch (e) {
+      if (token != _loadToken || !mounted) return;
+      setState(() => _oddsError = OddsApi.instance.lastError ?? 'Could not load bookmaker odds.');
+    }
+  }
+
+  BookiePrices? _bookFor(Game g) => OddsApi.match(_odds, g)?.book(Settings.instance.bookie);
+
+  List<PricedLeg> _pricedFor(Game g) {
+    final p = _preds[g.eventId];
+    final b = _bookFor(g);
+    if (p == null || b == null || g.isLive || g.isFinal) return [];
+    return BookieModel.priceLegs(p, b);
   }
 
   Future<void> _refreshScores() async {
@@ -189,6 +220,26 @@ class _SportsScreenState extends State<SportsScreen> {
             ),
         ]),
       ),
+      if (settings.hasOddsKey && _league.oddsKey != null && _odds.isNotEmpty)
+        SizedBox(
+          height: 40,
+          child: ListView(scrollDirection: Axis.horizontal, padding: const EdgeInsets.symmetric(horizontal: 12), children: [
+            for (final b in OddsApi.instance.bookmakers.where((b) => _odds.any((e) => e.books.containsKey(b.key))))
+              Padding(
+                padding: const EdgeInsets.only(right: 8),
+                child: ChoiceChip(
+                  avatar: b.key == settings.bookie ? null : const Icon(Icons.storefront_outlined, size: 14),
+                  label: Text(b.value),
+                  selected: b.key == settings.bookie,
+                  visualDensity: VisualDensity.compact,
+                  onSelected: (_) {
+                    settings.bookie = b.key;
+                    settings.save();
+                  },
+                ),
+              ),
+          ]),
+        ),
       if (progress != null)
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
@@ -216,6 +267,9 @@ class _SportsScreenState extends State<SportsScreen> {
     return RefreshIndicator(
       onRefresh: _load,
       child: ListView(padding: const EdgeInsets.fromLTRB(12, 4, 12, 24), children: [
+        if (!Settings.instance.hasOddsKey && _league.oddsKey != null) _oddsBanner(),
+        if (_oddsError != null) Padding(padding: const EdgeInsets.only(bottom: 8), child: InfoBanner(_oddsError!, icon: Icons.warning_amber_outlined)),
+        if (_odds.isNotEmpty) ...[_bookieCard(), const SizedBox(height: 10)],
         if (_roundMultis.isNotEmpty) _roundCard(),
         if (_building && _roundMultis.isEmpty)
           const Padding(padding: EdgeInsets.all(8), child: Muted('Building best multi for this round...')),
@@ -223,6 +277,141 @@ class _SportsScreenState extends State<SportsScreen> {
         const SizedBox(height: 8),
         const InfoBanner('Predictions come from team scoring ratings fitted to recent results (opponent-adjusted, recency-weighted). Bookmaker lines are shown for comparison only and never feed the model.'),
       ]),
+    );
+  }
+
+  Widget _oddsBanner() {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Card(
+        child: ListTile(
+          leading: const Icon(Icons.storefront_outlined, color: EdgeColors.lime),
+          title: const Text('Compare Sportsbet, TAB, Ladbrokes, Neds and more', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14)),
+          subtitle: const Muted('Add a free Odds API key in Settings and the app will show each bookie\'s prices against the model and the best multi to take with them.'),
+          trailing: const Icon(Icons.chevron_right),
+          onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const SettingsScreen())),
+        ),
+      ),
+    );
+  }
+
+  Widget _bookieCard() {
+    final bookieName = OddsApi.instance.bookTitles[Settings.instance.bookie] ?? Settings.instance.bookie;
+    final perGame = [for (final g in _games) _pricedFor(g)].where((l) => l.isNotEmpty).toList();
+    final multis = BookieModel.bestMultis(perGame);
+    final valueLegs = perGame.expand((l) => l).where((l) => l.edge >= 0.03).toList()..sort((x, y) => y.edge.compareTo(x.edge));
+    if (perGame.isEmpty) {
+      return Card(
+        child: Padding(
+          padding: const EdgeInsets.all(14),
+          child: Muted(_preds.isEmpty ? 'Pricing $bookieName odds against the model...' : '$bookieName has no prices up yet for these games.'),
+        ),
+      );
+    }
+    final BookieMulti? m = multis.isEmpty ? null : multis.firstWhere((x) => x.legs.length == 3, orElse: () => multis.last);
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Row(children: [
+            const Icon(Icons.storefront, color: EdgeColors.lime, size: 20),
+            const SizedBox(width: 8),
+            Expanded(child: Text(m == null ? 'Value at $bookieName' : 'Best multi to take at $bookieName', style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 15))),
+            if (m != null) Text('\$${odds(m.odds)}', style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 18, color: EdgeColors.lime)),
+          ]),
+          if (m != null) ...[
+            const SizedBox(height: 8),
+            for (final l in m.legs) _pricedRow(l),
+            const SizedBox(height: 6),
+            Text('Model chance ${pct(m.prob)} · fair \$${odds(1 / (m.prob > 0 ? m.prob : 0.001))} · value ${m.ev >= 1 ? '+' : ''}${((m.ev - 1) * 100).round()}%',
+                style: TextStyle(fontWeight: FontWeight.w700, color: m.ev >= 1 ? EdgeColors.win : EdgeColors.coral)),
+            const SizedBox(height: 6),
+            Wrap(spacing: 6, children: [
+              for (final x in multis)
+                ActionChip(
+                  label: Text('${x.legs.length} legs \$${odds(x.odds)} · ${pct(x.prob)}'),
+                  visualDensity: VisualDensity.compact,
+                  onPressed: () => _showBookieMulti(x, bookieName),
+                ),
+            ]),
+          ] else
+            const Padding(padding: EdgeInsets.only(top: 6), child: Muted('Only one game priced, so no multi yet.')),
+          if (valueLegs.isNotEmpty) ...[
+            const Divider(height: 18),
+            Text('Value singles at $bookieName', style: const TextStyle(fontWeight: FontWeight.w700)),
+            const SizedBox(height: 4),
+            for (final l in valueLegs.take(4)) _pricedRow(l),
+          ],
+          const SizedBox(height: 4),
+          const Muted('Same-game multi prices are set inside the bookie app; these are their single-leg prices, combined as a normal multi.'),
+        ]),
+      ),
+    );
+  }
+
+  Widget _pricedRow(PricedLeg l) {
+    final g = l.game.game;
+    final good = l.edge >= 0.03;
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 3),
+      child: Row(children: [
+        Icon(good ? Icons.trending_up : Icons.remove, size: 16, color: good ? EdgeColors.win : EdgeColors.muted),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text(l.leg.label, style: const TextStyle(fontWeight: FontWeight.w600)),
+            Muted('${g.away.abbr} @ ${g.home.abbr} · model ${pct(l.leg.prob)} · fair \$${odds(l.fairOdds)}'),
+          ]),
+        ),
+        Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
+          Text('\$${odds(l.odds)}', style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 15)),
+          Text('${l.edge >= 0 ? '+' : ''}${(l.edge * 100).round()}%', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: good ? EdgeColors.win : EdgeColors.muted)),
+        ]),
+      ]),
+    );
+  }
+
+  void _showBookieMulti(BookieMulti m, String bookieName) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: EdgeColors.navyCard,
+      builder: (_) => Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Row(children: [
+            Expanded(child: Text('${m.legs.length}-leg multi at $bookieName', style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16))),
+            Text('\$${odds(m.odds)}', style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 18, color: EdgeColors.lime)),
+          ]),
+          const SizedBox(height: 8),
+          for (final l in m.legs) _pricedRow(l),
+          const SizedBox(height: 8),
+          Muted('Model chance ${pct(m.prob)} · value ${m.ev >= 1 ? '+' : ''}${((m.ev - 1) * 100).round()}%'),
+          const SizedBox(height: 12),
+          FilledButton.icon(
+            onPressed: () async {
+              Navigator.pop(context);
+              for (final l in m.legs) {
+                await PicksStore.instance.add(Pick(
+                  id: '${DateTime.now().microsecondsSinceEpoch}-${l.leg.key.hashCode}',
+                  kind: 'sport',
+                  createdAt: DateTime.now(),
+                  title: '${l.game.game.away.abbr} @ ${l.game.game.home.abbr}: ${l.leg.label}',
+                  detail: '$bookieName multi leg · ${_league.name}',
+                  prob: l.leg.prob,
+                  leagueId: _league.id,
+                  eventId: l.game.game.eventId,
+                  eventDate: l.game.game.date,
+                  legs: [l.leg],
+                  bookOdds: l.odds,
+                ));
+              }
+              if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('${m.legs.length} legs saved to My picks')));
+            },
+            icon: const Icon(Icons.bookmark_add),
+            label: const Text('Save to my picks'),
+          ),
+        ]),
+      ),
     );
   }
 
@@ -366,6 +555,7 @@ class _SportsScreenState extends State<SportsScreen> {
                     padding: const EdgeInsets.only(top: 4),
                     child: Muted('Live projection: ${num1(p.projAway)} - ${num1(p.projHome)} final'),
                   ),
+                ..._bookieLines(g),
                 if (!g.isLive)
                   Align(
                     alignment: Alignment.centerRight,
@@ -399,6 +589,31 @@ class _SportsScreenState extends State<SportsScreen> {
         ),
       ),
     );
+  }
+
+  List<Widget> _bookieLines(Game g) {
+    final b = _bookFor(g);
+    if (b == null) return [];
+    final name = OddsApi.instance.bookTitles[Settings.instance.bookie] ?? Settings.instance.bookie;
+    final priced = _pricedFor(g);
+    final parts = <String>[];
+    if (b.homeWin != null && b.awayWin != null) parts.add('${g.home.abbr} \$${odds(b.homeWin!)} · ${g.away.abbr} \$${odds(b.awayWin!)}');
+    if (b.totalPoint != null && b.over != null) parts.add('O/U ${num1(b.totalPoint!)} \$${odds(b.over!)}/\$${odds(b.under ?? b.over!)}');
+    final best = priced.isEmpty ? null : priced.first;
+    return [
+      const SizedBox(height: 6),
+      Row(children: [
+        const Icon(Icons.storefront_outlined, size: 16, color: EdgeColors.muted),
+        const SizedBox(width: 6),
+        Expanded(child: Text('$name: ${parts.join(' · ')}', style: const TextStyle(fontSize: 12.5, color: EdgeColors.muted))),
+      ]),
+      if (best != null && best.edge >= 0.03)
+        Padding(
+          padding: const EdgeInsets.only(top: 4),
+          child: Text('Best bet at $name: ${best.leg.label} @ \$${odds(best.odds)} · model ${pct(best.leg.prob)} · +${(best.edge * 100).round()}% value',
+              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: EdgeColors.win)),
+        ),
+    ];
   }
 
   Future<void> _askAiLegs(Game g, GamePrediction p) async {

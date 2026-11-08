@@ -46,6 +46,9 @@ class League {
   final List<List<int>> marginBands; // winning margin buckets for multis
 
   String get path => '$sport/$slug';
+
+  /// Sport key at The Odds API, when the competition is covered there.
+  String? get oddsKey => Leagues.oddsKeys[id];
   double get gameMinutes => periods * periodMinutes;
   bool get isPoisson => model == ScoreModel.poisson;
 }
@@ -494,6 +497,40 @@ class Leagues {
     }
     return out;
   }
+
+  /// The Odds API sport keys for competitions it covers.
+  static const oddsKeys = {
+    'nba': 'basketball_nba',
+    'nbl': 'basketball_nbl',
+    'wnba': 'basketball_wnba',
+    'ncaab': 'basketball_ncaab',
+    'nrl': 'rugbyleague_nrl',
+    'afl': 'aussierules_afl',
+    'nfl': 'americanfootball_nfl',
+    'ncaaf': 'americanfootball_ncaaf',
+    'nhl': 'icehockey_nhl',
+    'mlb': 'baseball_mlb',
+    'six-nations': 'rugbyunion_six_nations',
+    'epl': 'soccer_epl',
+    'championship': 'soccer_efl_champ',
+    'laliga': 'soccer_spain_la_liga',
+    'bundesliga': 'soccer_germany_bundesliga',
+    'seriea': 'soccer_italy_serie_a',
+    'ligue1': 'soccer_france_ligue_one',
+    'eredivisie': 'soccer_netherlands_eredivisie',
+    'primeira': 'soccer_portugal_primeira_liga',
+    'scot-prem': 'soccer_spl',
+    'ucl': 'soccer_uefa_champs_league',
+    'uel': 'soccer_uefa_europa_league',
+    'a-league': 'soccer_australia_aleague',
+    'mls': 'soccer_usa_mls',
+    'jleague': 'soccer_japan_j_league',
+    'ligamx': 'soccer_mexico_ligamx',
+    'brasileirao': 'soccer_brazil_campeonato',
+    'saudi': 'soccer_saudi_arabia_pro_league',
+    'super-lig': 'soccer_turkey_super_league',
+    'belgium': 'soccer_belgium_first_div',
+  };
 
   /// Leagues shown on the Live tab unless the user changes them.
   static const defaultFavourites = ['nba', 'nbl', 'nrl', 'afl', 'epl', 'a-league', 'nfl', 'nhl'];

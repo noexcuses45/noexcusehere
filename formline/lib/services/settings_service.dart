@@ -12,7 +12,11 @@ class Settings extends ChangeNotifier {
   bool showMarket = true; // show bookmaker line for comparison
   int sims = 20000;
   String racingCountry = 'AUS';
+  String oddsApiKey = '';
+  String bookie = 'sportsbet'; // The Odds API bookmaker key
   bool loaded = false;
+
+  bool get hasOddsKey => oddsApiKey.trim().isNotEmpty;
 
   Future<void> load() async {
     final p = await SharedPreferences.getInstance();
@@ -20,6 +24,8 @@ class Settings extends ChangeNotifier {
     showMarket = p.getBool('showMarket') ?? showMarket;
     sims = p.getInt('sims') ?? sims;
     racingCountry = p.getString('racingCountry') ?? racingCountry;
+    oddsApiKey = p.getString('oddsApiKey') ?? oddsApiKey;
+    bookie = p.getString('bookie') ?? bookie;
     loaded = true;
     notifyListeners();
   }
@@ -30,6 +36,8 @@ class Settings extends ChangeNotifier {
     await p.setBool('showMarket', showMarket);
     await p.setInt('sims', sims);
     await p.setString('racingCountry', racingCountry);
+    await p.setString('oddsApiKey', oddsApiKey.trim());
+    await p.setString('bookie', bookie);
     notifyListeners();
   }
 
