@@ -383,8 +383,8 @@ class _GameScreenState extends State<GameScreen> {
             ),
           ),
         ],
-        const SectionTitle('How sure is the model?'),
-        InfoBanner(
+        if (!game.isFinal) const SectionTitle('How sure is the model?'),
+        if (!game.isFinal) InfoBanner(
           'Based on ${p.homeGames} ${game.home.abbr} and ${p.awayGames} ${game.away.abbr} rated games. '
           'Confidence ${pct(p.confidence)}. Scores are modelled as ${p.poisson ? 'Poisson goals' : 'correlated normal totals (ρ ${p.rho.toStringAsFixed(2)})'}.'
           '${_injuries.isNotEmpty ? '\nInjury list: ${_injuries.entries.take(6).map((e) => '${e.key} (${e.value})').join(', ')}' : ''}',

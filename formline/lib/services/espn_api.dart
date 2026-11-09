@@ -264,8 +264,16 @@ class EspnApi {
   /// [live] fetches fresh data every 20 seconds without persisting it.
   static Future<EventSummary> summary(League league, String eventId, {bool finished = false, bool live = false}) async {
     final ttl = live ? const Duration(seconds: 20) : (finished ? const Duration(days: 60) : const Duration(minutes: 15));
-    final j = await _getJson('$_base/${league.path}/summary?event=$eventId', ttl: ttl, cacheKey: 'sum:${league.id}:$eventId');
-    return EventSummary.parse(j);
+    // Finished games get their own cache entry, so a summary cached before
+    // tip-off (no box score yet) is never served back after the final.
+    final cacheKey = finished ? 'sumfinal:${league.id}:$eventId' : 'sum:${league.id}:$eventId';
+    final j = await _getJson('$_base/${league.path}/summary?event=$eventId', ttl: ttl, cacheKey: cacheKey);
+    final parsed = EventSummary.parse(j);
+    if (finished && !parsed.completed) {
+      // ESPN has not flipped the game to final yet: do not keep this for 60 days.
+      await Cache.put(cacheKey, j, persist: false);
+    }
+    return parsed;
   }
 
   /// Latest scoreboard entry for one event (score, clock, state).
