@@ -51,8 +51,24 @@ class Calibration {
       totalScale: 1.00,
       marginScale: 1.00,
     ),
+    'championship': ModelParams(
+      halfLifeMult: 1.0,
+      k0: 16.0,
+      longMix: 0.3,
+      kAvg: 60.0,
+      totalScale: 1.00,
+      marginScale: 1.00,
+    ),
     'epl': ModelParams(
       halfLifeMult: 4.0,
+      k0: 16.0,
+      longMix: 0.3,
+      kAvg: 60.0,
+      totalScale: 1.00,
+      marginScale: 1.00,
+    ),
+    'jleague': ModelParams(
+      halfLifeMult: 2.0,
       k0: 16.0,
       longMix: 0.3,
       kAvg: 60.0,
@@ -75,6 +91,14 @@ class Calibration {
       totalScale: 1.00,
       marginScale: 1.00,
     ),
+    'mlb': ModelParams(
+      halfLifeMult: 1.0,
+      k0: 16.0,
+      longMix: 0.3,
+      kAvg: 60.0,
+      totalScale: 1.00,
+      marginScale: 1.00,
+    ),
     'mls': ModelParams(
       halfLifeMult: 2.0,
       k0: 16.0,
@@ -82,6 +106,14 @@ class Calibration {
       kAvg: 2.0,
       totalScale: 1.00,
       marginScale: 1.00,
+    ),
+    'nba': ModelParams(
+      halfLifeMult: 1.0,
+      k0: 4.0,
+      longMix: 0.0,
+      kAvg: 60.0,
+      totalScale: 1.13,
+      marginScale: 1.10,
     ),
     'nbl': ModelParams(
       halfLifeMult: 2.0,
@@ -99,6 +131,14 @@ class Calibration {
       totalScale: 1.13,
       marginScale: 1.09,
     ),
+    'nhl': ModelParams(
+      halfLifeMult: 1.0,
+      k0: 16.0,
+      longMix: 0.3,
+      kAvg: 2.0,
+      totalScale: 1.00,
+      marginScale: 1.00,
+    ),
     'nrl': ModelParams(
       halfLifeMult: 1.0,
       k0: 8.0,
@@ -106,6 +146,14 @@ class Calibration {
       kAvg: 20.0,
       totalScale: 1.06,
       marginScale: 1.07,
+    ),
+    'prem-rugby': ModelParams(
+      halfLifeMult: 4.0,
+      k0: 4.0,
+      longMix: 0.3,
+      kAvg: 2.0,
+      totalScale: 1.12,
+      marginScale: 1.11,
     ),
     'seriea': ModelParams(
       halfLifeMult: 1.0,
@@ -123,6 +171,14 @@ class Calibration {
       totalScale: 1.08,
       marginScale: 1.11,
     ),
+    'top14': ModelParams(
+      halfLifeMult: 2.0,
+      k0: 2.0,
+      longMix: 0.0,
+      kAvg: 2.0,
+      totalScale: 1.08,
+      marginScale: 1.14,
+    ),
     'ucl': ModelParams(
       halfLifeMult: 4.0,
       k0: 8.0,
@@ -130,6 +186,14 @@ class Calibration {
       kAvg: 2.0,
       totalScale: 1.00,
       marginScale: 1.00,
+    ),
+    'urc': ModelParams(
+      halfLifeMult: 4.0,
+      k0: 2.0,
+      longMix: 0.3,
+      kAvg: 60.0,
+      totalScale: 1.02,
+      marginScale: 1.13,
     ),
     'wnba': ModelParams(
       halfLifeMult: 2.0,
@@ -144,8 +208,8 @@ class Calibration {
   /// Typical settings per sport for competitions that were not backtested.
   static const Map<String, ModelParams> groups = {
     'Soccer': ModelParams(
-      halfLifeMult: 4.0,
-      k0: 8.0,
+      halfLifeMult: 3.0,
+      k0: 12.0,
       longMix: 0.3,
       kAvg: 60.0,
       totalScale: 1.00,
@@ -159,13 +223,21 @@ class Calibration {
       totalScale: 1.09,
       marginScale: 1.03,
     ),
+    'Baseball': ModelParams(
+      halfLifeMult: 1.0,
+      k0: 16.0,
+      longMix: 0.3,
+      kAvg: 60.0,
+      totalScale: 1.00,
+      marginScale: 1.00,
+    ),
     'Basketball': ModelParams(
       halfLifeMult: 2.0,
       k0: 4.0,
       longMix: 0.0,
       kAvg: 2.0,
-      totalScale: 1.08,
-      marginScale: 1.05,
+      totalScale: 1.11,
+      marginScale: 1.07,
     ),
     'American Football': ModelParams(
       halfLifeMult: 2.0,
@@ -174,6 +246,14 @@ class Calibration {
       kAvg: 2.0,
       totalScale: 1.13,
       marginScale: 1.09,
+    ),
+    'Ice Hockey': ModelParams(
+      halfLifeMult: 1.0,
+      k0: 16.0,
+      longMix: 0.3,
+      kAvg: 2.0,
+      totalScale: 1.00,
+      marginScale: 1.00,
     ),
     'Rugby League': ModelParams(
       halfLifeMult: 1.0,
@@ -185,11 +265,11 @@ class Calibration {
     ),
     'Rugby Union': ModelParams(
       halfLifeMult: 4.0,
-      k0: 4.0,
+      k0: 3.0,
       longMix: 0.3,
       kAvg: 2.0,
       totalScale: 1.08,
-      marginScale: 1.11,
+      marginScale: 1.12,
     ),
   };
 
@@ -221,6 +301,15 @@ class Calibration {
       won: [0.588, 0.653, 0.765, 0.917, 0.750],
       binN: [148, 124, 85, 48, 8],
     ),
+    'championship': BacktestResult(
+      games: 995,
+      accuracy: 0.6185,
+      totalRmse: 1.52,
+      baseTotalRmse: 1.51,
+      said: [0.550, 0.642, 0.738, 0.823, 0.000],
+      won: [0.559, 0.613, 0.789, 1.000, 0.000],
+      binN: [345, 282, 90, 17, 0],
+    ),
     'epl': BacktestResult(
       games: 671,
       accuracy: 0.6720,
@@ -229,6 +318,15 @@ class Calibration {
       said: [0.549, 0.645, 0.749, 0.847, 0.913],
       won: [0.569, 0.677, 0.822, 0.962, 1.000],
       binN: [216, 164, 90, 26, 1],
+    ),
+    'jleague': BacktestResult(
+      games: 706,
+      accuracy: 0.6558,
+      totalRmse: 1.63,
+      baseTotalRmse: 1.63,
+      said: [0.547, 0.648, 0.730, 0.000, 0.000],
+      won: [0.586, 0.731, 0.769, 0.000, 0.000],
+      binN: [285, 186, 52, 0, 0],
     ),
     'laliga': BacktestResult(
       games: 692,
@@ -248,6 +346,15 @@ class Calibration {
       won: [0.561, 0.703, 0.707, 0.905, 1.000],
       binN: [148, 128, 99, 42, 8],
     ),
+    'mlb': BacktestResult(
+      games: 4824,
+      accuracy: 0.5491,
+      totalRmse: 4.51,
+      baseTotalRmse: 4.54,
+      said: [0.546, 0.641, 0.736, 0.822, 0.000],
+      won: [0.522, 0.572, 0.654, 0.833, 0.000],
+      binN: [3036, 1385, 361, 42, 0],
+    ),
     'mls': BacktestResult(
       games: 1009,
       accuracy: 0.6360,
@@ -256,6 +363,15 @@ class Calibration {
       said: [0.549, 0.645, 0.736, 0.820, 0.000],
       won: [0.551, 0.706, 0.697, 0.800, 0.000],
       binN: [336, 262, 142, 10, 0],
+    ),
+    'nba': BacktestResult(
+      games: 2328,
+      accuracy: 0.6680,
+      totalRmse: 20.34,
+      baseTotalRmse: 21.68,
+      said: [0.550, 0.647, 0.744, 0.837, 0.914],
+      won: [0.561, 0.684, 0.789, 0.856, 0.933],
+      binN: [968, 721, 436, 188, 15],
     ),
     'nbl': BacktestResult(
       games: 294,
@@ -275,6 +391,15 @@ class Calibration {
       won: [0.571, 0.634, 0.722, 0.758, 1.000],
       binN: [191, 145, 90, 33, 3],
     ),
+    'nhl': BacktestResult(
+      games: 2507,
+      accuracy: 0.5612,
+      totalRmse: 2.30,
+      baseTotalRmse: 2.30,
+      said: [0.546, 0.638, 0.728, 0.809, 0.000],
+      won: [0.523, 0.637, 0.709, 1.000, 0.000],
+      binN: [1714, 713, 79, 1, 0],
+    ),
     'nrl': BacktestResult(
       games: 409,
       accuracy: 0.6127,
@@ -283,6 +408,15 @@ class Calibration {
       said: [0.549, 0.645, 0.729, 0.817, 0.000],
       won: [0.582, 0.643, 0.686, 1.000, 0.000],
       binN: [232, 140, 35, 1, 0],
+    ),
+    'prem-rugby': BacktestResult(
+      games: 156,
+      accuracy: 0.7355,
+      totalRmse: 18.33,
+      baseTotalRmse: 18.55,
+      said: [0.545, 0.651, 0.741, 0.832, 0.946],
+      won: [0.625, 0.692, 0.821, 0.882, 1.000],
+      binN: [48, 52, 28, 17, 10],
     ),
     'seriea': BacktestResult(
       games: 685,
@@ -302,6 +436,15 @@ class Calibration {
       won: [0.625, 0.643, 0.833, 0.774, 1.000],
       binN: [48, 42, 36, 31, 2],
     ),
+    'top14': BacktestResult(
+      games: 329,
+      accuracy: 0.7882,
+      totalRmse: 15.98,
+      baseTotalRmse: 16.76,
+      said: [0.546, 0.651, 0.747, 0.842, 0.942],
+      won: [0.618, 0.777, 0.795, 0.898, 0.900],
+      binN: [55, 94, 83, 59, 30],
+    ),
     'ucl': BacktestResult(
       games: 306,
       accuracy: 0.7461,
@@ -310,6 +453,15 @@ class Calibration {
       said: [0.547, 0.647, 0.746, 0.837, 0.927],
       won: [0.656, 0.725, 0.792, 0.963, 1.000],
       binN: [90, 80, 53, 27, 6],
+    ),
+    'urc': BacktestResult(
+      games: 258,
+      accuracy: 0.6964,
+      totalRmse: 14.20,
+      baseTotalRmse: 14.57,
+      said: [0.547, 0.649, 0.744, 0.842, 0.932],
+      won: [0.467, 0.587, 0.860, 0.840, 0.941],
+      binN: [60, 63, 57, 50, 17],
     ),
     'wnba': BacktestResult(
       games: 608,
