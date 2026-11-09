@@ -7,7 +7,9 @@ import 'package:formline/engine/bookie.dart';
 import 'package:formline/engine/predictor.dart';
 import 'package:formline/models/game.dart';
 import 'package:formline/services/espn_api.dart';
+import 'package:formline/engine/ratings.dart';
 import 'package:formline/services/odds_api.dart';
+import 'package:formline/services/prediction_log.dart';
 import 'package:formline/theme.dart';
 
 void main() {
@@ -107,6 +109,55 @@ void main() {
     final multis = BookieModel.bestMultis([priced, priced]);
     expect(multis.first.legs.length, 2);
     expect(multis.first.odds, closeTo(priced.first.odds * priced.first.odds, 1e-9));
+  });
+
+  test('prediction log grades games and self-corrects a league running hot', () {
+    final log = PredictionLog.instance;
+    log.games.clear();
+    for (var i = 0; i < 40; i++) {
+      // Model said home 60%, total 220; home wins 3 of 4, totals land 6 over.
+      final homeWins = i % 4 != 0;
+      log.games['g$i'] = LoggedGame(
+        leagueId: 'nba',
+        eventId: 'g$i',
+        date: DateTime(2026, 11, 1).add(Duration(hours: i)),
+        home: 'H',
+        away: 'A',
+        rawHome: 112,
+        rawAway: 108,
+        pHome: 0.6,
+        pAway: 0.4,
+        marketTotal: 223.5,
+        marketSpread: -2.5,
+        homeScore: homeWins ? 118 : 108,
+        awayScore: homeWins ? 108 : 118,
+      );
+    }
+    final r = log.leagueRecords['nba']!;
+    expect(r.n, 40);
+    expect(r.accuracy, closeTo(0.75, 1e-9));
+    expect(r.expected, closeTo(0.6, 1e-9));
+    expect(r.bias, closeTo(6, 1e-9));
+    expect(r.ouWins + r.ouLosses, 40); // model 220 vs line 223.5 = under; actual 226 = over
+    expect(r.ouLosses, 40);
+    expect(r.atsWins, 30); // model margin +4 covers -2.5; home won by 10 in 30 games
+    final bias = log.totalBias(Leagues.nba);
+    expect(bias, closeTo(6 * 40 / 80, 1e-9)); // shrunk toward zero
+    final model = LeagueModel(Leagues.nba)..fit([]);
+    final (h0, a0) = model.expected('x', 'y');
+    model.totalBias = bias;
+    final (h1, a1) = model.expected('x', 'y');
+    expect((h1 + a1) - (h0 + a0), closeTo(bias, 1e-9));
+    log.games.clear();
+  });
+
+  test('calibrated spreads keep totals and margins consistent', () {
+    final base = LeagueModel(Leagues.nba, params: const ModelParams())..fit([]);
+    final wide = LeagueModel(Leagues.nba, params: const ModelParams(totalScale: 1.2, marginScale: 1.1))..fit([]);
+    double sdT(LeagueModel m) => m.teamSd * m.teamSd * 2 * (1 + m.rho);
+    double sdM(LeagueModel m) => m.teamSd * m.teamSd * 2 * (1 - m.rho);
+    expect(sdT(wide) / sdT(base), closeTo(1.44, 1e-6));
+    expect(sdM(wide) / sdM(base), closeTo(1.21, 1e-6));
   });
 
   testWidgets('theme builds a dark material app', (tester) async {

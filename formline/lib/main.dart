@@ -4,7 +4,9 @@ import 'screens/picks_screen.dart';
 import 'screens/racing_screen.dart';
 import 'screens/settings_screen.dart';
 import 'screens/sports_screen.dart';
+import 'services/model_store.dart';
 import 'services/picks_store.dart';
+import 'services/prediction_log.dart';
 import 'services/settings_service.dart';
 import 'services/update_service.dart';
 import 'theme.dart';
@@ -13,6 +15,9 @@ Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Settings.instance.load();
   await PicksStore.instance.load();
+  await PredictionLog.instance.load();
+  // Grade yesterday's predictions quietly, then refresh the self-correction.
+  PredictionLog.instance.gradePending().then((_) => ModelStore.instance.refreshBias()).catchError((_) {});
   runApp(const FormlineApp());
 }
 

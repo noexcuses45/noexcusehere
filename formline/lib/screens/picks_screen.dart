@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../services/picks_store.dart';
 import '../theme.dart';
 import '../widgets/common.dart';
+import 'record_view.dart';
 
 /// Saved picks and the model's honest track record.
 class PicksScreen extends StatefulWidget {
@@ -14,6 +15,7 @@ class PicksScreen extends StatefulWidget {
 
 class _PicksScreenState extends State<PicksScreen> {
   bool _grading = false;
+  bool _showRecord = false;
 
   @override
   void initState() {
@@ -42,6 +44,20 @@ class _PicksScreenState extends State<PicksScreen> {
     final picks = store.picks;
     final graded = store.wins + store.losses;
     final avgProb = graded == 0 ? 0.0 : picks.where((p) => p.result == 'win' || p.result == 'loss').map((p) => p.prob).reduce((a, b) => a + b) / graded;
+    return Column(children: [
+      Padding(
+        padding: const EdgeInsets.fromLTRB(12, 4, 12, 0),
+        child: Row(children: [
+          ChoiceChip(label: const Text('My picks'), selected: !_showRecord, onSelected: (_) => setState(() => _showRecord = false)),
+          const SizedBox(width: 8),
+          ChoiceChip(label: const Text('Model record'), selected: _showRecord, onSelected: (_) => setState(() => _showRecord = true)),
+        ]),
+      ),
+      Expanded(child: _showRecord ? const RecordView() : _picksList(store, picks, graded, avgProb)),
+    ]);
+  }
+
+  Widget _picksList(PicksStore store, List<Pick> picks, int graded, double avgProb) {
     return RefreshIndicator(
       onRefresh: _grade,
       child: ListView(padding: const EdgeInsets.fromLTRB(12, 8, 12, 24), children: [

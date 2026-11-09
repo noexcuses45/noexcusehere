@@ -62,7 +62,7 @@ void main() {
     });
 
     test('empty data falls back to priors', () {
-      final m = LeagueModel(Leagues.nrl)..fit([]);
+      final m = LeagueModel(Leagues.nrl, params: const ModelParams())..fit([]);
       final (h, a) = m.expected('x', 'y');
       expect(h + a, closeTo(2 * Leagues.nrl.priorTeamScore, 1e-6));
       expect(m.teamSd, closeTo(Leagues.nrl.priorTeamSd, 1e-6));

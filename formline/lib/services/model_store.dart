@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 import '../engine/ratings.dart';
 import '../models/league.dart';
 import 'espn_api.dart';
+import 'prediction_log.dart';
 
 /// Keeps fitted league models in memory and reports build progress.
 class ModelStore extends ChangeNotifier {
@@ -15,6 +16,13 @@ class ModelStore extends ChangeNotifier {
 
   LeagueModel? cached(League league) => _models[league.id];
 
+  /// Re-reads the self-correction after new results have been graded.
+  void refreshBias() {
+    for (final m in _models.values) {
+      m.totalBias = PredictionLog.instance.totalBias(m.league);
+    }
+  }
+
   Future<LeagueModel> model(League league, {bool force = false}) {
     if (!force) {
       final m = _models[league.id];
@@ -26,6 +34,7 @@ class ModelStore extends ChangeNotifier {
       progress[league.id] = (d, t);
       notifyListeners();
     }).then((m) {
+      m.totalBias = PredictionLog.instance.totalBias(league);
       _models[league.id] = m;
       _inflight.remove(league.id);
       progress.remove(league.id);

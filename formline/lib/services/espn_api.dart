@@ -125,39 +125,11 @@ class EspnApi {
     return null;
   }
 
-  /// Teams of a league: id -> abbreviation.
-  static Future<Map<String, String>> teams(League league) async {
-    final j = await _getJson('$_base/${league.path}/teams?limit=500', ttl: const Duration(days: 7));
-    final out = <String, String>{};
-    try {
-      final leagues = ((j['sports'] as List).first['leagues'] as List);
-      for (final l in leagues) {
-        for (final t in (l['teams'] as List)) {
-          final team = t['team'] as Map<String, dynamic>;
-          out['${team['id']}'] = team['abbreviation'] as String? ?? '';
-        }
-      }
-    } catch (_) {}
-    return out;
-  }
-
-  /// Finished games from a team's schedule for a season (null = current).
-  static Future<List<GameResult>> teamResults(League league, String teamId, {int? season}) async {
-    final url = '$_base/${league.path}/teams/$teamId/schedule${season != null ? '?season=$season' : ''}';
-    final j = await _getJson(url, ttl: season != null ? const Duration(days: 30) : const Duration(hours: 3));
-    final out = <GameResult>[];
-    for (final e in (j['events'] as List? ?? [])) {
-      final r = _parseResult(e as Map<String, dynamic>);
-      if (r != null) out.add(r);
-    }
-    return out;
-  }
-
-  static int? seasonYear(Map<String, dynamic> scheduleJson) =>
-      ((scheduleJson['requestedSeason'] ?? scheduleJson['season']) as Map?)?['year'] as int?;
-
   static GameResult? _parseResult(Map<String, dynamic> e) {
     try {
+      // Preseason and exhibition games say little about real strength.
+      final slug = '${(e['season'] as Map?)?['slug'] ?? ''}';
+      if (slug.contains('preseason') || slug.contains('all-star')) return null;
       final comp = (e['competitions'] as List).first as Map<String, dynamic>;
       final status = (comp['status'] ?? e['status']) as Map<String, dynamic>;
       final type = status['type'] as Map<String, dynamic>;
@@ -183,7 +155,37 @@ class EspnApi {
     }
   }
 
-  /// Fits a league model from every team's recent results (cached for 3 hours).
+  /// Every finished game of a league in one calendar month, from a single
+  /// scoreboard request. Past months are kept on the phone in compact form.
+  static Future<List<GameResult>> monthResults(League league, int year, int month) async {
+    final now = DateTime.now();
+    final key = 'mres:${league.id}:$year-$month';
+    final monthEnd = DateTime(year, month + 1, 1);
+    final Duration ttl;
+    if (now.isBefore(monthEnd)) {
+      ttl = const Duration(hours: 3); // month still in progress
+    } else if (now.difference(monthEnd) < const Duration(days: 3)) {
+      ttl = const Duration(hours: 12); // late results may still land
+    } else {
+      ttl = const Duration(days: 60);
+    }
+    final cached = await Cache.get(key, ttl);
+    if (cached is List) {
+      return cached.map((j) => GameResult.fromJson(Map<String, dynamic>.from(j))).toList();
+    }
+    final ym = '$year${month.toString().padLeft(2, '0')}';
+    final j = await _getJson('$_base/${league.path}/scoreboard?dates=$ym&limit=1000');
+    final out = <GameResult>[];
+    for (final e in (j['events'] as List? ?? [])) {
+      final r = _parseResult(e as Map<String, dynamic>);
+      if (r != null) out.add(r);
+    }
+    await Cache.put(key, out.map((r) => r.toJson()).toList());
+    return out;
+  }
+
+  /// Fits a league model from the whole league's results over the last
+  /// 14 months (cached for 3 hours).
   static Future<LeagueModel> buildModel(League league, {void Function(int done, int total)? progress}) async {
     final key = 'model:${league.id}';
     final cached = await Cache.get(key, const Duration(hours: 3));
@@ -194,8 +196,9 @@ class EspnApi {
       return model;
     }
     final byId = <String, GameResult>{};
-    Map<String, String> abbrs = {};
+    final abbrs = <String, String>{};
     if (league.useDateScan) {
+      // Hundreds of teams: a month is too big for one request, scan by day.
       final today = DateTime.now();
       const days = 40;
       var done = 0;
@@ -220,38 +223,34 @@ class EspnApi {
         await Future.wait(futures);
       }
     } else {
-      abbrs = await teams(league);
-      final ids = abbrs.keys.toList();
-      var done = 0;
-      Future<void> fetchAll({int? season}) async {
-        for (var batch = 0; batch < ids.length; batch += 6) {
-          final futures = <Future<void>>[];
-          for (var i = batch; i < batch + 6 && i < ids.length; i++) {
-            futures.add(() async {
-              try {
-                for (final r in await teamResults(league, ids[i], season: season)) {
-                  byId[r.eventId] = r;
-                }
-              } catch (_) {}
-              done++;
-              progress?.call(done, ids.length * (season == null ? 1 : 2));
-            }());
-          }
-          await Future.wait(futures);
+      final now = DateTime.now();
+      const months = 14;
+      var done = 0, failed = 0;
+      for (var batch = 0; batch < months; batch += 4) {
+        final futures = <Future<void>>[];
+        for (var i = batch; i < batch + 4 && i < months; i++) {
+          final d = DateTime(now.year, now.month - i, 1);
+          futures.add(() async {
+            try {
+              for (final r in await monthResults(league, d.year, d.month)) {
+                byId[r.eventId] = r;
+              }
+            } catch (_) {
+              failed++;
+            }
+            done++;
+            progress?.call(done, months);
+          }());
         }
+        await Future.wait(futures);
       }
-
-      await fetchAll();
-      // Early season: add last season so ratings are not built on 2 games.
-      if (byId.length < ids.length * 2.5 && ids.isNotEmpty) {
-        final year = byId.values.isNotEmpty
-            ? byId.values.map((r) => r.date.year).reduce((a, b) => a > b ? a : b)
-            : DateTime.now().year;
-        await fetchAll(season: year);
-        if (byId.length < ids.length * 2.5) await fetchAll(season: year - 1);
-      }
+      if (failed == months) throw Exception('No results available for ${league.name}');
     }
     final results = byId.values.toList();
+    for (final r in results) {
+      if (r.homeAbbr.isNotEmpty) abbrs[r.homeId] = r.homeAbbr;
+      if (r.awayAbbr.isNotEmpty) abbrs[r.awayId] = r.awayAbbr;
+    }
     await Cache.put(key, {
       'results': results.map((r) => r.toJson()).toList(),
       'abbrs': abbrs,

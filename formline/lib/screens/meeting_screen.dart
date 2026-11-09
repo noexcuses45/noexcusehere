@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../engine/race_rater.dart';
 import '../models/race.dart';
 import '../services/picks_store.dart';
+import '../services/prediction_log.dart';
 import '../services/racing_api.dart';
 import '../theme.dart';
 import '../widgets/common.dart';
@@ -43,11 +44,13 @@ class _MeetingScreenState extends State<MeetingScreen> {
           final r = await RacingApi.race(rs.id, finished: rs.isFinal);
           _races[rs.id] = r;
           _ratings[rs.id] = RaceRater.rate(r);
+          PredictionLog.instance.recordRace(r, _ratings[rs.id]!);
         } catch (_) {}
         _loaded++;
         if (mounted) setState(() {});
       });
       await Future.wait(futures);
+      PredictionLog.instance.save();
       if (_races.isEmpty) _error = 'Could not load fields for this meeting.';
     } catch (_) {
       _error = 'Could not load fields for this meeting.';

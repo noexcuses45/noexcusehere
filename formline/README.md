@@ -19,9 +19,21 @@ What it shows:
 - **My picks** — save any multi or horse; it is graded automatically once the event finishes, so you
   can see hit rate vs the model's expected rate and your return.
 
+## How good is it?
+
+The app keeps itself honest in two ways, both shown under **My picks → Model record**:
+
+- **Backtest.** `tool/backtest_sports.dart` replays about three seasons per league, predicting every
+  game from earlier games only, tunes the model's settings and measures how often a "70%" call wins.
+  The tuned settings live in `lib/engine/calibration.dart` (regenerate with `tool/gen_calibration.py`).
+- **Live record.** Every prediction the app makes (sports and racing top picks) is logged and graded
+  automatically once the event finishes: winners right vs expected, average miss on totals, the
+  model's side of the bookmaker total and line, and racing strike rate and return. If a league's
+  totals run consistently over or under projection, projections are nudged to correct it.
+
 ## How the model works
 
-Team sports: every team's recent results are fitted to a multiplicative offence/defence rating
+Team sports: the whole league's results over the last 14 months (one request per month) are fitted to a multiplicative offence/defence rating
 model (opponent-adjusted, recency-weighted, shrunk to league priors, home advantage estimated from
 the data). Scores are modelled as correlated normals (basketball, football codes) or Poisson
 (soccer, hockey, baseball). Multis are priced by Monte Carlo simulation so correlated legs

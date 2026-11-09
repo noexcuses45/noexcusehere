@@ -11,6 +11,7 @@ import '../services/espn_api.dart';
 import '../services/model_store.dart';
 import '../services/odds_api.dart';
 import '../services/picks_store.dart';
+import '../services/prediction_log.dart';
 import '../services/settings_service.dart';
 import '../theme.dart';
 import '../widgets/common.dart';
@@ -155,6 +156,7 @@ class _SportsScreenState extends State<SportsScreen> {
       if (token != _loadToken || !mounted) return;
       final p = predictor.predict(g, sims: 6000);
       _preds[g.eventId] = p;
+      PredictionLog.instance.recordGame(p, appliedBias: model.totalBias);
       if (!g.isFinal && !g.isLive) {
         final multis = p.suggestMultis(perSize: 1);
         multis.sort((a, b) => _score(b).compareTo(_score(a)));
@@ -168,6 +170,7 @@ class _SportsScreenState extends State<SportsScreen> {
       _roundMultis = RoundMulti.build(_preds.values.toList());
       _building = false;
     });
+    PredictionLog.instance.save();
   }
 
   /// Favour multis that pay around $2-$4 but still carry a real chance.
