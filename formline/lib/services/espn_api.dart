@@ -286,8 +286,8 @@ class EspnApi {
   }
 
   /// Recent box scores for a team's last [n] finished games.
-  static Future<List<PlayerGameLine>> recentPlayerLines(League league, LeagueModel model, String teamId, {int n = 8}) async {
-    final games = model.lastGames(teamId, n);
+  static Future<List<PlayerGameLine>> recentPlayerLines(League league, LeagueModel model, String teamId, {int n = 8, DateTime? before}) async {
+    final games = model.lastGames(teamId, n, before: before);
     final out = <PlayerGameLine>[];
     final futures = games.map((g) async {
       try {

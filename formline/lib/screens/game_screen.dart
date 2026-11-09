@@ -44,6 +44,7 @@ class _GameScreenState extends State<GameScreen> {
   late Game _game;
   List<PlayerProjection> _preProps = []; // pre-game projections (for the live box chips)
   EventSummary? _box;
+  String? _boxError;
   Timer? _liveTimer;
   int _boxTeam = 0; // 0 away, 1 home
   OddsEvent? _oddsEvent;
@@ -64,8 +65,8 @@ class _GameScreenState extends State<GameScreen> {
     _recompute();
     _loadOdds();
     _pendingBuild = widget.autoBuild;
-    if (game.league.hasPlayerProps && !game.isFinal) {
-      _loadPlayers();
+    if (game.league.hasPlayerProps) {
+      _loadPlayers(); // for finished games this rebuilds the pre-game lines to grade them
     } else if (_pendingBuild != null) {
       _buildAi(_pendingBuild!);
     }
@@ -199,8 +200,11 @@ class _GameScreenState extends State<GameScreen> {
         _cands = _pred.candidateLegs(minProb: 0.5);
         _multis = game.isFinal ? [] : _pred.suggestMultis(perSize: 2)
           ..sort((a, b) => b.prob.compareTo(a.prob));
+        _boxError = null;
       });
-    } catch (_) {}
+    } catch (_) {
+      if (mounted && _box == null) setState(() => _boxError = 'Box score not available yet. Pull down or come back shortly.');
+    }
   }
 
   Future<void> _buildAi(int legs) async {
@@ -235,8 +239,10 @@ class _GameScreenState extends State<GameScreen> {
       } catch (_) {
         // Injury list is a nice-to-have; box scores still give us the props.
       }
-      final home = await EspnApi.recentPlayerLines(game.league, model, game.home.id);
-      final away = await EspnApi.recentPlayerLines(game.league, model, game.away.id);
+      // Only games played before this one, so finished games are graded on
+      // what the model would have said before tip-off.
+      final home = await EspnApi.recentPlayerLines(game.league, model, game.home.id, before: game.date);
+      final away = await EspnApi.recentPlayerLines(game.league, model, game.away.id, before: game.date);
       final players = PlayerProps.project(game: game, model: model, homeLines: home, awayLines: away, injuries: _injuries, maxPlayersPerTeam: 9);
       _preProps = players;
       _pred = GamePrediction(
@@ -442,6 +448,7 @@ class _GameScreenState extends State<GameScreen> {
             const SizedBox(height: 6),
             Muted('Draw ${pct(p.probDraw)}'),
           ],
+          if (game.isFinal) _finalVsModel(),
           if (!game.isFinal) ...[
             const SizedBox(height: 8),
             Text('Model line: ${p.muMargin >= 0 ? game.home.abbr : game.away.abbr} by ${num1(p.muMargin.abs())}'
@@ -449,6 +456,41 @@ class _GameScreenState extends State<GameScreen> {
           ],
         ]),
       ),
+    );
+  }
+
+  /// Finished game: what the model projected before tip-off vs the result.
+  Widget _finalVsModel() {
+    final model = ModelStore.instance.cached(game.league);
+    final hs = game.homeScore, as = game.awayScore;
+    if (model == null || hs == null || as == null) return const SizedBox();
+    final (muH, muA) = model.expected(game.home.id, game.away.id, neutral: game.neutral);
+    final total = hs + as;
+    final projTotal = muH + muA;
+    final winnerRight = (muH - muA) * (hs - as) > 0;
+    final totalSide = total > projTotal ? 'Over' : 'Under';
+    return Padding(
+      padding: const EdgeInsets.only(top: 10),
+      child: Column(children: [
+        Text('Pre-game model: ${game.away.abbr} ${num1(muA)} - ${game.home.abbr} ${num1(muH)} · total ${num1(projTotal)}',
+            style: const TextStyle(fontSize: 13, color: EdgeColors.muted)),
+        const SizedBox(height: 4),
+        Wrap(spacing: 8, children: [
+          _verdict(winnerRight ? 'Winner ✓' : 'Winner ✗', winnerRight),
+          _verdict('Total $total · $totalSide the ${num1(projTotal)} projection', true, neutral: true),
+          if (game.marketTotal != null && Settings.instance.showMarket)
+            _verdict('Bookie ${num1(game.marketTotal!)} · ${total > game.marketTotal! ? 'Over' : (total < game.marketTotal! ? 'Under' : 'Push')}', true, neutral: true),
+        ]),
+      ]),
+    );
+  }
+
+  Widget _verdict(String text, bool good, {bool neutral = false}) {
+    final c = neutral ? EdgeColors.sky : (good ? EdgeColors.win : EdgeColors.loss);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(color: c.withValues(alpha: 0.15), borderRadius: BorderRadius.circular(8)),
+      child: Text(text, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: c)),
     );
   }
 
@@ -479,7 +521,17 @@ class _GameScreenState extends State<GameScreen> {
 
   Widget _liveBox(GamePrediction p) {
     final box = _box;
-    if (box == null) return const Padding(padding: EdgeInsets.all(8), child: Muted('Loading box score...'));
+    if (box == null) {
+      return Padding(
+        padding: const EdgeInsets.all(8),
+        child: _boxError != null
+            ? Row(children: [
+                Expanded(child: Muted(_boxError!)),
+                TextButton(onPressed: _refreshLive, child: const Text('Retry')),
+              ])
+            : const Muted('Loading box score...'),
+      );
+    }
     final teams = [game.away, game.home];
     final team = teams[_boxTeam];
     final tables = box.tables.where((t) => t.teamId == team.id).toList();
@@ -509,7 +561,16 @@ class _GameScreenState extends State<GameScreen> {
     ]);
   }
 
-  /// Basketball: each player's live numbers against their expected line.
+  double _currentStat(BoxRow r, BoxTable t, String stat) => switch (stat) {
+        'PTS' => r.statNum(t.columns, 'PTS'),
+        'REB' => r.statNum(t.columns, 'REB'),
+        'AST' => r.statNum(t.columns, 'AST'),
+        '3PM' => r.statNum(t.columns, '3PT'),
+        _ => r.statNum(t.columns, 'PTS') + r.statNum(t.columns, 'REB') + r.statNum(t.columns, 'AST'),
+      };
+
+  /// Basketball: each player's live numbers against their expected line,
+  /// or on finished games whether they reached it.
   Widget _basketballLive(GamePrediction p, TeamRef team, BoxTable t, double remaining) {
     final side = team.id == game.home.id ? Side.home : Side.away;
     final rows = t.rows.where((r) => !r.dnp).toList()
@@ -517,10 +578,27 @@ class _GameScreenState extends State<GameScreen> {
         final c = (b.onField ? 1 : 0).compareTo(a.onField ? 1 : 0);
         return c != 0 ? c : b.statNum(t.columns, 'MIN').compareTo(a.statNum(t.columns, 'MIN'));
       });
+    var hits = 0, graded = 0;
+    if (game.isFinal) {
+      for (final r in rows) {
+        for (final pr in _preProps.where((x) => x.name == r.name && x.side == side)) {
+          graded++;
+          if (_currentStat(r, t, pr.stat) >= pr.line) hits++;
+        }
+      }
+    }
     return Card(
       child: Padding(
         padding: const EdgeInsets.fromLTRB(12, 6, 12, 6),
         child: Column(children: [
+          if (game.isFinal && graded > 0)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 6),
+              child: Row(children: [
+                Expanded(child: Text('Model lines hit: $hits of $graded', style: const TextStyle(fontWeight: FontWeight.w800))),
+                ProbPill(hits / graded),
+              ]),
+            ),
           for (final r in rows)
             Padding(
               padding: const EdgeInsets.symmetric(vertical: 6),
@@ -539,15 +617,19 @@ class _GameScreenState extends State<GameScreen> {
                     child: Wrap(spacing: 6, runSpacing: 4, children: [
                       for (final pr in projs)
                         Builder(builder: (_) {
-                          final cur = switch (pr.stat) {
-                            'PTS' => r.statNum(t.columns, 'PTS'),
-                            'REB' => r.statNum(t.columns, 'REB'),
-                            'AST' => r.statNum(t.columns, 'AST'),
-                            '3PM' => r.statNum(t.columns, '3PT'),
-                            _ => r.statNum(t.columns, 'PTS') + r.statNum(t.columns, 'REB') + r.statNum(t.columns, 'AST'),
-                          };
+                          final cur = _currentStat(r, t, pr.stat);
                           final line = pr.line;
-                          final prob = game.isFinal ? (cur >= line ? 1.0 : 0.0) : GamePrediction.liveReachProb(pr, cur, line, remaining, played: played);
+                          if (game.isFinal) {
+                            final hit = cur >= line;
+                            final c = hit ? EdgeColors.win : EdgeColors.loss;
+                            return Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                              decoration: BoxDecoration(color: c.withValues(alpha: 0.14), borderRadius: BorderRadius.circular(8)),
+                              child: Text('${pr.stat} ${num1(cur)} vs ${num1(line)} ${hit ? '✓' : '✗'}',
+                                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: c)),
+                            );
+                          }
+                          final prob = GamePrediction.liveReachProb(pr, cur, line, remaining, played: played);
                           final c = probColor(prob);
                           return Container(
                             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
@@ -561,7 +643,11 @@ class _GameScreenState extends State<GameScreen> {
                 }),
               ]),
             ),
-          const Padding(padding: EdgeInsets.only(top: 4), child: Muted('now → expected line, with the live chance of getting there')),
+          Padding(
+              padding: const EdgeInsets.only(top: 4),
+              child: Muted(game.isFinal
+                  ? 'actual vs the line the model had before the game (✓ reached it)'
+                  : 'now → expected line, with the live chance of getting there')),
         ]),
       ),
     );

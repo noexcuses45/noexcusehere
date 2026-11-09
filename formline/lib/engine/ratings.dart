@@ -158,8 +158,9 @@ class LeagueModel {
   }
 
   /// Simple recent-form summary for display.
-  List<GameResult> lastGames(String teamId, int n) {
-    final r = ratingOf(teamId).recent.toList()..sort((a, b) => b.date.compareTo(a.date));
+  List<GameResult> lastGames(String teamId, int n, {DateTime? before}) {
+    final r = ratingOf(teamId).recent.where((g) => before == null || g.date.isBefore(before)).toList()
+      ..sort((a, b) => b.date.compareTo(a.date));
     return r.take(n).toList();
   }
 }
