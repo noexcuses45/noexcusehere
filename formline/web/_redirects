@@ -1,2 +1,4 @@
-# Same-origin relay for the racing feed (it does not allow browser requests).
+# Same-origin relays. The racing feed does not allow browser requests, and
+# the sports feed is used as a fallback when a direct request is refused.
 /racing-api/*  https://api.tab.co.nz/affiliates/v1/racing/:splat  200
+/espn-api/*    https://site.api.espn.com/apis/site/v2/sports/:splat  200

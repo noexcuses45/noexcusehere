@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
 import '../engine/player_props.dart';
@@ -16,13 +17,38 @@ class EspnApi {
   static const _base = 'https://site.api.espn.com/apis/site/v2/sports';
   static final _client = http.Client();
 
+  /// Web only: set once a direct request is refused, after which requests
+  /// go through the site's own relay (web/_redirects) for the session.
+  static bool _useRelay = false;
+
+  static Uri _relay(String url) => Uri.base.resolve('/espn-api${url.substring(_base.length)}');
+
+  static Future<http.Response> _fetch(String url) async {
+    const headers = {'Accept': 'application/json'};
+    const limit = Duration(seconds: 20);
+    if (kIsWeb && _useRelay) return _client.get(_relay(url), headers: headers).timeout(limit);
+    try {
+      final res = await _client.get(Uri.parse(url), headers: headers).timeout(limit);
+      if (kIsWeb && res.statusCode == 403) {
+        _useRelay = true;
+        return await _client.get(_relay(url), headers: headers).timeout(limit);
+      }
+      return res;
+    } catch (_) {
+      // Browsers report a refused cross-origin request as a network error.
+      if (!kIsWeb) rethrow;
+      _useRelay = true;
+      return _client.get(_relay(url), headers: headers).timeout(limit);
+    }
+  }
+
   static Future<Map<String, dynamic>> _getJson(String url, {Duration ttl = Duration.zero, String? cacheKey}) async {
     final key = cacheKey ?? url;
     if (ttl > Duration.zero) {
       final c = await Cache.get(key, ttl);
       if (c is Map<String, dynamic>) return c;
     }
-    final res = await _client.get(Uri.parse(url), headers: {'Accept': 'application/json'}).timeout(const Duration(seconds: 20));
+    final res = await _fetch(url);
     if (res.statusCode != 200) {
       throw Exception('ESPN ${res.statusCode} for $url');
     }
