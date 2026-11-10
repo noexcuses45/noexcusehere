@@ -1,0 +1,8 @@
+# Hosting for the Formline web app (iPhone / desktop) on Netlify.
+# The site is deployed from a prebuilt `flutter build web` output.
+[build]
+  publish = "build/web"
+  command = ""
+
+[functions]
+  directory = "netlify/functions"

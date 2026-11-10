@@ -41,6 +41,17 @@ class OddsApi extends ChangeNotifier {
   static final OddsApi instance = OddsApi._();
   static const _base = 'https://api.the-odds-api.com/v4';
 
+  /// Shared relay on the Formline site. It holds the API key server-side, so
+  /// the app has odds without anyone pasting a key.
+  static const _sharedRelay = 'https://formline-app.netlify.app/odds-api';
+
+  /// null = not tried yet, false = relay has no key configured.
+  bool? sharedAvailable;
+
+  /// Whether odds can be fetched: the user's own key, or the shared relay.
+  bool get enabled => Settings.instance.hasOddsKey || sharedAvailable != false;
+  bool get usingShared => !Settings.instance.hasOddsKey && sharedAvailable == true;
+
   int? remainingCredits;
   String? lastError;
   final Map<String, String> bookTitles = {}; // key -> title seen in responses
@@ -51,14 +62,30 @@ class OddsApi extends ChangeNotifier {
   Future<List<OddsEvent>> events(League league) async {
     final sport = league.oddsKey;
     final key = Settings.instance.oddsApiKey.trim();
-    if (sport == null || key.isEmpty) return [];
+    if (sport == null) return [];
+    final shared = key.isEmpty;
+    if (shared && sharedAvailable == false) return [];
     final cacheKey = 'odds:$sport';
     final cached = await Cache.get(cacheKey, const Duration(minutes: 20));
     if (cached is List) return _parse(cached);
-    final url = Uri.parse('$_base/sports/$sport/odds?regions=au&markets=h2h,spreads,totals&oddsFormat=decimal&apiKey=$key');
+    final url = shared
+        ? (kIsWeb ? Uri.base.resolve('/odds-api/$sport') : Uri.parse('$_sharedRelay/$sport'))
+        : Uri.parse('$_base/sports/$sport/odds?regions=au&markets=h2h,spreads,totals&oddsFormat=decimal&apiKey=$key');
     final res = await http.get(url).timeout(const Duration(seconds: 20));
+    if (shared) {
+      if (res.statusCode == 503 || res.statusCode == 404 && !res.body.contains('upstream')) {
+        // Relay not set up (no key on the server): fall back to asking for a key.
+        sharedAvailable = false;
+        notifyListeners();
+        return [];
+      }
+      if (res.statusCode == 200) sharedAvailable = true;
+    }
     final rem = res.headers['x-requests-remaining'];
-    if (rem != null) remainingCredits = int.tryParse(rem);
+    if (rem != null && rem.isNotEmpty) remainingCredits = int.tryParse(rem);
+    if (shared && res.statusCode == 404) {
+      return []; // this competition is not covered by the odds feed right now
+    }
     if (res.statusCode == 401) {
       lastError = 'Odds API key was rejected. Check it in Settings.';
       notifyListeners();

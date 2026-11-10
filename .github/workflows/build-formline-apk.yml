@@ -79,3 +79,17 @@ jobs:
           name: Formline v1.0.${{ github.run_number }}
           prerelease: true
           files: formline/build/app/outputs/flutter-apk/app-release.apk
+
+      # Website (iPhone / desktop): only runs once the NETLIFY_AUTH_TOKEN secret exists.
+      - name: Build and publish the web app
+        env:
+          NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+          NETLIFY_SITE_ID: 5086f986-e74c-4859-bc95-335e83772941
+        run: |
+          if [ -z "$NETLIFY_AUTH_TOKEN" ]; then
+            echo "NETLIFY_AUTH_TOKEN not set; skipping website deploy."
+            exit 0
+          fi
+          flutter create --platforms web --project-name formline . >/dev/null
+          flutter build web --release
+          npx -y netlify-cli@17 deploy --prod --dir=build/web --functions=netlify/functions --site="$NETLIFY_SITE_ID" --message "Formline v1.0.${{ github.run_number }}"

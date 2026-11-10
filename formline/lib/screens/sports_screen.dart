@@ -51,6 +51,7 @@ class _SportsScreenState extends State<SportsScreen> {
     if (fav.isNotEmpty) _league = Leagues.byId(fav.first) ?? Leagues.nba;
     ModelStore.instance.addListener(_onStore);
     Settings.instance.addListener(_onStore);
+    OddsApi.instance.addListener(_onStore);
     _load();
     _timer = Timer.periodic(const Duration(seconds: 30), (_) {
       if (_games.any((g) => g.isLive) || _dayOffset == 0) _refreshScores();
@@ -62,10 +63,13 @@ class _SportsScreenState extends State<SportsScreen> {
     _timer?.cancel();
     ModelStore.instance.removeListener(_onStore);
     Settings.instance.removeListener(_onStore);
+    OddsApi.instance.removeListener(_onStore);
     super.dispose();
   }
 
-  void _onStore() => setState(() {});
+  void _onStore() {
+    if (mounted) setState(() {});
+  }
 
   Future<void> _load() async {
     final token = ++_loadToken;
@@ -98,7 +102,7 @@ class _SportsScreenState extends State<SportsScreen> {
   }
 
   Future<void> _loadOdds(int token) async {
-    if (!Settings.instance.hasOddsKey || _league.oddsKey == null) return;
+    if (!OddsApi.instance.enabled || _league.oddsKey == null) return;
     try {
       final ev = await OddsApi.instance.events(_league);
       if (token != _loadToken || !mounted) return;
@@ -223,7 +227,7 @@ class _SportsScreenState extends State<SportsScreen> {
             ),
         ]),
       ),
-      if (settings.hasOddsKey && _league.oddsKey != null && _odds.isNotEmpty)
+      if (OddsApi.instance.enabled && _league.oddsKey != null && _odds.isNotEmpty)
         SizedBox(
           height: 40,
           child: ListView(scrollDirection: Axis.horizontal, padding: const EdgeInsets.symmetric(horizontal: 12), children: [
@@ -270,7 +274,7 @@ class _SportsScreenState extends State<SportsScreen> {
     return RefreshIndicator(
       onRefresh: _load,
       child: ListView(padding: const EdgeInsets.fromLTRB(12, 4, 12, 24), children: [
-        if (!Settings.instance.hasOddsKey && _league.oddsKey != null) _oddsBanner(),
+        if (!OddsApi.instance.enabled && _league.oddsKey != null) _oddsBanner(),
         if (_oddsError != null) Padding(padding: const EdgeInsets.only(bottom: 8), child: InfoBanner(_oddsError!, icon: Icons.warning_amber_outlined)),
         if (_odds.isNotEmpty) ...[_bookieCard(), const SizedBox(height: 10)],
         if (_roundMultis.isNotEmpty) _roundCard(),

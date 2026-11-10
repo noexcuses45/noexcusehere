@@ -54,11 +54,20 @@ class _SettingsScreenState extends State<SettingsScreen> {
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               const Muted('Prices for Sportsbet, TAB, Ladbrokes, Neds, PointsBet, Unibet, Betr and more come from The Odds API. Sign up there for a free key (no card needed), paste it here, and the app compares every bookie against the model.'),
               const SizedBox(height: 10),
+              if (OddsApi.instance.usingShared)
+                const Padding(
+                  padding: EdgeInsets.only(bottom: 10),
+                  child: Row(children: [
+                    Icon(Icons.check_circle, size: 18, color: EdgeColors.win),
+                    SizedBox(width: 8),
+                    Expanded(child: Text('Shared odds are on. Nothing to enter.', style: TextStyle(color: EdgeColors.win, fontWeight: FontWeight.w700))),
+                  ]),
+                ),
               TextField(
                 controller: _keyCtrl,
                 obscureText: true,
                 decoration: InputDecoration(
-                  labelText: 'Odds API key',
+                  labelText: OddsApi.instance.usingShared ? 'Your own key (optional)' : 'Odds API key',
                   border: const OutlineInputBorder(),
                   isDense: true,
                   suffixIcon: IconButton(

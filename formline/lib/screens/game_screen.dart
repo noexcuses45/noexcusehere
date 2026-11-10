@@ -80,7 +80,7 @@ class _GameScreenState extends State<GameScreen> {
   }
 
   Future<void> _loadOdds() async {
-    if (!Settings.instance.hasOddsKey || game.league.oddsKey == null || game.isFinal) return;
+    if (!OddsApi.instance.enabled || game.league.oddsKey == null || game.isFinal) return;
     try {
       final ev = await OddsApi.instance.events(game.league);
       if (!mounted) return;
