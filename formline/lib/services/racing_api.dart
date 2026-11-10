@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
 import '../models/race.dart';
@@ -8,7 +9,10 @@ import 'cache.dart';
 /// TAB NZ affiliates feed: meetings, fields, form and results for
 /// thoroughbred, harness and greyhound racing worldwide. No key needed.
 class RacingApi {
-  static const _base = 'https://api.tab.co.nz/affiliates/v1/racing';
+  /// The feed does not allow browser (cross-origin) requests, so the web
+  /// build goes through a same-origin relay configured in web/_redirects.
+  static final String _base =
+      kIsWeb ? Uri.base.resolve('/racing-api').toString() : 'https://api.tab.co.nz/affiliates/v1/racing';
   static final _client = http.Client();
 
   static Future<Map<String, dynamic>> _getJson(String url, {Duration ttl = Duration.zero}) async {
@@ -19,7 +23,7 @@ class RacingApi {
     final res = await _client.get(Uri.parse(url), headers: {'Accept': 'application/json'}).timeout(const Duration(seconds: 20));
     if (res.statusCode != 200) throw Exception('Racing feed ${res.statusCode}');
     final j = json.decode(res.body) as Map<String, dynamic>;
-    if (ttl > Duration.zero) await Cache.put(url, j, persist: ttl > const Duration(minutes: 10));
+    if (ttl > Duration.zero) await Cache.put(url, j, persist: false);
     return j;
   }
 

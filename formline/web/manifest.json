@@ -3,9 +3,9 @@
     "short_name": "Formline",
     "start_url": ".",
     "display": "standalone",
-    "background_color": "#0175C2",
-    "theme_color": "#0175C2",
-    "description": "A new Flutter project.",
+    "background_color": "#0E1B2A",
+    "theme_color": "#0E1B2A",
+    "description": "Stats-only predictions for sports and racing.",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [

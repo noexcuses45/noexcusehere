@@ -1,0 +1,2 @@
+# Same-origin relay for the racing feed (it does not allow browser requests).
+/racing-api/*  https://api.tab.co.nz/affiliates/v1/racing/:splat  200

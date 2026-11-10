@@ -27,7 +27,8 @@ class EspnApi {
       throw Exception('ESPN ${res.statusCode} for $url');
     }
     final j = json.decode(res.body) as Map<String, dynamic>;
-    if (ttl > Duration.zero) await Cache.put(key, j, persist: ttl > const Duration(minutes: 10));
+    // Raw responses are large: keep them in memory only.
+    if (ttl > Duration.zero) await Cache.put(key, j, persist: false);
     return j;
   }
 
@@ -260,19 +261,114 @@ class EspnApi {
   }
 
   /// Box score lines + injuries + market line for an event.
-  /// [live] fetches fresh data every 20 seconds without persisting it.
+  /// [live] fetches fresh data every 20 seconds. Finished games are kept on
+  /// the phone in a slimmed form (a few KB instead of ~500 KB).
   static Future<EventSummary> summary(League league, String eventId, {bool finished = false, bool live = false}) async {
     final ttl = live ? const Duration(seconds: 20) : (finished ? const Duration(days: 60) : const Duration(minutes: 15));
-    // Finished games get their own cache entry, so a summary cached before
-    // tip-off (no box score yet) is never served back after the final.
-    final cacheKey = finished ? 'sumfinal:${league.id}:$eventId' : 'sum:${league.id}:$eventId';
-    final j = await _getJson('$_base/${league.path}/summary?event=$eventId', ttl: ttl, cacheKey: cacheKey);
-    final parsed = EventSummary.parse(j);
-    if (finished && !parsed.completed) {
-      // ESPN has not flipped the game to final yet: do not keep this for 60 days.
-      await Cache.put(cacheKey, j, persist: false);
-    }
+    // Finished games get their own entry, so a summary cached before tip-off
+    // (no box score yet) is never served back after the final.
+    final cacheKey = finished ? 'box:${league.id}:$eventId' : 'sum:${league.id}:$eventId';
+    final cached = await Cache.get(cacheKey, ttl);
+    if (cached is Map<String, dynamic>) return EventSummary.parse(cached);
+    final raw = await _getJson('$_base/${league.path}/summary?event=$eventId');
+    final slim = slimSummary(raw);
+    final parsed = EventSummary.parse(slim);
+    // Only keep a finished game for good once ESPN has marked it final.
+    await Cache.put(cacheKey, slim, persist: finished && parsed.completed);
     return parsed;
+  }
+
+  /// Keeps only the fields the app reads from an event summary.
+  static Map<String, dynamic> slimSummary(Map<String, dynamic> j) {
+    Map<String, dynamic>? pick(dynamic m, List<String> keys) {
+      if (m is! Map) return null;
+      return {for (final k in keys) if (m[k] != null) k: m[k]};
+    }
+
+    final out = <String, dynamic>{};
+    try {
+      final comp = (j['header']['competitions'] as List).first as Map;
+      out['header'] = {
+        'competitions': [
+          {
+            'date': comp['date'],
+            'status': {'type': pick(comp['status']?['type'], ['completed', 'state', 'shortDetail'])},
+            'competitors': [for (final c in (comp['competitors'] as List? ?? [])) pick(c, ['homeAway', 'score'])],
+          }
+        ]
+      };
+    } catch (_) {}
+    try {
+      final players = <Map<String, dynamic>>[];
+      for (final team in (j['boxscore']?['players'] as List? ?? [])) {
+        players.add({
+          'team': pick(team['team'], ['id', 'abbreviation']),
+          'statistics': [
+            for (final st in (team['statistics'] as List? ?? []))
+              {
+                ...?pick(st, ['name', 'text', 'labels', 'names']),
+                'athletes': [
+                  for (final a in (st['athletes'] as List? ?? []))
+                    {
+                      'athlete': {
+                        'displayName': a['athlete']?['displayName'],
+                        'position': pick(a['athlete']?['position'], ['abbreviation']),
+                      },
+                      ...?pick(a, ['active', 'starter', 'didNotPlay', 'stats']),
+                    }
+                ],
+              }
+          ],
+        });
+      }
+      if (players.isNotEmpty) out['boxscore'] = {'players': players};
+    } catch (_) {}
+    try {
+      final rosters = <Map<String, dynamic>>[];
+      for (final r in (j['rosters'] as List? ?? [])) {
+        rosters.add({
+          'team': pick(r['team'], ['id', 'abbreviation']),
+          'roster': [
+            for (final x in (r['roster'] as List? ?? []))
+              {
+                'athlete': {'displayName': x['athlete']?['displayName']},
+                'position': pick(x['position'], ['abbreviation']),
+                ...?pick(x, ['active', 'starter', 'subbedIn', 'subbedOut']),
+                'stats': [for (final st in (x['stats'] as List? ?? [])) pick(st, ['abbreviation', 'displayValue', 'value'])],
+              }
+          ],
+        });
+      }
+      if (rosters.isNotEmpty) out['rosters'] = rosters;
+    } catch (_) {}
+    try {
+      out['injuries'] = [
+        for (final t in (j['injuries'] as List? ?? []))
+          {
+            'injuries': [
+              for (final i in (t['injuries'] as List? ?? []))
+                {
+                  'athlete': {'displayName': i['athlete']?['displayName']},
+                  'status': i['status'],
+                  'details': pick(i['details'], ['type']),
+                }
+            ]
+          }
+      ];
+    } catch (_) {}
+    try {
+      final pc = j['pickcenter'] as List? ?? [];
+      if (pc.isNotEmpty) {
+        out['pickcenter'] = [
+          {
+            'overUnder': pc.first['overUnder'],
+            'spread': pc.first['spread'],
+            'provider': pick(pc.first['provider'], ['name']),
+          }
+        ];
+      }
+    } catch (_) {}
+    return out;
   }
 
   /// Latest scoreboard entry for one event (score, clock, state).

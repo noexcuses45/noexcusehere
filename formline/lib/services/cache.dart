@@ -37,6 +37,21 @@ class Cache {
     } catch (_) {}
   }
 
+  /// Compact entries worth keeping between launches. Everything else under
+  /// the cache prefix is a raw download from an older version and is removed:
+  /// big payloads slow app start on Android and overflow storage on the web.
+  static const _keep = ['mres:', 'model:', 'box:', 'odds:'];
+
+  static Future<void> cleanup() async {
+    try {
+      final p = await prefs;
+      for (final k in p.getKeys().where((k) => k.startsWith('c:')).toList()) {
+        final name = k.substring(2);
+        if (!_keep.any(name.startsWith)) await p.remove(k);
+      }
+    } catch (_) {}
+  }
+
   static Future<void> clearAll() async {
     _mem.clear();
     final p = await prefs;

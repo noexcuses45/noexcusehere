@@ -160,6 +160,55 @@ void main() {
     expect(sdM(wide) / sdM(base), closeTo(1.21, 1e-6));
   });
 
+  test('slimmed summaries parse the same as the full payload', () {
+    final full = {
+      'header': {
+        'competitions': [
+          {
+            'date': '2026-11-08T09:00Z',
+            'status': {'type': {'completed': true, 'state': 'post', 'junk': 'x' * 500}},
+            'competitors': [
+              {'homeAway': 'home', 'score': '124', 'team': {'big': 'x' * 500}},
+              {'homeAway': 'away', 'score': '121'}
+            ]
+          }
+        ]
+      },
+      'boxscore': {
+        'players': [
+          {
+            'team': {'id': '1', 'abbreviation': 'ATL', 'logo': 'x' * 500},
+            'statistics': [
+              {
+                'names': ['MIN', 'PTS', 'FG', '3PT', 'FT', 'REB', 'AST'],
+                'athletes': [
+                  {'athlete': {'displayName': 'A Player', 'headshot': 'x' * 500}, 'starter': true, 'stats': ['30', '22', '8-15', '3-7', '3-3', '6', '5']},
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      'injuries': [
+        {'injuries': [{'athlete': {'displayName': 'B Hurt'}, 'status': 'Out'}]}
+      ],
+      'pickcenter': [
+        {'overUnder': 226.5, 'spread': -6.5, 'provider': {'name': 'Book'}}
+      ],
+      'news': {'articles': 'x' * 5000},
+    };
+    final slim = EspnApi.slimSummary(full);
+    final a = EventSummary.parse(full), b = EventSummary.parse(slim);
+    expect(slim.containsKey('news'), isFalse);
+    expect(b.completed, a.completed);
+    expect(b.homeScore, 124);
+    expect(b.playerLines.single.pts, a.playerLines.single.pts);
+    expect(b.playerLines.single.threes, 3);
+    expect(b.injuries, {'B Hurt': 'Out'});
+    expect(b.marketTotal, 226.5);
+    expect(b.tables.single.rows.single.name, 'A Player');
+  });
+
   testWidgets('theme builds a dark material app', (tester) async {
     await tester.pumpWidget(MaterialApp(theme: edgeTheme(), home: const Scaffold(body: Text('Formline'))));
     expect(find.text('Formline'), findsOneWidget);

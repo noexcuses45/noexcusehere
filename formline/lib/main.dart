@@ -4,6 +4,7 @@ import 'screens/picks_screen.dart';
 import 'screens/racing_screen.dart';
 import 'screens/settings_screen.dart';
 import 'screens/sports_screen.dart';
+import 'services/cache.dart';
 import 'services/model_store.dart';
 import 'services/picks_store.dart';
 import 'services/prediction_log.dart';
@@ -13,6 +14,7 @@ import 'theme.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await Cache.cleanup();
   await Settings.instance.load();
   await PicksStore.instance.load();
   await PredictionLog.instance.load();
@@ -30,6 +32,11 @@ class FormlineApp extends StatelessWidget {
       title: 'Formline',
       theme: edgeTheme(),
       debugShowCheckedModeBanner: false,
+      // On tablets, laptops and the web keep a phone-like column.
+      builder: (context, child) => ColoredBox(
+        color: EdgeColors.navy,
+        child: Center(child: ConstrainedBox(constraints: const BoxConstraints(maxWidth: 560), child: child)),
+      ),
       home: const MainShell(),
     );
   }
