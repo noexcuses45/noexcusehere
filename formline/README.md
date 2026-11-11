@@ -19,6 +19,24 @@ What it shows:
 - **My picks** — save any multi or horse; it is graded automatically once the event finishes, so you
   can see hit rate vs the model's expected rate and your return.
 
+## Shares (ASX)
+
+A separate **Shares** tab scans about 120 large ASX companies using the exchange's own daily price
+history and shows two rule-based lists, each with exact buy and sell rules:
+
+- **Short-term trades (days):** a sharp dip (2-day RSI under 10) in a share that is in the top 10% by
+  six-month momentum and above its 200-day average. Sell when it closes back above its 5-day average,
+  after 10 trading days, or if it closes 12% below the buy price.
+- **Leaders to hold (weeks to months):** buy a share when it enters the top 10 by six-month momentum
+  while above its 200-day average; sell when it drops out of the top 25 or closes below that average.
+
+`tool/backtest_stocks.dart` replays these exact rules (the app and the backtest share
+`lib/engine/stock_scanner.dart`) over ten years and also reports the ideas that were tested and left
+out because they did not beat costs. Results are baked into `lib/engine/stock_calibration.dart` with
+`tool/gen_stock_calibration.py` and shown on the page. The page takes your trade size and brokerage
+and tells you whether the short-term edge survives your costs. Prices are daily closes, so this is
+end-of-day trading, not minute-by-minute day trading. General information only, not financial advice.
+
 ## How good is it?
 
 The app keeps itself honest in two ways, both shown under **My picks → Model record**:

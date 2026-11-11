@@ -40,7 +40,7 @@ class Cache {
   /// Compact entries worth keeping between launches. Everything else under
   /// the cache prefix is a raw download from an older version and is removed:
   /// big payloads slow app start on Android and overflow storage on the web.
-  static const _keep = ['mres:', 'model:', 'box:', 'odds:'];
+  static const _keep = ['mres:', 'model:', 'box:', 'odds:', 'asx:'];
 
   static Future<void> cleanup() async {
     try {

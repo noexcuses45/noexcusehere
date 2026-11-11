@@ -6,6 +6,9 @@ import 'package:formline/engine/stats.dart';
 import 'package:formline/models/game.dart';
 import 'package:formline/models/league.dart';
 import 'package:formline/models/race.dart';
+import 'package:formline/engine/market_clock.dart';
+import 'package:formline/engine/stock_scanner.dart';
+import 'package:formline/engine/stocks.dart';
 import 'package:formline/engine/player_props.dart';
 import 'package:formline/services/espn_api.dart';
 
@@ -191,6 +194,96 @@ void main() {
       expect(p.projHome, lessThan(135));
       expect(p.muTotal, greaterThan(200));
       expect(p.probHomeWin, greaterThan(0.6));
+    });
+  });
+
+  group('Shares', () {
+    Series make(String code, double Function(int) price, {int n = 320}) => Series(code, [
+          for (var i = 0; i < n; i++) Bar(DateTime.utc(2025, 1, 1).add(Duration(days: i)), price(i), 1000),
+        ]);
+
+    test('indicators: moving average and RSI', () {
+      final s = make('A', (i) => 10.0 + i, n: 30);
+      expect(s.sma(5)[4], closeTo(12, 1e-9));
+      expect(s.sma(5)[29], closeTo(37, 1e-9));
+      expect(s.sma(5)[3].isNaN, isTrue);
+      expect(s.rsi(2)[29], 100); // only gains
+      final down = make('B', (i) => 100.0 - i, n: 30);
+      expect(down.rsi(2)[29], closeTo(0, 1e-9));
+      expect(down.downStreak(29), 29);
+    });
+
+    test('scanner buys the strongest shares and sells when the trend breaks', () {
+      // Ten steady risers of different speeds, plus one that rises then collapses.
+      final list = <Series>[
+        for (var k = 0; k < 14; k++) make('S$k', (i) => 10 * (1 + 0.0005 * (k + 1) * i)),
+        make('CRASH', (i) => i < 300 ? 10 * (1 + 0.01 * i) : 40 - 3.0 * (i - 300)),
+      ];
+      final sc = StockScanner(list);
+      final ranksEarly = sc.ranksAt(290);
+      expect(ranksEarly.rank['CRASH'], 1);
+      expect(ranksEarly.rank['S13'], 2);
+      final res = sc.run(from: 210);
+      // The crashed share must have been sold, and for the right reason.
+      final crash = res.closedLeaders.where((p) => p.code == 'CRASH').toList();
+      expect(crash, isNotEmpty);
+      expect(crash.last.exitReason, contains('200-day'));
+      expect(res.leaders.where((l) => l.open).map((l) => l.code), isNot(contains('CRASH')));
+      // Strong steady risers are held; the weakest are not.
+      final held = res.leaders.where((l) => l.open).map((l) => l.code).toSet();
+      expect(held, contains('S13'));
+      expect(held, isNot(contains('S0')));
+      for (final l in res.leaders.where((l) => l.open)) {
+        expect(l.priceNow, greaterThan(0));
+        expect(l.trendLevel, lessThan(l.priceNow));
+      }
+    });
+
+    test('dip trades fire only in leaders, and exit on the bounce', () {
+      // LEAD climbs strongly, has a sharp two-day dip at day 280, then recovers.
+      double lead(int i) {
+        final base = 10 * (1 + 0.012 * i);
+        if (i == 280) return base * 0.95;
+        if (i == 281) return base * 0.92;
+        return base;
+      }
+
+      // LAG barely rises and has the same dip: it must not be traded.
+      double lag(int i) {
+        final base = 10 * (1 + 0.0002 * i);
+        if (i == 280) return base * 0.95;
+        if (i == 281) return base * 0.92;
+        return base;
+      }
+
+      final list = <Series>[
+        make('LEAD', lead),
+        make('LAG', lag),
+        for (var k = 0; k < 12; k++) make('F$k', (i) => 10 * (1 + 0.0006 * (k + 1) * i)),
+      ];
+      final res = StockScanner(list).run(from: 210);
+      final leadTrades = res.closedDips.where((t) => t.code == 'LEAD').toList();
+      expect(leadTrades, isNotEmpty);
+      expect(leadTrades.first.exitReason, contains('5-day'));
+      expect(leadTrades.first.gain, greaterThan(0));
+      expect(res.closedDips.where((t) => t.code == 'LAG'), isEmpty);
+    });
+
+    test('Sydney clock handles daylight saving and the trading session', () {
+      // 11 Nov 2026 01:00 UTC = 12:00 AEDT (UTC+11), a Wednesday: market open.
+      final summer = DateTime.utc(2026, 11, 11, 1);
+      expect(MarketClock.sydneyOffset(summer).inHours, 11);
+      expect(MarketClock.asxOpen(summer), isTrue);
+      // 15 Jun 2026 01:00 UTC = 11:00 AEST (UTC+10), a Monday: market open.
+      final winter = DateTime.utc(2026, 6, 15, 1);
+      expect(MarketClock.sydneyOffset(winter).inHours, 10);
+      expect(MarketClock.asxOpen(winter), isTrue);
+      // 11 Nov 2026 08:00 UTC = 19:00 AEDT: closed.
+      expect(MarketClock.asxOpen(DateTime.utc(2026, 11, 11, 8)), isFalse);
+      // Saturday.
+      expect(MarketClock.asxOpen(DateTime.utc(2026, 11, 14, 1)), isFalse);
+      expect(MarketClock.barIsLive(DateTime.utc(2026, 11, 11), summer), isTrue);
+      expect(MarketClock.barIsLive(DateTime.utc(2026, 11, 10), summer), isFalse);
     });
   });
 

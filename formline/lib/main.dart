@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'screens/picks_screen.dart';
 import 'screens/racing_screen.dart';
 import 'screens/settings_screen.dart';
+import 'screens/shares_screen.dart';
 import 'screens/sports_screen.dart';
 import 'services/cache.dart';
 import 'services/model_store.dart';
@@ -60,7 +61,7 @@ class _MainShellState extends State<MainShell> {
 
   @override
   Widget build(BuildContext context) {
-    final screens = const [SportsScreen(), RacingScreen(), PicksScreen()];
+    final screens = const [SportsScreen(), RacingScreen(), SharesScreen(), PicksScreen()];
     return Scaffold(
       appBar: AppBar(
         title: const Row(children: [
@@ -83,6 +84,7 @@ class _MainShellState extends State<MainShell> {
         destinations: const [
           NavigationDestination(icon: Icon(Icons.sports_basketball_outlined), selectedIcon: Icon(Icons.sports_basketball), label: 'Sports'),
           NavigationDestination(icon: Icon(Icons.flag_outlined), selectedIcon: Icon(Icons.flag), label: 'Racing'),
+          NavigationDestination(icon: Icon(Icons.show_chart), selectedIcon: Icon(Icons.show_chart), label: 'Shares'),
           NavigationDestination(icon: Icon(Icons.bookmark_outline), selectedIcon: Icon(Icons.bookmark), label: 'My picks'),
         ],
       ),

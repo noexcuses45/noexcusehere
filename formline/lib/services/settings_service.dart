@@ -14,6 +14,12 @@ class Settings extends ChangeNotifier {
   String racingCountry = 'AUS';
   String oddsApiKey = '';
   String bookie = 'sportsbet'; // The Odds API bookmaker key
+  double tradeSize = 5000; // typical dollars per share trade
+  double brokerage = 5; // dollars per trade, each way
+  List<String> watchlist = [];
+
+  /// Brokerage as a fraction of a trade, per side.
+  double get costPerSide => tradeSize <= 0 ? 0.001 : brokerage / tradeSize;
   bool loaded = false;
 
   bool get hasOddsKey => oddsApiKey.trim().isNotEmpty;
@@ -26,6 +32,9 @@ class Settings extends ChangeNotifier {
     racingCountry = p.getString('racingCountry') ?? racingCountry;
     oddsApiKey = p.getString('oddsApiKey') ?? oddsApiKey;
     bookie = p.getString('bookie') ?? bookie;
+    tradeSize = p.getDouble('tradeSize') ?? tradeSize;
+    brokerage = p.getDouble('brokerage') ?? brokerage;
+    watchlist = p.getStringList('watchlist') ?? watchlist;
     loaded = true;
     notifyListeners();
   }
@@ -38,6 +47,9 @@ class Settings extends ChangeNotifier {
     await p.setString('racingCountry', racingCountry);
     await p.setString('oddsApiKey', oddsApiKey.trim());
     await p.setString('bookie', bookie);
+    await p.setDouble('tradeSize', tradeSize);
+    await p.setDouble('brokerage', brokerage);
+    await p.setStringList('watchlist', watchlist);
     notifyListeners();
   }
 

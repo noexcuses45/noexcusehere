@@ -2,3 +2,5 @@
 # the sports feed is used as a fallback when a direct request is refused.
 /racing-api/*  https://api.tab.co.nz/affiliates/v1/racing/:splat  200
 /espn-api/*    https://site.api.espn.com/apis/site/v2/sports/:splat  200
+/asx-chart/*   https://www.asx.com.au/asx/1/chart/:splat  200
+/asx-data/*    https://asx.api.markitdigital.com/asx-research/1.0/:splat  200
