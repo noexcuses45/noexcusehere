@@ -5,6 +5,7 @@ import '../engine/stock_scanner.dart';
 import '../engine/stocks.dart';
 import '../models/asx_universe.dart';
 import 'asx_api.dart';
+import 'practice_account.dart';
 
 /// Loads the ASX universe and runs both share strategies. Shared by the
 /// Shares page and the stock screen so prices are downloaded once.
@@ -56,6 +57,7 @@ class ShareScan extends ChangeNotifier {
         scanner = sc;
         live = MarketClock.barIsLive(result!.asOf);
         loadedAt = DateTime.now();
+        await PracticeAccount.instance.sync(result!);
       }
     } catch (_) {
       error = 'Could not load ASX prices. Check your connection and try again.';

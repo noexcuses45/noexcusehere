@@ -9,7 +9,9 @@ import 'package:formline/models/game.dart';
 import 'package:formline/services/espn_api.dart';
 import 'package:formline/engine/ratings.dart';
 import 'package:formline/services/odds_api.dart';
+import 'package:formline/services/practice_account.dart';
 import 'package:formline/services/prediction_log.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:formline/services/settings_service.dart';
 import 'package:formline/engine/stock_calibration.dart';
 import 'package:formline/theme.dart';
@@ -235,6 +237,35 @@ void main() {
     expect(trades, StockCalibration.dips.trades);
     final gross = StockCalibration.dipMonths.fold<num>(0, (a, m) => a + m[0]) / trades;
     expect(gross, closeTo(StockCalibration.dips.gross, 1e-4));
+  });
+
+  test('practice account charges real brokerage and tracks the balance', () async {
+    TestWidgetsFlutterBinding.ensureInitialized();
+    SharedPreferences.setMockInitialValues({});
+    Settings.instance
+      ..brokerModel = 'cmc'
+      ..tradeSize = 840;
+    final acct = PracticeAccount.instance;
+    await acct.reset(840);
+    expect(acct.cash, 840);
+    final day = DateTime.utc(2026, 11, 12);
+    // Under $1,000, so the buy is free at CMC.
+    expect(await acct.buy(code: 'ABC', kind: 'dip', entryDate: day, entryPrice: 10, dollars: 840), isTrue);
+    expect(acct.cash, closeTo(0, 1e-9));
+    expect(acct.openTrades.single.shares, closeTo(84, 1e-9));
+    // The same signal cannot be bought twice, and there is no cash left anyway.
+    expect(await acct.buy(code: 'ABC', kind: 'dip', entryDate: day, entryPrice: 10, dollars: 100), isFalse);
+    // A 1% rise still loses money after the $11 sell fee.
+    final t = acct.openTrades.single;
+    acct.close(t, day.add(const Duration(days: 3)), 10.10, 'closed back above its 5-day average');
+    expect(t.sellFee, 11);
+    expect(t.pnl, closeTo(84 * 10.10 - 11 - 840, 1e-9));
+    expect(t.pnl, lessThan(0));
+    expect(acct.equity, closeTo(840 + t.pnl, 1e-9));
+    expect(acct.feesPaid, 11);
+    // It needs about a 1.3% rise just to break even at this size.
+    expect(11 / 840, closeTo(0.0131, 1e-4));
+    Settings.instance.tradeSize = 10000;
   });
 
   testWidgets('theme builds a dark material app', (tester) async {

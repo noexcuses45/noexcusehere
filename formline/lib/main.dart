@@ -8,6 +8,7 @@ import 'screens/sports_screen.dart';
 import 'services/cache.dart';
 import 'services/model_store.dart';
 import 'services/picks_store.dart';
+import 'services/practice_account.dart';
 import 'services/prediction_log.dart';
 import 'services/settings_service.dart';
 import 'services/update_service.dart';
@@ -19,6 +20,7 @@ Future<void> main() async {
   await Settings.instance.load();
   await PicksStore.instance.load();
   await PredictionLog.instance.load();
+  await PracticeAccount.instance.load();
   // Grade yesterday's predictions quietly, then refresh the self-correction.
   PredictionLog.instance.gradePending().then((_) => ModelStore.instance.refreshBias()).catchError((_) {});
   runApp(const FormlineApp());

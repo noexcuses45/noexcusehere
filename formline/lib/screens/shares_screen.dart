@@ -5,6 +5,7 @@ import '../engine/stock_calibration.dart';
 import '../engine/stock_scanner.dart';
 import '../models/asx_universe.dart';
 import '../services/asx_api.dart';
+import '../services/practice_account.dart';
 import '../services/settings_service.dart';
 import '../services/share_scan.dart';
 import '../theme.dart';
@@ -44,6 +45,7 @@ class _SharesScreenState extends State<SharesScreen> {
     super.initState();
     ShareScan.instance.addListener(_changed);
     Settings.instance.addListener(_changed);
+    PracticeAccount.instance.addListener(_changed);
     ShareScan.instance.load();
   }
 
@@ -51,6 +53,7 @@ class _SharesScreenState extends State<SharesScreen> {
   void dispose() {
     ShareScan.instance.removeListener(_changed);
     Settings.instance.removeListener(_changed);
+    PracticeAccount.instance.removeListener(_changed);
     _searchCtrl.dispose();
     super.dispose();
   }
@@ -93,6 +96,8 @@ class _SharesScreenState extends State<SharesScreen> {
         if (scan.error != null && r == null) ErrorRetry(scan.error!, onRetry: () => scan.load(force: true)),
         if (r != null) ...[
           _costsCard(),
+          const SizedBox(height: 10),
+          _practiceCard(),
           SectionTitle('Short-term trades', trailing: const Muted('held for days')),
           Muted('Sharp dips in the market\'s strongest shares. Tested ${StockCalibration.period}: '
               '${pct(StockCalibration.dips.winRate)} winners, about ${StockCalibration.dips.days.round()} days each.'),
@@ -143,6 +148,8 @@ class _SharesScreenState extends State<SharesScreen> {
   Widget _costsCard() {
     final s = Settings.instance;
     final net = StockCalibration.dips.net(s.costPerSide);
+    // Leaders are judged on the last five years, the more cautious figure.
+    final leaderNet = StockCalibration.leaders.recentGross - s.roundTripCost;
     final fees = s.buyFee(s.tradeSize) + s.sellFee(s.tradeSize);
     final broker = s.brokerModel == 'cmc' ? 'CMC Invest' : 'flat fee';
     return Card(
@@ -162,10 +169,23 @@ class _SharesScreenState extends State<SharesScreen> {
                 const SizedBox(height: 2),
                 Text(
                   net > 0
-                      ? 'Short-term trades expect about ${dollars(net * s.tradeSize)} each after brokerage (${signedPct(net, 2)}).'
-                      : 'At this size brokerage eats the short-term edge (${dollars(net * s.tradeSize)} a trade). Use bigger parcels or stick to Leaders.',
+                      ? 'Short-term trades: about ${dollars(net * s.tradeSize)} each after brokerage (${signedPct(net, 2)}).'
+                      : 'Short-term trades: brokerage beats the edge at this size (${dollars(net * s.tradeSize)} a trade).',
                   style: TextStyle(fontSize: 12.5, color: net > 0 ? EdgeColors.win : EdgeColors.coral),
                 ),
+                Text(
+                  leaderNet > 0
+                      ? 'Leaders: about ${dollars(leaderNet * s.tradeSize)} a trade after brokerage, on the last five years.'
+                      : 'Leaders: brokerage beats the edge at this size too (${dollars(leaderNet * s.tradeSize)} a trade).',
+                  style: TextStyle(fontSize: 12.5, color: leaderNet > 0 ? EdgeColors.win : EdgeColors.coral),
+                ),
+                if (net <= 0)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 4),
+                    child: Muted(leaderNet > 0
+                        ? 'With parcels this small, trade rarely: Leaders only. Frequent trading loses to fees.'
+                        : 'With parcels this small, fees beat every tested rule. Follow the signals on paper until your parcels are bigger or your fees are lower.'),
+                  ),
               ]),
             ),
             const Icon(Icons.edit_outlined, size: 18, color: EdgeColors.muted),
@@ -260,7 +280,8 @@ class _SharesScreenState extends State<SharesScreen> {
           const SizedBox(height: 8),
           Muted('Usually ${StockCalibration.dipOpenMedian} trades are open at once and sometimes ${StockCalibration.dipOpenP90}, '
               'so taking every signal needs about ${dollars(size * StockCalibration.dipOpenP90)} available. '
-              'Results come in lumps, not as a steady daily amount: one month in three loses.'),
+              'Results come in lumps, not as a steady daily amount: one month in three loses. '
+              'Backtests flatter reality (this one used today\'s large companies and assumed buying at the closing price), so treat these figures as a ceiling, not a forecast.'),
         ]),
       ),
     );
@@ -326,6 +347,7 @@ class _SharesScreenState extends State<SharesScreen> {
                   ]),
                   const SizedBox(height: 4),
                   Text(plan, style: const TextStyle(fontSize: 13, height: 1.35)),
+                  if (t.action == TradeAction.buy) _practiceBuy(t.code, 'dip', t.entryDate, t.entryPrice),
                 ]),
               ),
             ]),
@@ -390,6 +412,7 @@ class _SharesScreenState extends State<SharesScreen> {
                   ]),
                   const SizedBox(height: 4),
                   Text(plan, style: const TextStyle(fontSize: 13, height: 1.35)),
+                  if (buy) _practiceBuy(l.code, 'leader', l.entryDate, l.entryPrice),
                 ]),
               ),
             ]),
@@ -397,6 +420,123 @@ class _SharesScreenState extends State<SharesScreen> {
         ),
       ),
     );
+  }
+
+  /// "Practice buy" button shown under a BUY signal.
+  Widget _practiceBuy(String code, String kind, DateTime entryDate, double entryPrice) {
+    final acct = PracticeAccount.instance;
+    if (!acct.active) return const SizedBox();
+    final taken = acct.has(code, kind, entryDate);
+    final amount = acct.cash < Settings.instance.tradeSize ? acct.cash : Settings.instance.tradeSize;
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: taken
+          ? const Padding(padding: EdgeInsets.only(top: 6), child: Muted('In your practice account'))
+          : TextButton.icon(
+              style: TextButton.styleFrom(foregroundColor: EdgeColors.lime, padding: EdgeInsets.zero, visualDensity: VisualDensity.compact),
+              onPressed: amount < 20
+                  ? null
+                  : () async {
+                      final ok = await acct.buy(code: code, kind: kind, entryDate: entryDate, entryPrice: entryPrice, dollars: amount);
+                      if (mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(ok ? 'Practice buy: ${dollars(amount)} of $code' : 'Could not place the practice buy')));
+                      }
+                    },
+              icon: const Icon(Icons.school_outlined, size: 18),
+              label: Text(amount < 20 ? 'Practice cash is used up' : 'Practice buy ${dollars(amount)}'),
+            ),
+    );
+  }
+
+  Widget _practiceCard() {
+    final acct = PracticeAccount.instance;
+    if (!acct.active) {
+      return Card(
+        child: ListTile(
+          leading: const Icon(Icons.school_outlined, color: EdgeColors.lime),
+          title: const Text('Start a practice account', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14)),
+          subtitle: const Muted('Follow the BUY signals with play money and real brokerage, and see whether the balance builds before risking cash.'),
+          trailing: const Icon(Icons.chevron_right),
+          onTap: _setupPractice,
+        ),
+      );
+    }
+    final open = acct.openTrades, closed = acct.closedTrades;
+    final wins = closed.where((t) => t.pnl > 0).length;
+    final pnl = acct.totalPnl;
+    final color = pnl >= 0 ? EdgeColors.win : EdgeColors.coral;
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Row(children: [
+            const Icon(Icons.school_outlined, color: EdgeColors.lime, size: 20),
+            const SizedBox(width: 8),
+            const Expanded(child: Text('Practice account', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 15))),
+            TextButton(onPressed: _setupPractice, child: const Text('Reset')),
+          ]),
+          Row(crossAxisAlignment: CrossAxisAlignment.end, children: [
+            Text(dollars(acct.equity), style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w900)),
+            const SizedBox(width: 10),
+            Padding(
+              padding: const EdgeInsets.only(bottom: 3),
+              child: Text('${pnl >= 0 ? '+' : ''}${dollars(pnl)} (${signedPct(acct.start == 0 ? 0 : pnl / acct.start)})', style: TextStyle(fontWeight: FontWeight.w800, color: color)),
+            ),
+          ]),
+          Muted('Started with ${dollars(acct.start)}${acct.startedAt == null ? '' : ' on ${shortDate(acct.startedAt!)}'} · cash ${dollars(acct.cash)} · brokerage paid ${dollars(acct.feesPaid)}'),
+          if (closed.isNotEmpty) Muted('${closed.length} finished trade${closed.length == 1 ? '' : 's'}, $wins made money'),
+          if (open.isEmpty && closed.isEmpty)
+            const Padding(
+              padding: EdgeInsets.only(top: 6),
+              child: Muted('No practice trades yet. When a BUY appears below, tap "Practice buy". The app sells for you when the rule says sell.'),
+            ),
+          for (final t in open)
+            Padding(
+              padding: const EdgeInsets.only(top: 6),
+              child: Row(children: [
+                Expanded(
+                  child: Text('${t.code} · ${t.kind == 'dip' ? 'short-term' : 'leader'} · bought ${DateFormat('d MMM').format(t.entryDate)} at ${money(t.entryPrice)}',
+                      style: const TextStyle(fontSize: 13)),
+                ),
+                Text('${t.pnl >= 0 ? '+' : ''}${dollars(t.pnl)}', style: TextStyle(fontWeight: FontWeight.w800, color: t.pnl >= 0 ? EdgeColors.win : EdgeColors.coral)),
+              ]),
+            ),
+          for (final t in closed.take(4))
+            Padding(
+              padding: const EdgeInsets.only(top: 6),
+              child: Row(children: [
+                Expanded(
+                  child: Text('${t.code} · sold ${DateFormat('d MMM').format(t.exitDate!)} at ${money(t.exitPrice!)}', style: const TextStyle(fontSize: 13, color: EdgeColors.muted)),
+                ),
+                Text('${t.pnl >= 0 ? '+' : ''}${dollars(t.pnl)}', style: TextStyle(fontWeight: FontWeight.w800, color: t.pnl >= 0 ? EdgeColors.win : EdgeColors.coral)),
+              ]),
+            ),
+        ]),
+      ),
+    );
+  }
+
+  Future<void> _setupPractice() async {
+    final acct = PracticeAccount.instance;
+    final ctrl = TextEditingController(text: (acct.active ? acct.start : Settings.instance.tradeSize).round().toString());
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(acct.active ? 'Restart the practice account?' : 'Practice account'),
+        content: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Muted(acct.active ? 'This clears your practice trades and starts again.' : 'Play money only. Nothing is bought or sold for real.'),
+          const SizedBox(height: 10),
+          TextField(controller: ctrl, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'Starting balance', prefixText: '\$')),
+        ]),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: Text(acct.active ? 'Restart' : 'Start')),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    final v = double.tryParse(ctrl.text) ?? 0;
+    if (v >= 50) await acct.reset(v);
   }
 
   Widget _searchCard() {
