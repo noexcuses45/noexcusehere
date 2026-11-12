@@ -98,6 +98,7 @@ class _SharesScreenState extends State<SharesScreen> {
               '${pct(StockCalibration.dips.winRate)} winners, about ${StockCalibration.dips.days.round()} days each.'),
           const SizedBox(height: 8),
           ..._dipCards(r),
+          _expectCard(r),
           SectionTitle('Leaders to hold', trailing: const Muted('weeks to months')),
           Muted('The ten strongest shares of the past six months, held until they fade. '
               'Fewer than half win, but winners average ${signedPct(StockCalibration.leaders.avgWin, 0)} against losers at ${signedPct(StockCalibration.leaders.avgLoss, 0)}.'),
@@ -133,9 +134,17 @@ class _SharesScreenState extends State<SharesScreen> {
     ]);
   }
 
+  String dollars(double v) {
+    final a = v.abs();
+    final body = a >= 10 ? NumberFormat('#,##0').format(a) : a.toStringAsFixed(2);
+    return '${v < 0 ? '-' : ''}\$$body';
+  }
+
   Widget _costsCard() {
     final s = Settings.instance;
     final net = StockCalibration.dips.net(s.costPerSide);
+    final fees = s.buyFee(s.tradeSize) + s.sellFee(s.tradeSize);
+    final broker = s.brokerModel == 'cmc' ? 'CMC Invest' : 'flat fee';
     return Card(
       child: InkWell(
         borderRadius: BorderRadius.circular(16),
@@ -147,12 +156,14 @@ class _SharesScreenState extends State<SharesScreen> {
             const SizedBox(width: 12),
             Expanded(
               child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text('Your trades: \$${s.tradeSize.round()} each, \$${num1(s.brokerage)} brokerage', style: const TextStyle(fontWeight: FontWeight.w700)),
+                Text('Your trades: ${dollars(s.tradeSize)} each · $broker', style: const TextStyle(fontWeight: FontWeight.w700)),
+                const SizedBox(height: 2),
+                Muted('Brokerage ${dollars(s.buyFee(s.tradeSize))} to buy + ${dollars(s.sellFee(s.tradeSize))} to sell = ${dollars(fees)} a trade (${(s.roundTripCost * 100).toStringAsFixed(2)}%)'),
                 const SizedBox(height: 2),
                 Text(
                   net > 0
-                      ? 'Short-term trades expect about ${signedPct(net, 2)} each after your costs.'
-                      : 'At this size brokerage eats the short-term edge (${signedPct(net, 2)} a trade). Trade bigger parcels or stick to Leaders.',
+                      ? 'Short-term trades expect about ${dollars(net * s.tradeSize)} each after brokerage (${signedPct(net, 2)}).'
+                      : 'At this size brokerage eats the short-term edge (${dollars(net * s.tradeSize)} a trade). Use bigger parcels or stick to Leaders.',
                   style: TextStyle(fontSize: 12.5, color: net > 0 ? EdgeColors.win : EdgeColors.coral),
                 ),
               ]),
@@ -168,27 +179,91 @@ class _SharesScreenState extends State<SharesScreen> {
     final s = Settings.instance;
     final size = TextEditingController(text: s.tradeSize.round().toString());
     final fee = TextEditingController(text: num1(s.brokerage));
+    var model = s.brokerModel;
     final ok = await showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Your trade size and brokerage'),
-        content: Column(mainAxisSize: MainAxisSize.min, children: [
-          TextField(controller: size, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'Dollars per trade', prefixText: '\$')),
-          TextField(
-              controller: fee,
-              keyboardType: const TextInputType.numberWithOptions(decimal: true),
-              decoration: const InputDecoration(labelText: 'Brokerage per trade (each way)', prefixText: '\$')),
-        ]),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
-          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Save')),
-        ],
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setLocal) => AlertDialog(
+          title: const Text('Your trade size and broker'),
+          content: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+            TextField(controller: size, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'Dollars per trade', prefixText: '\$')),
+            const SizedBox(height: 12),
+            DropdownButton<String>(
+              value: model,
+              isExpanded: true,
+              items: const [
+                DropdownMenuItem(value: 'cmc', child: Text('CMC Invest (Australian shares)')),
+                DropdownMenuItem(value: 'flat', child: Text('Other broker: flat fee')),
+              ],
+              onChanged: (v) => setLocal(() => model = v ?? model),
+            ),
+            if (model == 'cmc')
+              const Muted('First buy under \$1,000 per stock per day is free. Every other buy and all sells cost the greater of \$11 or 0.10%.')
+            else
+              TextField(
+                  controller: fee,
+                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                  decoration: const InputDecoration(labelText: 'Brokerage per trade (each way)', prefixText: '\$')),
+          ]),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+            FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Save')),
+          ],
+        ),
       ),
     );
     if (ok != true) return;
     s.tradeSize = (double.tryParse(size.text) ?? s.tradeSize).clamp(100, 10000000).toDouble();
     s.brokerage = (double.tryParse(fee.text) ?? s.brokerage).clamp(0, 1000).toDouble();
+    s.brokerModel = model;
     await s.save();
+  }
+
+  /// What following every short-term signal has looked like, in dollars.
+  Widget _expectCard(ScanResult r) {
+    final s = Settings.instance;
+    final rt = s.roundTripCost;
+    final size = s.tradeSize;
+    final months = [for (final m in StockCalibration.dipMonths) (m[0] - rt * m[1]) * size]..sort();
+    final positive = months.where((m) => m > 0).length;
+    final median = months[months.length ~/ 2];
+    final worst = months.first, best = months.last;
+    final perMonth = StockCalibration.dipMonths.fold<num>(0, (a, m) => a + m[1]) / StockCalibration.dipMonths.length;
+    // The last three months, replayed from real prices.
+    final cutoff = r.asOf.subtract(const Duration(days: 92));
+    final recent = r.closedDips.where((t) => t.exitDate!.isAfter(cutoff)).toList();
+    final recentNet = recent.fold<double>(0, (a, t) => a + (t.gain - rt) * size);
+    final recentWins = recent.where((t) => t.gain - rt > 0).length;
+    Widget row(String a, String b, {Color? color}) => Padding(
+          padding: const EdgeInsets.symmetric(vertical: 3),
+          child: Row(children: [
+            Expanded(child: Text(a, style: const TextStyle(fontSize: 13))),
+            Text(b, style: TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: color)),
+          ]),
+        );
+    Color tone(double v) => v >= 0 ? EdgeColors.win : EdgeColors.coral;
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text('What to expect with ${dollars(size)} parcels', style: const TextStyle(fontWeight: FontWeight.w800)),
+          const SizedBox(height: 2),
+          const Muted('If you took every short-term signal, after your brokerage.'),
+          const SizedBox(height: 8),
+          row('Trades in a typical month', perMonth.toStringAsFixed(0)),
+          row('Months that made money', '$positive of ${months.length}'),
+          row('Typical month', dollars(median), color: tone(median)),
+          row('Best month / worst month', '${dollars(best)} / ${dollars(worst)}'),
+          const Divider(height: 18),
+          row('Last 3 months: trades / winners', recent.isEmpty ? 'none' : '${recent.length} / $recentWins'),
+          row('Last 3 months: result', recent.isEmpty ? '-' : dollars(recentNet), color: tone(recentNet)),
+          const SizedBox(height: 8),
+          Muted('Usually ${StockCalibration.dipOpenMedian} trades are open at once and sometimes ${StockCalibration.dipOpenP90}, '
+              'so taking every signal needs about ${dollars(size * StockCalibration.dipOpenP90)} available. '
+              'Results come in lumps, not as a steady daily amount: one month in three loses.'),
+        ]),
+      ),
+    );
   }
 
   List<Widget> _dipCards(ScanResult r) {
@@ -218,9 +293,14 @@ class _SharesScreenState extends State<SharesScreen> {
     final String plan;
     switch (t.action) {
       case TradeAction.buy:
-        plan = 'Buy around ${money(t.entryPrice)}${live ? ' if it closes near here' : ''}. '
+        final st = Settings.instance;
+        final shares = (st.tradeSize / t.entryPrice).floor();
+        final net = StockCalibration.dips.net(st.costPerSide) * st.tradeSize;
+        final atStop = (StockRules.dipStop + st.roundTripCost) * st.tradeSize;
+        plan = 'Buy around ${money(t.entryPrice)}${live ? ' if it closes near here' : ''}: about $shares shares for ${dollars(st.tradeSize)}. '
             'Sell when it closes above ${money(t.sellAbove)} (its 5-day average) or by ${shortDate(addTradingDays(t.entryDate, StockRules.dipMaxHold))}. '
-            'Get out if it closes below ${money(t.stop)}.';
+            'Get out if it closes below ${money(t.stop)}. '
+            'On average these make ${dollars(net)}; a stop-out costs about ${dollars(atStop)}.';
       case TradeAction.hold:
         plan = 'Bought ${shortDate(t.entryDate)} at ${money(t.entryPrice)}, now ${money(t.priceNow)} (${signedPct(t.gain)}). '
             'Sell when it closes above ${money(t.sellAbove)}, or in ${t.daysLeft} more trading day${t.daysLeft == 1 ? '' : 's'}. Stop ${money(t.stop)}.';

@@ -14,12 +14,31 @@ class Settings extends ChangeNotifier {
   String racingCountry = 'AUS';
   String oddsApiKey = '';
   String bookie = 'sportsbet'; // The Odds API bookmaker key
-  double tradeSize = 5000; // typical dollars per share trade
-  double brokerage = 5; // dollars per trade, each way
+  double tradeSize = 10000; // typical dollars per share trade
+  double brokerage = 5; // flat dollars per trade, each way (when not using a broker preset)
+  String brokerModel = 'cmc'; // 'cmc' = CMC Invest rates, 'flat' = the flat fee above
   List<String> watchlist = [];
 
-  /// Brokerage as a fraction of a trade, per side.
-  double get costPerSide => tradeSize <= 0 ? 0.001 : brokerage / tradeSize;
+  /// Brokerage to buy a parcel of [size] dollars.
+  /// CMC Invest (Australian shares): first buy under \$1,000 per stock per day
+  /// is free; otherwise the greater of \$11 or 0.10%.
+  double buyFee(double size) {
+    if (brokerModel != 'cmc') return brokerage;
+    if (size < 1000) return 0;
+    return size * 0.001 > 11 ? size * 0.001 : 11;
+  }
+
+  /// Brokerage to sell a parcel of [size] dollars (CMC: greater of \$11 or 0.10%).
+  double sellFee(double size) {
+    if (brokerModel != 'cmc') return brokerage;
+    return size * 0.001 > 11 ? size * 0.001 : 11;
+  }
+
+  /// Buy plus sell brokerage as a fraction of the parcel.
+  double get roundTripCost => tradeSize <= 0 ? 0.002 : (buyFee(tradeSize) + sellFee(tradeSize)) / tradeSize;
+
+  /// Brokerage as a fraction of a trade, per side (average of in and out).
+  double get costPerSide => roundTripCost / 2;
   bool loaded = false;
 
   bool get hasOddsKey => oddsApiKey.trim().isNotEmpty;
@@ -34,6 +53,7 @@ class Settings extends ChangeNotifier {
     bookie = p.getString('bookie') ?? bookie;
     tradeSize = p.getDouble('tradeSize') ?? tradeSize;
     brokerage = p.getDouble('brokerage') ?? brokerage;
+    brokerModel = p.getString('brokerModel') ?? brokerModel;
     watchlist = p.getStringList('watchlist') ?? watchlist;
     loaded = true;
     notifyListeners();
@@ -49,6 +69,7 @@ class Settings extends ChangeNotifier {
     await p.setString('bookie', bookie);
     await p.setDouble('tradeSize', tradeSize);
     await p.setDouble('brokerage', brokerage);
+    await p.setString('brokerModel', brokerModel);
     await p.setStringList('watchlist', watchlist);
     notifyListeners();
   }

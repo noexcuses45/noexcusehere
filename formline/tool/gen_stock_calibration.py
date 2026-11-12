@@ -62,6 +62,15 @@ class RejectedIdea {{
 
 class StockCalibration {{
   static const period = '2016 to 2026';
+
+  /// Short-term trades month by month: [sum of gross returns, trades], taking
+  /// every signal with one equal parcel.
+  static const List<List<num>> dipMonths = {json.dumps(r['dipMonths'])};
+
+  /// Short-term trades open at the same time (parcels of capital needed).
+  static const dipOpenMedian = {r['dipConcurrent']['median']};
+  static const dipOpenP90 = {r['dipConcurrent']['p90']};
+  static const dipOpenMax = {r['dipConcurrent']['max']};
   static const dips = {stats(r['dips'])};
   static const leaders = {stats(r['leaders'])};
   static const rejected = [

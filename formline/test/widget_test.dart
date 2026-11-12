@@ -10,6 +10,8 @@ import 'package:formline/services/espn_api.dart';
 import 'package:formline/engine/ratings.dart';
 import 'package:formline/services/odds_api.dart';
 import 'package:formline/services/prediction_log.dart';
+import 'package:formline/services/settings_service.dart';
+import 'package:formline/engine/stock_calibration.dart';
 import 'package:formline/theme.dart';
 
 void main() {
@@ -207,6 +209,32 @@ void main() {
     expect(b.injuries, {'B Hurt': 'Out'});
     expect(b.marketTotal, 226.5);
     expect(b.tables.single.rows.single.name, 'A Player');
+  });
+
+  test('CMC Invest brokerage and what it does to the short-term edge', () {
+    final s = Settings.instance
+      ..brokerModel = 'cmc'
+      ..tradeSize = 900;
+    expect(s.buyFee(900), 0); // first buy under \$1,000 is free
+    expect(s.sellFee(900), 11);
+    expect(s.buyFee(1000), 11);
+    expect(s.buyFee(20000), closeTo(20, 1e-9)); // 0.10% beats \$11
+    expect(s.sellFee(20000), closeTo(20, 1e-9));
+    // Small parcels lose to brokerage; \$10k parcels keep most of the edge.
+    expect(StockCalibration.dips.net(s.costPerSide), lessThan(0));
+    s.tradeSize = 10000;
+    expect(s.roundTripCost, closeTo(0.0022, 1e-9));
+    expect(StockCalibration.dips.net(s.costPerSide), greaterThan(0.003));
+    s
+      ..brokerModel = 'flat'
+      ..brokerage = 5;
+    expect(s.roundTripCost, closeTo(0.001, 1e-9));
+    s.brokerModel = 'cmc';
+    // Baked monthly table is consistent with the headline stats.
+    final trades = StockCalibration.dipMonths.fold<num>(0, (a, m) => a + m[1]);
+    expect(trades, StockCalibration.dips.trades);
+    final gross = StockCalibration.dipMonths.fold<num>(0, (a, m) => a + m[0]) / trades;
+    expect(gross, closeTo(StockCalibration.dips.gross, 1e-4));
   });
 
   testWidgets('theme builds a dark material app', (tester) async {

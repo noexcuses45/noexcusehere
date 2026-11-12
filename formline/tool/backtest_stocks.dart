@@ -180,6 +180,42 @@ Future<void> main(List<String> args) async {
   out['dips'] = summarise('Dips in leaders (app rule)', [
     for (final t in res.closedDips) (entry: t.entryDate, exit: t.exitDate!, gross: t.gain, days: t.days),
   ]);
+  // Month-by-month results of taking every short-term signal with one parcel,
+  // and how many trades are open at once (the capital needed).
+  final months = <String, List<double>>{}; // yyyy-mm -> [gross sum, trades]
+  for (final t in res.closedDips) {
+    final k = '${t.exitDate!.year}-${t.exitDate!.month.toString().padLeft(2, '0')}';
+    final m = months.putIfAbsent(k, () => [0, 0]);
+    m[0] += t.gain;
+    m[1] += 1;
+  }
+  final first = res.closedDips.map((t) => t.entryDate).reduce((a, b) => a.isBefore(b) ? a : b);
+  final lastDay = res.closedDips.map((t) => t.exitDate!).reduce((a, b) => a.isAfter(b) ? a : b);
+  for (var d = DateTime.utc(first.year, first.month); !d.isAfter(lastDay); d = DateTime.utc(d.year, d.month + 1)) {
+    months.putIfAbsent('${d.year}-${d.month.toString().padLeft(2, '0')}', () => [0, 0]);
+  }
+  final keys = months.keys.toList()..sort();
+  final events = <(DateTime, int)>[];
+  for (final t in res.closedDips) {
+    events.add((t.entryDate, 1));
+    events.add((t.exitDate!, -1));
+  }
+  events.sort((a, b) => a.$1 == b.$1 ? a.$2.compareTo(b.$2) : a.$1.compareTo(b.$1));
+  var open = 0, maxOpen = 0;
+  final dayOpen = <int>[];
+  for (final e in events) {
+    open += e.$2;
+    if (open > maxOpen) maxOpen = open;
+    dayOpen.add(open);
+  }
+  dayOpen.sort();
+  out['dipMonths'] = [for (final k in keys) [double.parse(months[k]![0].toStringAsFixed(5)), months[k]![1].toInt()]];
+  out['dipConcurrent'] = {'max': maxOpen, 'p90': dayOpen[(dayOpen.length * 0.9).floor()], 'median': dayOpen[dayOpen.length ~/ 2]};
+  final pos = keys.where((k) => months[k]![0] - 0.002 * months[k]![1] > 0).length;
+  stdout.writeln('\n   short-term trades by month: ${keys.length} months, $pos profitable at 0.1%/side; '
+      'open at once: median ${dayOpen[dayOpen.length ~/ 2]}, 90% of the time under ${dayOpen[(dayOpen.length * 0.9).floor()]}, max $maxOpen; '
+      'trades per month ${(res.closedDips.length / keys.length).toStringAsFixed(1)}');
+
   out['leaders'] = summarise('Leaders to hold (app rule)', [
     for (final p in res.closedLeaders) (entry: p.entryDate, exit: p.exitDate!, gross: p.gain, days: p.days),
   ]);
