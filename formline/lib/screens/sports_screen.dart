@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../engine/bookie.dart';
 import '../engine/predictor.dart';
@@ -36,6 +37,9 @@ class _SportsScreenState extends State<SportsScreen> {
   List<Multi> _roundMultis = [];
   List<OddsEvent> _odds = [];
   String? _oddsError;
+  List<NewsItem> _news = [];
+  Map<String, List<InjuryItem>> _injuries = {};
+  bool _newsOpen = false;
   bool _loadingGames = false;
   bool _building = false;
   String? _error;
@@ -82,8 +86,11 @@ class _SportsScreenState extends State<SportsScreen> {
       _roundMultis = [];
       _odds = [];
       _oddsError = null;
+      _news = [];
+      _injuries = {};
     });
     _loadOdds(token);
+    _loadNews(token);
     try {
       final games = await EspnApi.scoreboard(_league, _day);
       if (token != _loadToken) return;
@@ -99,6 +106,17 @@ class _SportsScreenState extends State<SportsScreen> {
         _error = 'Could not load games. Check your connection.';
       });
     }
+  }
+
+  Future<void> _loadNews(int token) async {
+    try {
+      final results = await Future.wait([EspnApi.news(_league), EspnApi.injuries(_league)]);
+      if (token != _loadToken || !mounted) return;
+      setState(() {
+        _news = results[0] as List<NewsItem>;
+        _injuries = results[1] as Map<String, List<InjuryItem>>;
+      });
+    } catch (_) {}
   }
 
   Future<void> _loadOdds(int token) async {
@@ -274,16 +292,116 @@ class _SportsScreenState extends State<SportsScreen> {
     return RefreshIndicator(
       onRefresh: _load,
       child: ListView(padding: const EdgeInsets.fromLTRB(12, 4, 12, 24), children: [
+        // Live games first, so the action is always at the top.
+        if (_games.any((g) => g.isLive)) ...[
+          const SectionTitle('Live now'),
+          for (final g in _games.where((g) => g.isLive)) _gameCard(g),
+          const SizedBox(height: 10),
+        ],
+        if (_news.isNotEmpty || _injuries.isNotEmpty) ...[_newsCard(), const SizedBox(height: 10)],
         if (!OddsApi.instance.enabled && _league.oddsKey != null) _oddsBanner(),
         if (_oddsError != null) Padding(padding: const EdgeInsets.only(bottom: 8), child: InfoBanner(_oddsError!, icon: Icons.warning_amber_outlined)),
         if (_odds.isNotEmpty) ...[_bookieCard(), const SizedBox(height: 10)],
         if (_roundMultis.isNotEmpty) _roundCard(),
         if (_building && _roundMultis.isEmpty)
           const Padding(padding: EdgeInsets.all(8), child: Muted('Building best multi for this round...')),
-        for (final g in _games) _gameCard(g),
+        // Then games still to start, then finished ones.
+        for (final g in _games.where((g) => !g.isLive && !g.isFinal)) _gameCard(g),
+        for (final g in _games.where((g) => g.isFinal)) _gameCard(g),
         const SizedBox(height: 8),
         const InfoBanner('Predictions come from team scoring ratings fitted to recent results (opponent-adjusted, recency-weighted). Bookmaker lines are shown for comparison only and never feed the model.'),
       ]),
+    );
+  }
+
+  /// Injuries for the teams playing on this day, plus league headlines.
+  Widget _newsCard() {
+    final playing = <String, String>{}; // team id -> abbreviation
+    for (final g in _games) {
+      if (g.isFinal) continue;
+      playing[g.home.id] = g.home.abbr;
+      playing[g.away.id] = g.away.abbr;
+    }
+    final rows = <(String, InjuryItem)>[];
+    for (final e in playing.entries) {
+      for (final i in _injuries[e.key] ?? const <InjuryItem>[]) {
+        rows.add((e.value, i));
+      }
+    }
+    rows.sort((a, b) {
+      final o = (b.$2.out ? 1 : 0).compareTo(a.$2.out ? 1 : 0);
+      return o != 0 ? o : (b.$2.date ?? DateTime(2000)).compareTo(a.$2.date ?? DateTime(2000));
+    });
+    final outCount = rows.where((r) => r.$2.out).length;
+    final flagged = _news.where((n) => n.matters).length;
+    final summary = [
+      if (rows.isNotEmpty) '$outCount out, ${rows.length - outCount} in doubt for these games',
+      if (_news.isNotEmpty) '${_news.length} headline${_news.length == 1 ? '' : 's'}${flagged > 0 ? ', $flagged that could move a bet' : ''}',
+    ].join(' · ');
+    final shownInjuries = _newsOpen ? rows : rows.take(4).toList();
+    final shownNews = _newsOpen ? _news.take(12).toList() : _news.take(3).toList();
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Row(children: [
+            const Icon(Icons.campaign_outlined, color: EdgeColors.coral, size: 20),
+            const SizedBox(width: 8),
+            Expanded(child: Text('${_league.name.split(' (').first} injuries and news', style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 15))),
+          ]),
+          const SizedBox(height: 2),
+          Muted(summary),
+          if (shownInjuries.isNotEmpty) const SizedBox(height: 8),
+          for (final r in shownInjuries)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 3),
+              child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Container(
+                  width: 44,
+                  padding: const EdgeInsets.symmetric(vertical: 2),
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(color: (r.$2.out ? EdgeColors.coral : EdgeColors.sky).withValues(alpha: 0.18), borderRadius: BorderRadius.circular(6)),
+                  child: Text(r.$1, style: TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: r.$2.out ? EdgeColors.coral : EdgeColors.sky)),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    Text('${r.$2.player} · ${r.$2.status}', style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13)),
+                    if (r.$2.comment.isNotEmpty) Muted(r.$2.comment),
+                  ]),
+                ),
+              ]),
+            ),
+          if (shownNews.isNotEmpty) const Divider(height: 18),
+          for (final n in shownNews)
+            InkWell(
+              onTap: n.url == null ? null : () => launchUrl(Uri.parse(n.url!), mode: LaunchMode.externalApplication),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 4),
+                child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Icon(n.matters ? Icons.priority_high : Icons.article_outlined, size: 16, color: n.matters ? EdgeColors.coral : EdgeColors.muted),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                      Text(n.headline, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+                      if (n.published != null) Muted(timeLocal(n.published!), size: 11),
+                    ]),
+                  ),
+                ]),
+              ),
+            ),
+          if (rows.length > 4 || _news.length > 3)
+            Align(
+              alignment: Alignment.centerLeft,
+              child: TextButton(
+                style: TextButton.styleFrom(padding: EdgeInsets.zero, visualDensity: VisualDensity.compact),
+                onPressed: () => setState(() => _newsOpen = !_newsOpen),
+                child: Text(_newsOpen ? 'Show less' : 'Show all (${rows.length} injuries, ${_news.length} headlines)'),
+              ),
+            ),
+          const Muted('Injuries are not yet built into the projections, so adjust for them yourself.', size: 11),
+        ]),
+      ),
     );
   }
 

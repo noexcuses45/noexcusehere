@@ -57,7 +57,7 @@ class ShareScan extends ChangeNotifier {
         scanner = sc;
         live = MarketClock.barIsLive(result!.asOf);
         loadedAt = DateTime.now();
-        await PracticeAccount.instance.sync(result!);
+        await PracticeAccount.instance.sync(result!, series);
       }
     } catch (_) {
       error = 'Could not load ASX prices. Check your connection and try again.';

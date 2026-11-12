@@ -286,6 +286,62 @@ class EspnApi {
     return model;
   }
 
+  /// Latest headlines for a league, newest first. Highlight clips and game
+  /// recaps are left out; items that mention injuries, suspensions, trades
+  /// or selection are flagged because they can move a bet.
+  static Future<List<NewsItem>> news(League league) async {
+    final j = await _getJson('$_base/${league.path}/news?limit=30', ttl: const Duration(minutes: 15));
+    final out = <NewsItem>[];
+    for (final a in (j['articles'] as List? ?? [])) {
+      try {
+        final type = '${a['type'] ?? ''}';
+        if (type == 'Media' || type == 'Recap' || type == 'Preview') continue;
+        final headline = '${a['headline'] ?? ''}'.trim();
+        if (headline.isEmpty) continue;
+        final text = '$headline ${a['description'] ?? ''}'.toLowerCase();
+        out.add(NewsItem(
+          headline: headline,
+          summary: '${a['description'] ?? ''}'.trim(),
+          published: DateTime.tryParse('${a['published'] ?? a['lastModified'] ?? ''}'),
+          url: ((a['links'] as Map?)?['web'] as Map?)?['href'] as String?,
+          matters: NewsItem.keywords.any(text.contains),
+        ));
+      } catch (_) {}
+    }
+    out.sort((a, b) {
+      final m = (b.matters ? 1 : 0).compareTo(a.matters ? 1 : 0);
+      if (m != 0) return m;
+      return (b.published ?? DateTime(2000)).compareTo(a.published ?? DateTime(2000));
+    });
+    return out;
+  }
+
+  /// League-wide injury list: team id -> injured players. Empty for
+  /// competitions where the feed has none.
+  static Future<Map<String, List<InjuryItem>>> injuries(League league) async {
+    final out = <String, List<InjuryItem>>{};
+    try {
+      final j = await _getJson('$_base/${league.path}/injuries', ttl: const Duration(minutes: 15));
+      for (final t in (j['injuries'] as List? ?? [])) {
+        final list = <InjuryItem>[];
+        for (final i in (t['injuries'] as List? ?? [])) {
+          final name = i['athlete']?['displayName'];
+          if (name == null) continue;
+          list.add(InjuryItem(
+            player: '$name',
+            status: '${i['status'] ?? ''}',
+            comment: '${i['shortComment'] ?? ''}'.trim(),
+            date: DateTime.tryParse('${i['date'] ?? ''}'),
+            position: '${i['athlete']?['position']?['abbreviation'] ?? ''}',
+          ));
+        }
+        list.sort((a, b) => (b.date ?? DateTime(2000)).compareTo(a.date ?? DateTime(2000)));
+        if (list.isNotEmpty) out['${t['id']}'] = list;
+      }
+    } catch (_) {}
+    return out;
+  }
+
   /// Box score lines + injuries + market line for an event.
   /// [live] fetches fresh data every 20 seconds. Finished games are kept on
   /// the phone in a slimmed form (a few KB instead of ~500 KB).
@@ -419,6 +475,34 @@ class EspnApi {
     await Future.wait(futures);
     return out;
   }
+}
+
+/// A league headline.
+class NewsItem {
+  NewsItem({required this.headline, this.summary = '', this.published, this.url, this.matters = false});
+  final String headline;
+  final String summary;
+  final DateTime? published;
+  final String? url;
+  final bool matters; // mentions something that can move a bet
+
+  static const keywords = [
+    'injur', 'ruled out', 'out for', 'sidelined', 'surgery', 'hamstring', 'concussion', 'knee', 'ankle', 'questionable', 'doubtful',
+    'suspend', 'banned', 'return', 'comeback', 'cleared', 'trade', 'signs', 'signed', 'sacked', 'fired', 'lineup', 'line-up',
+    'team news', 'selection', 'dropped', 'rested', 'resting', 'load management', 'illness', 'late withdrawal', 'scratch',
+  ];
+}
+
+/// One injured player from the league injury list.
+class InjuryItem {
+  InjuryItem({required this.player, required this.status, this.comment = '', this.date, this.position = ''});
+  final String player;
+  final String status; // Out, Day-To-Day, Questionable...
+  final String comment;
+  final DateTime? date;
+  final String position;
+
+  bool get out => status.toLowerCase().contains('out') || status.toLowerCase().contains('injured reserve');
 }
 
 /// One player's row in a live/final box score, any sport.

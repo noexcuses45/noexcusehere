@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../engine/stock_scanner.dart';
+import '../engine/stocks.dart';
 import 'settings_service.dart';
 
 /// One practice trade taken from a BUY signal.
@@ -142,12 +143,29 @@ class PracticeAccount extends ChangeNotifier {
       ..sellFee = Settings.instance.sellFee(t.shares * price);
   }
 
+  /// Records that the user sold [t] at [price].
+  Future<void> sell(PracticeTrade t, DateTime date, double price, String reason) async {
+    if (!t.open) return;
+    close(t, date, price, reason);
+    await _save();
+  }
+
   /// Brings open trades up to date with the latest scan: marks prices, and
-  /// sells where the rule has said sell.
-  Future<void> sync(ScanResult r) async {
+  /// sells short-term and leader practice trades where the rule has said
+  /// sell. Plan trades (kind 'plan') are only re-priced: the user marks those
+  /// as sold, because they may be real.
+  Future<void> sync(ScanResult r, [Map<String, Series> series = const {}]) async {
     if (!active) return;
     var changed = false;
     for (final t in trades.where((t) => t.open)) {
+      if (t.kind == 'plan') {
+        final s = series[t.code];
+        if (s != null && s.close(s.n - 1) != t.lastPrice) {
+          t.lastPrice = s.close(s.n - 1);
+          changed = true;
+        }
+        continue;
+      }
       if (t.kind == 'dip') {
         final done = r.closedDips.where((d) => d.code == t.code && d.entryDate == t.entryDate).toList();
         if (done.isNotEmpty) {
