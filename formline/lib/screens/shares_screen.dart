@@ -1,6 +1,10 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
+import '../engine/day_plan.dart';
+import '../engine/market_clock.dart';
 import '../engine/plan_advisor.dart';
 import '../engine/stock_calibration.dart';
 import '../engine/stock_scanner.dart';
@@ -40,6 +44,7 @@ class _SharesScreenState extends State<SharesScreen> {
   final _searchCtrl = TextEditingController();
   List<CompanyInfo> _hits = [];
   bool _searching = false;
+  Timer? _tick; // keeps the Today card's countdowns moving
 
   @override
   void initState() {
@@ -48,6 +53,7 @@ class _SharesScreenState extends State<SharesScreen> {
     Settings.instance.addListener(_changed);
     PracticeAccount.instance.addListener(_changed);
     ShareScan.instance.load();
+    _tick = Timer.periodic(const Duration(minutes: 1), (_) => _changed());
   }
 
   @override
@@ -56,6 +62,7 @@ class _SharesScreenState extends State<SharesScreen> {
     Settings.instance.removeListener(_changed);
     PracticeAccount.instance.removeListener(_changed);
     _searchCtrl.dispose();
+    _tick?.cancel();
     super.dispose();
   }
 
@@ -98,6 +105,7 @@ class _SharesScreenState extends State<SharesScreen> {
         if (r != null) ...[
           _planCard(r),
           const SizedBox(height: 10),
+          if (PracticeAccount.instance.active) ...[_todayCard(), const SizedBox(height: 10)],
           _costsCard(),
           SectionTitle('Short-term trades', trailing: const Muted('held for days')),
           Muted('Sharp dips in the market\'s strongest shares. Tested ${StockCalibration.period}: '
@@ -449,8 +457,37 @@ class _SharesScreenState extends State<SharesScreen> {
     );
   }
 
-  /// "My plan": the user says how much they have, and the app says how much
-  /// to put on which shares, when to sell, and what to buy next.
+  // ------------------------------------------------------------ My plan
+
+  bool get _short => Settings.instance.planStyle == 'short';
+  String get _planKind => _short ? 'short' : 'plan';
+  int get _slots => _short ? PlanAdvisor.shortSlotsFor(PracticeAccount.instance.start) : PlanAdvisor.slotsFor(PracticeAccount.instance.start);
+
+  /// What the chosen way of trading did in the test at [amount] dollars:
+  /// the sentence, and whether it made money.
+  (String, bool) _testedLine(double amount, bool short) {
+    if (short) {
+      final h = PlanAdvisor.shortHistoryFor(amount);
+      final fees = '${h[3].round()} trades a year, ${dollars(h[4])} a year in brokerage';
+      if (h[1] <= -0.95) {
+        return ('Tested on the last five years with CMC Invest brokerage: at this size the fees used up the whole account ($fees). '
+            'Short-term trading starts to pay from about \$7,500. Until then, follow it without real money.', false);
+      }
+      if (h[1] <= 0.005) {
+        return ('Tested on the last five years with CMC Invest brokerage: about ${signedPct(h[1])} a year ($fees), and at its worst it was down ${(-h[2] * 100).round()}%. '
+            'Short-term trading starts to pay from about \$7,500. Until then, follow it without real money.', false);
+      }
+      return ('Tested on the last five years with CMC Invest brokerage: about ${signedPct(h[1])} a year ($fees), but at its worst it was down ${(-h[2] * 100).round()}%.', true);
+    }
+    final h = PlanAdvisor.historyFor(amount);
+    if (h[1] > 0.005) {
+      return ('Tested on the last five years with CMC Invest brokerage: about ${signedPct(h[1])} a year, but at its worst it was down ${(-h[2] * 100).round()}%.', true);
+    }
+    return ('Tested on the last five years with CMC Invest brokerage: fees beat the plan at this size, about ${signedPct(h[1])} a year, and at its worst it was down ${(-h[2] * 100).round()}%. '
+        'It starts to pay from about \$2,000. Until then, follow it without real money.', false);
+  }
+
+  /// "My plan": the balance, how the money is split, and what the test says.
   Widget _planCard(ScanResult r) {
     final acct = PracticeAccount.instance;
     if (!acct.active) {
@@ -458,28 +495,17 @@ class _SharesScreenState extends State<SharesScreen> {
         child: ListTile(
           leading: const Icon(Icons.assignment_outlined, color: EdgeColors.lime),
           title: const Text('My plan: tell me how much you are starting with', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 14)),
-          subtitle: const Muted('The app then says how much to put on which shares, when to sell each one, and what to buy next.'),
+          subtitle: const Muted('The app then gives you a routine for each day: what to buy, at what time, how much to put on it, and when to sell or hold.'),
           trailing: const Icon(Icons.chevron_right),
           onTap: _setupPlan,
         ),
       );
     }
-    final series = ShareScan.instance.series;
-    final st = Settings.instance;
-    final equity = acct.equity;
-    final slots = PlanAdvisor.slotsFor(acct.start);
-    final held = acct.openTrades.where((t) => t.kind == 'plan').toList();
-    final others = acct.openTrades.where((t) => t.kind != 'plan').toList();
-    final free = (slots - held.length).clamp(0, slots);
-    final each = free == 0 ? 0.0 : acct.cash / free;
-    final picks = free == 0 || each < 20
-        ? <PlanPick>[]
-        : PlanAdvisor.picks(r.ranks, series, count: free, dollarsEach: each, exclude: held.map((t) => t.code).toSet());
-    final hist = PlanAdvisor.historyFor(acct.start);
+    final slots = _slots;
+    final others = acct.openTrades.where((t) => t.kind != _planKind).toList();
     final pnl = acct.totalPnl;
     final closed = acct.closedTrades;
-    final parcel = acct.start / slots;
-    final fee = st.buyFee(parcel) + st.sellFee(parcel);
+    final (tested, good) = _testedLine(acct.start, _short);
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(14),
@@ -487,44 +513,35 @@ class _SharesScreenState extends State<SharesScreen> {
           Row(children: [
             const Icon(Icons.assignment_outlined, color: EdgeColors.lime, size: 20),
             const SizedBox(width: 8),
-            const Expanded(child: Text('My plan', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 15))),
+            Expanded(child: Text('My plan · ${_short ? 'short-term trades' : 'leaders to hold'}', style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 15))),
             TextButton(onPressed: _setupPlan, child: const Text('Change')),
           ]),
           Row(crossAxisAlignment: CrossAxisAlignment.end, children: [
-            Text(dollars(equity), style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w900)),
+            Text(dollars(acct.equity), style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w900)),
             const SizedBox(width: 10),
-            Padding(
-              padding: const EdgeInsets.only(bottom: 3),
-              child: Text('${pnl >= 0 ? '+' : ''}${dollars(pnl)} since you started with ${dollars(acct.start)}',
-                  style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12.5, color: pnl >= 0 ? EdgeColors.win : EdgeColors.coral)),
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.only(bottom: 3),
+                child: Text('${pnl >= 0 ? '+' : ''}${dollars(pnl)} since you started with ${dollars(acct.start)}',
+                    style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12.5, color: pnl >= 0 ? EdgeColors.win : EdgeColors.coral)),
+              ),
             ),
           ]),
           const SizedBox(height: 4),
-          Text('Split it across $slots shares, about ${dollars(parcel)} each. Cash waiting: ${dollars(acct.cash)}.', style: const TextStyle(fontSize: 13)),
-          const SizedBox(height: 4),
           Text(
-            hist[1] > 0.005
-                ? 'Tested on the last five years: about ${signedPct(hist[1])} a year after brokerage at this size, but at its worst it was down ${(-hist[2] * 100).round()}%.'
-                : 'Tested on the last five years: at this size brokerage (${dollars(fee)} a trade) beat the plan, about ${signedPct(hist[1])} a year, and at its worst it was down ${(-hist[2] * 100).round()}%. It starts to pay from about \$2,000. Until then, follow it without real money.',
-            style: TextStyle(fontSize: 12.5, color: hist[1] > 0.005 ? EdgeColors.muted : EdgeColors.coral),
+            _short
+                ? (slots == 1 ? 'One trade at a time, held for a few days. Cash waiting: ${dollars(acct.cash)}.' : '$slots trades at a time, about ${dollars(acct.start / slots)} each, held for a few days. Cash waiting: ${dollars(acct.cash)}.')
+                : 'Split across $slots shares, about ${dollars(acct.start / slots)} each, held for weeks. Cash waiting: ${dollars(acct.cash)}.',
+            style: const TextStyle(fontSize: 13),
           ),
-          const Divider(height: 20),
-          for (final t in held) _planHeld(r, t),
-          for (final p in picks) _planBuy(r, p),
-          if (free > 0 && picks.length < free)
-            Padding(
-              padding: const EdgeInsets.only(top: 6),
-              child: Muted(each < 20
-                  ? 'No cash left for another share.'
-                  : 'Nothing else qualifies right now. Keep ${dollars(each * (free - picks.length))} in cash until a new share enters the top ten.'),
-            ),
-          if (held.isEmpty && picks.isEmpty && free == 0) const Muted('Fully invested.'),
+          const SizedBox(height: 4),
+          Text(tested, style: TextStyle(fontSize: 12.5, color: good ? EdgeColors.muted : EdgeColors.coral)),
           for (final t in others)
             Padding(
               padding: const EdgeInsets.only(top: 8),
               child: Row(children: [
                 Expanded(
-                  child: Text('${t.code} · ${t.kind == 'dip' ? 'short-term practice' : 'leader practice'} · ${DateFormat('d MMM').format(t.entryDate)} at ${money(t.entryPrice)}',
+                  child: Text('${t.code} · ${t.kind == 'dip' ? 'short-term practice' : t.kind == 'leader' ? 'leader practice' : 'earlier plan'} · ${DateFormat('d MMM').format(t.entryDate)} at ${money(t.entryPrice)}',
                       style: const TextStyle(fontSize: 13)),
                 ),
                 Text('${t.pnl >= 0 ? '+' : ''}${dollars(t.pnl)}', style: TextStyle(fontWeight: FontWeight.w800, color: t.pnl >= 0 ? EdgeColors.win : EdgeColors.coral)),
@@ -544,88 +561,231 @@ class _SharesScreenState extends State<SharesScreen> {
                 ]),
               ),
           ],
-          const SizedBox(height: 8),
-          const Muted('The app only keeps track. It never places orders: you buy and sell in your broker app.'),
         ]),
       ),
     );
   }
 
-  /// A share the plan holds: HOLD with its sell trigger, or SELL now.
-  Widget _planHeld(ScanResult r, PracticeTrade t) {
-    final s = ShareScan.instance.series[t.code];
-    final reason = PlanAdvisor.sellReason(t.code, r.ranks, s);
-    final sellBelow = s == null ? double.nan : s.sma(StockRules.trendLen)[s.n - 1];
-    final rank = r.ranks.rank[t.code];
-    final sell = reason != null;
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 10),
-      child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        _badge(sell ? TradeAction.sell : TradeAction.hold),
-        const SizedBox(width: 12),
-        Expanded(
-          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Row(children: [
-              Expanded(child: Text('${t.code} · ${AsxUniverse.nameOf(t.code)}', style: const TextStyle(fontWeight: FontWeight.w800), overflow: TextOverflow.ellipsis)),
-              Text('${t.pnl >= 0 ? '+' : ''}${dollars(t.pnl)}', style: TextStyle(fontWeight: FontWeight.w800, color: t.pnl >= 0 ? EdgeColors.win : EdgeColors.coral)),
-            ]),
-            const SizedBox(height: 2),
-            Text(
-              sell
-                  ? 'Sell all of it now: $reason. You put in ${dollars(t.dollars)} on ${DateFormat('d MMM').format(t.entryDate)} at ${money(t.entryPrice)}; it is ${money(t.lastPrice)} now.'
-                  : 'You put in ${dollars(t.dollars)} on ${DateFormat('d MMM').format(t.entryDate)} at ${money(t.entryPrice)}; it is ${money(t.lastPrice)} now. '
-                      'Keep it until it closes below ${sellBelow.isNaN ? '-' : money(sellBelow)} or its rank slips past ${StockRules.leaderExit}${rank == null ? '' : ' (now $rank)'}.',
-              style: const TextStyle(fontSize: 13, height: 1.35),
-            ),
-            Align(
-              alignment: Alignment.centerLeft,
-              child: TextButton(
-                style: TextButton.styleFrom(foregroundColor: sell ? EdgeColors.coral : EdgeColors.muted, padding: EdgeInsets.zero, visualDensity: VisualDensity.compact),
-                onPressed: () => _confirmSold(r, t, reason),
-                child: Text(sell ? 'I have sold it' : 'I sold it early'),
-              ),
-            ),
+  // -------------------------------------------------------------- Today
+
+  DayPlan _dayPlan() {
+    final acct = PracticeAccount.instance;
+    final st = Settings.instance;
+    return DayPlan.build(
+      series: ShareScan.instance.series,
+      style: st.planStyle,
+      held: [for (final t in acct.openTrades.where((t) => t.kind == _planKind)) Holding(t.code, t.entryDate, t.entryPrice)],
+      cash: acct.cash,
+      slots: _slots,
+      buyFee: st.buyFee,
+    );
+  }
+
+  PracticeTrade? _tradeFor(String code) {
+    for (final t in PracticeAccount.instance.openTrades) {
+      if (t.kind == _planKind && t.code == code) return t;
+    }
+    return null;
+  }
+
+  /// The daily routine: what to do at 10:15am and what to do at 3:50pm.
+  Widget _todayCard() {
+    final acct = PracticeAccount.instance;
+    if (!acct.active) return const SizedBox();
+    final plan = _dayPlan();
+    final short = plan.style == 'short';
+    final s = plan.session;
+    final closeLabel = MarketClock.timeLabel(DayPlan.closeHour, DayPlan.closeMinute);
+    final buys = plan.close.where((x) => x.kind == StepKind.buyIfInRange).toList();
+    final heldAtClose = plan.close.where((x) => x.kind != StepKind.buyIfInRange).toList();
+    final morningBuys = plan.morning.where((x) => x.kind == StepKind.buyNow).length;
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Row(children: [
+            const Icon(Icons.today_outlined, color: EdgeColors.lime, size: 20),
+            const SizedBox(width: 8),
+            Expanded(child: Text('${s.isToday ? 'Today' : 'Next trading day'} · ${shortDate(s.date)}', style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 15))),
           ]),
+          const SizedBox(height: 2),
+          Muted(plan.basedOn == null
+              ? 'Waiting for prices.'
+              : 'Worked out from closing prices on ${shortDate(plan.basedOn!)}.${plan.behind ? ' Newer prices are not in yet: pull down to refresh.' : ''}'),
+          _timeHeader(DayPlan.morningHour, DayPlan.morningMinute, 'after the market opens', plan, untilHour: DayPlan.closeHour, untilMinute: DayPlan.closeMinute, hasSteps: plan.morning.isNotEmpty),
+          if (plan.morning.isEmpty)
+            Muted(short
+                ? 'Nothing to buy or sell in the morning. This rule trades at the end of the day, because that is the price it was tested on.'
+                : plan.freeSlots > 0
+                    ? (plan.budget < 20 ? 'No cash left for another share.' : 'Nothing qualifies to buy right now. Keep the cash until a new share enters the top ten.')
+                    : 'Nothing to do.'),
+          for (final x in plan.morning) _stepRow(x, plan),
+          if (!short && plan.morning.isNotEmpty && plan.freeSlots > morningBuys && plan.budget >= 20)
+            Muted('Nothing else qualifies right now. Keep ${dollars(plan.budget * (plan.freeSlots - morningBuys))} in cash until a new share enters the top ten.'),
+          _timeHeader(DayPlan.closeHour, DayPlan.closeMinute, 'ten minutes before the close', plan, untilHour: 16, untilMinute: 10, hasSteps: plan.close.isNotEmpty),
+          if (!short) const Muted('Nothing to do. This plan only trades in the morning: look again tomorrow.'),
+          if (short) ...[
+            for (final x in heldAtClose) _stepRow(x, plan),
+            if (plan.freeSlots == 0)
+              const Muted('All your cash is in use, so no new buys today.')
+            else if (plan.budget < 20)
+              const Muted('No cash left for a new trade.')
+            else if (buys.isEmpty)
+              const Muted('No leading share is close to a sharp dip today, so there is nothing to buy. That is normal: the rule fires a few times a week.')
+            else ...[
+              Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: Text(
+                  'You have cash for ${plan.freeSlots == 1 ? 'one trade' : '${plan.freeSlots} trades'} of about ${dollars(plan.budget)}. '
+                  'At $closeLabel look at the price in your broker app and buy the first share on this list that is under its buy price. If none is, do nothing.',
+                  style: const TextStyle(fontSize: 13, height: 1.35),
+                ),
+              ),
+              for (final x in buys) _stepRow(x, plan),
+            ],
+          ],
+          const SizedBox(height: 8),
+          const Muted('Times are Sydney time. The ASX trades 10:00am to 4:00pm on weekdays, not on public holidays. '
+              'The app only keeps track. It never places orders: you buy and sell in your broker app.'),
+        ]),
+      ),
+    );
+  }
+
+  Widget _timeHeader(int hour, int minute, String what, DayPlan plan, {required int untilHour, required int untilMinute, required bool hasSteps}) {
+    final String status;
+    final Color color;
+    if (!plan.session.isToday) {
+      status = DateFormat('EEE').format(plan.session.date);
+      color = EdgeColors.muted;
+    } else {
+      final mins = MarketClock.minutesUntil(hour, minute);
+      if (mins > 0) {
+        status = mins >= 60 ? 'in ${mins ~/ 60}h ${mins % 60}m' : 'in $mins min';
+        color = EdgeColors.sky;
+      } else if (MarketClock.minutesUntil(untilHour, untilMinute) > 0) {
+        // "NOW" only when there is something to do.
+        status = hasSteps ? 'NOW' : '';
+        color = EdgeColors.lime;
+      } else {
+        status = 'passed';
+        color = EdgeColors.muted;
+      }
+    }
+    return Padding(
+      padding: const EdgeInsets.only(top: 14, bottom: 8),
+      child: Row(crossAxisAlignment: CrossAxisAlignment.center, children: [
+        Expanded(
+          child: Text.rich(TextSpan(children: [
+            TextSpan(text: MarketClock.timeLabel(hour, minute), style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 15, color: EdgeColors.lime)),
+            TextSpan(text: '  $what', style: const TextStyle(fontSize: 12.5, color: EdgeColors.muted)),
+          ])),
         ),
+        if (status.isNotEmpty)
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+            decoration: BoxDecoration(color: color.withValues(alpha: 0.18), borderRadius: BorderRadius.circular(8)),
+            child: Text(status, style: TextStyle(color: color, fontWeight: FontWeight.w800, fontSize: 11.5)),
+          ),
       ]),
     );
   }
 
-  /// A share the plan says to buy now, with the dollar amount.
-  Widget _planBuy(ScanResult r, PlanPick p) {
+  Widget _tag(String text, Color color) => Container(
+        width: 52,
+        padding: const EdgeInsets.symmetric(vertical: 5),
+        alignment: Alignment.center,
+        decoration: BoxDecoration(color: color.withValues(alpha: 0.2), borderRadius: BorderRadius.circular(8)),
+        child: Text(text, style: TextStyle(color: color, fontWeight: FontWeight.w900, fontSize: 12)),
+      );
+
+  /// One instruction in the Today card.
+  Widget _stepRow(DayStep x, DayPlan plan) {
+    final t = _tradeFor(x.code);
+    final live = x.livePrice;
+    final open = MarketClock.asxOpen();
+    final nowWord = open ? 'Now' : 'Closed at';
+    final closeLabel = MarketClock.timeLabel(DayPlan.closeHour, DayPlan.closeMinute);
+    final put = t == null ? '' : 'You put in ${dollars(t.dollars)} on ${DateFormat('d MMM').format(t.entryDate)} at ${money(t.entryPrice)}. ';
+    final String tag, text;
+    final Color color;
+    String? sellLabel, buyLabel;
+    switch (x.kind) {
+      case StepKind.sellNow:
+        tag = 'SELL';
+        color = EdgeColors.coral;
+        text = 'Sell all of it: ${x.reason}. ${put}Last close ${money(x.lastClose)}${live == null ? '' : ', ${nowWord.toLowerCase()} ${money(live)}'}.';
+        sellLabel = 'I have sold it';
+      case StepKind.buyNow:
+        tag = 'BUY';
+        color = EdgeColors.win;
+        text = 'Put ${dollars(x.dollars)} on it: ${x.shares} share${x.shares == 1 ? '' : 's'} at about ${money(x.lastClose)}. '
+            'It ranks ${x.rank} with ${signedPct(x.mom, 0)} over six months. '
+            'Then hold it until the app says sell: when it closes below ${money(x.sellBelow)} or its rank slips past ${StockRules.leaderExit}.';
+        buyLabel = 'I have bought it';
+      case StepKind.hold:
+        tag = 'HOLD';
+        color = EdgeColors.sky;
+        text = plan.style == 'short'
+            ? '${put}Nothing more to do today. From the next trading day this page says whether to sell or hold.'
+            : '${put}Keep it today. It becomes a sell if it closes below ${x.sellBelow.isNaN ? '-' : money(x.sellBelow)} or its rank slips past ${StockRules.leaderExit}${x.rank == 0 ? '' : ' (now ${x.rank})'}.';
+        sellLabel = 'I sold it early';
+      case StepKind.sellIfAbove:
+        final met = x.metNow;
+        tag = met == null ? 'CHECK' : (met ? 'SELL' : 'HOLD');
+        color = met == null ? EdgeColors.sky : (met ? EdgeColors.coral : EdgeColors.sky);
+        text = 'Day ${x.holdDay} of ${StockRules.dipMaxHold}. At $closeLabel: sell if the price is above ${money(x.high)}. If it is not, hold another day. '
+            'Also sell if it is at or below ${money(x.stop)}. $put'
+            '${live == null ? '' : '$nowWord ${money(live)}: ${met! ? 'that is a SELL${open ? ' if it stays there' : ''}' : 'that is a HOLD${open ? ' so far' : ''}'}.'}';
+        sellLabel = 'I have sold it';
+      case StepKind.sellAtClose:
+        tag = 'SELL';
+        color = EdgeColors.coral;
+        text = 'Day ${x.holdDay} of ${StockRules.dipMaxHold}, the last day. Sell at $closeLabel whatever the price. $put';
+        sellLabel = 'I have sold it';
+      case StepKind.buyIfInRange:
+        final met = x.metNow;
+        tag = met == true ? 'BUY' : 'WATCH';
+        color = met == true ? EdgeColors.win : EdgeColors.sky;
+        final floor = x.low > x.lastClose * 0.85 ? ' (but not below ${money(x.low)})' : '';
+        text = 'Buy at $closeLabel if the price is under ${money(x.high)}$floor. Put ${dollars(x.dollars)} on it: about ${x.shares} share${x.shares == 1 ? '' : 's'}. '
+            '${x.fallNeeded > 0 ? 'It last closed at ${money(x.lastClose)}, so it has to fall ${(x.fallNeeded * 100).toStringAsFixed(1)}% today.' : 'It last closed at ${money(x.lastClose)}: already low enough if it stays there.'}'
+            '${live == null ? '' : ' $nowWord ${money(live)}: ${met! ? 'that is a BUY${open ? ' if it stays there' : ''}' : 'no buy${open ? ' so far' : ''}'}.'}';
+        buyLabel = 'I have bought it';
+    }
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),
       child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        _badge(TradeAction.buy),
+        _tag(tag, color),
         const SizedBox(width: 12),
         Expanded(
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Row(children: [
-              Expanded(child: Text('${p.code} · ${AsxUniverse.nameOf(p.code)}', style: const TextStyle(fontWeight: FontWeight.w800), overflow: TextOverflow.ellipsis)),
-              Text(money(p.price), style: const TextStyle(fontWeight: FontWeight.w800)),
+              Expanded(child: Text('${x.code} · ${AsxUniverse.nameOf(x.code)}', style: const TextStyle(fontWeight: FontWeight.w800), overflow: TextOverflow.ellipsis)),
+              if (t != null)
+                Text('${t.pnl >= 0 ? '+' : ''}${dollars(t.pnl)}', style: TextStyle(fontWeight: FontWeight.w800, color: t.pnl >= 0 ? EdgeColors.win : EdgeColors.coral))
+              else
+                Text(money(live ?? x.lastClose), style: const TextStyle(fontWeight: FontWeight.w800)),
             ]),
             const SizedBox(height: 2),
-            Text(
-              'Put ${dollars(p.dollars)} on it: about ${p.shares} shares at ${money(p.price)}. '
-              'It ranks ${p.rank} with ${signedPct(p.mom, 0)} over six months. '
-              'Sell when it closes below ${money(p.sellBelow)} or its rank slips past ${StockRules.leaderExit}.',
-              style: const TextStyle(fontSize: 13, height: 1.35),
-            ),
+            Text(text.trim(), style: const TextStyle(fontSize: 13, height: 1.35)),
             Row(children: [
-              TextButton(
-                style: TextButton.styleFrom(foregroundColor: EdgeColors.lime, padding: EdgeInsets.zero, visualDensity: VisualDensity.compact),
-                onPressed: () async {
-                  final ok = await PracticeAccount.instance.buy(code: p.code, kind: 'plan', entryDate: r.asOf, entryPrice: p.price, dollars: p.dollars);
-                  if (mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(ok ? 'Tracking ${dollars(p.dollars)} of ${p.code}' : 'Could not add ${p.code}')));
-                  }
-                },
-                child: const Text('I have bought it'),
-              ),
+              if (buyLabel != null)
+                TextButton(
+                  style: TextButton.styleFrom(foregroundColor: EdgeColors.lime, padding: EdgeInsets.zero, visualDensity: VisualDensity.compact),
+                  onPressed: () => _confirmBought(x),
+                  child: Text(buyLabel),
+                ),
+              if (sellLabel != null && t != null)
+                TextButton(
+                  style: TextButton.styleFrom(foregroundColor: x.kind == StepKind.hold ? EdgeColors.muted : EdgeColors.coral, padding: EdgeInsets.zero, visualDensity: VisualDensity.compact),
+                  onPressed: () => _confirmSold(t, x.kind == StepKind.sellNow ? x.reason : (x.kind == StepKind.sellAtClose ? 'time limit' : (x.kind == StepKind.hold ? 'sold early' : 'sold on the daily check'))),
+                  child: Text(sellLabel),
+                ),
               const SizedBox(width: 16),
               TextButton(
                 style: TextButton.styleFrom(foregroundColor: EdgeColors.muted, padding: EdgeInsets.zero, visualDensity: VisualDensity.compact),
-                onPressed: () => _open(p.code),
+                onPressed: () => _open(x.code),
                 child: const Text('See chart'),
               ),
             ]),
@@ -635,8 +795,47 @@ class _SharesScreenState extends State<SharesScreen> {
     );
   }
 
-  Future<void> _confirmSold(ScanResult r, PracticeTrade t, String? reason) async {
-    final ctrl = TextEditingController(text: t.lastPrice >= 2 ? t.lastPrice.toStringAsFixed(2) : t.lastPrice.toStringAsFixed(3));
+  String _priceText(double p) => p >= 2 ? p.toStringAsFixed(2) : p.toStringAsFixed(3);
+
+  /// Records a buy the user made, at the price and number of shares they got.
+  Future<void> _confirmBought(DayStep x) async {
+    final acct = PracticeAccount.instance;
+    final guess = x.livePrice ?? (x.kind == StepKind.buyIfInRange && x.high < x.lastClose ? x.high : x.lastClose);
+    final priceCtrl = TextEditingController(text: _priceText(guess));
+    final sharesCtrl = TextEditingController(text: '${x.shares}');
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('Bought ${x.code}?'),
+        content: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+          const Muted('Enter what you actually got, so the app can track it and tell you when to sell.'),
+          const SizedBox(height: 10),
+          TextField(controller: priceCtrl, keyboardType: const TextInputType.numberWithOptions(decimal: true), decoration: const InputDecoration(labelText: 'Price paid', prefixText: '\$')),
+          const SizedBox(height: 8),
+          TextField(controller: sharesCtrl, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'Number of shares')),
+        ]),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Bought')),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    final price = double.tryParse(priceCtrl.text.replaceAll(',', '')) ?? 0;
+    final shares = int.tryParse(sharesCtrl.text.replaceAll(',', '')) ?? 0;
+    if (price <= 0 || shares < 1) return;
+    final amount = price * shares;
+    final total = amount + Settings.instance.buyFee(amount);
+    final done = total <= acct.cash + 0.005 &&
+        await acct.buy(code: x.code, kind: _planKind, entryDate: MarketClock.lastSessionDate(), entryPrice: price, dollars: total);
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(done ? 'Tracking $shares ${x.code} at ${money(price)}' : 'That is more than the ${dollars(acct.cash)} cash in your plan')));
+    }
+  }
+
+  Future<void> _confirmSold(PracticeTrade t, String reason) async {
+    final ctrl = TextEditingController(text: _priceText(t.lastPrice));
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -653,38 +852,83 @@ class _SharesScreenState extends State<SharesScreen> {
       ),
     );
     if (ok != true) return;
-    final price = double.tryParse(ctrl.text) ?? t.lastPrice;
+    final price = double.tryParse(ctrl.text.replaceAll(',', '')) ?? t.lastPrice;
     if (price <= 0) return;
-    await PracticeAccount.instance.sell(t, r.asOf, price, reason ?? 'sold early');
+    await PracticeAccount.instance.sell(t, MarketClock.lastSessionDate(), price, reason);
   }
 
   Future<void> _setupPlan() async {
     final acct = PracticeAccount.instance;
     final ctrl = TextEditingController(text: acct.active ? acct.start.round().toString() : '');
+    String? style = acct.active ? Settings.instance.planStyle : null; // null = follow the test
+    double amount() => double.tryParse(ctrl.text.replaceAll(',', '')) ?? 0;
+    String better(double v) => PlanAdvisor.shortHistoryFor(v)[1] > PlanAdvisor.historyFor(v)[1] ? 'short' : 'long';
     final ok = await showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text(acct.active ? 'Change your plan' : 'How much are you starting with?'),
-        content: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Muted(acct.active
-              ? 'Starting again clears the trades the plan is tracking.'
-              : 'Enter the dollars you have for shares. The app works out how much to put on each one.'),
-          const SizedBox(height: 10),
-          TextField(controller: ctrl, autofocus: true, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'Starting amount', prefixText: '\$')),
-        ]),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
-          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: Text(acct.active ? 'Start again' : 'Make my plan')),
-        ],
-      ),
+      builder: (ctx) => StatefulBuilder(builder: (ctx, setLocal) {
+        final v = amount();
+        final chosen = style ?? better(v);
+        Widget option(String id, String title, String what) {
+          final (tested, good) = _testedLine(v, id == 'short');
+          final on = chosen == id;
+          return InkWell(
+            borderRadius: BorderRadius.circular(12),
+            onTap: () => setLocal(() => style = id),
+            child: Container(
+              margin: const EdgeInsets.only(top: 8),
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: on ? EdgeColors.lime : Colors.white24, width: on ? 1.6 : 1),
+              ),
+              child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Icon(on ? Icons.radio_button_checked : Icons.radio_button_off, size: 20, color: on ? EdgeColors.lime : EdgeColors.muted),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    Text(title, style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 13.5)),
+                    Text(what, style: const TextStyle(fontSize: 12.5)),
+                    if (v >= 50) Text(tested, style: TextStyle(fontSize: 12, color: good ? EdgeColors.win : EdgeColors.coral)),
+                  ]),
+                ),
+              ]),
+            ),
+          );
+        }
+
+        return AlertDialog(
+          title: Text(acct.active ? 'Change your plan' : 'How much are you starting with?'),
+          content: SingleChildScrollView(
+            child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Muted(acct.active ? 'Starting again clears the trades the plan is tracking.' : 'Enter the dollars you have for shares, then pick how you want to trade.'),
+              const SizedBox(height: 10),
+              TextField(
+                controller: ctrl,
+                autofocus: !acct.active,
+                keyboardType: TextInputType.number,
+                decoration: const InputDecoration(labelText: 'Starting amount', prefixText: '\$'),
+                onChanged: (_) => setLocal(() {}),
+              ),
+              option('short', 'Short-term trades (days)', 'Buy a sharp dip in a leading share at 3:50pm, sell on the bounce a few days later.'),
+              option('long', 'Leaders to hold (weeks)', 'Buy the strongest shares at 10:15am and hold each one until it fades.'),
+            ]),
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+            FilledButton(onPressed: () => Navigator.pop(ctx, true), child: Text(acct.active ? 'Start again' : 'Make my plan')),
+          ],
+        );
+      }),
     );
     if (ok != true) return;
-    final v = double.tryParse(ctrl.text.replaceAll(',', '')) ?? 0;
+    final v = amount();
     if (v < 50) return;
-    await acct.reset(v);
+    final chosen = style ?? better(v);
+    Settings.instance.planStyle = chosen;
     // Size the brokerage maths to the parcels this plan will use.
-    Settings.instance.tradeSize = v / PlanAdvisor.slotsFor(v);
+    Settings.instance.tradeSize = v / (chosen == 'short' ? PlanAdvisor.shortSlotsFor(v) : PlanAdvisor.slotsFor(v));
     await Settings.instance.save();
+    await acct.reset(v);
   }
 
   Widget _searchCard() {
@@ -761,6 +1005,7 @@ class _SharesScreenState extends State<SharesScreen> {
           const Text('Tested and left out', style: TextStyle(color: EdgeColors.coral, fontWeight: FontWeight.w700)),
           for (final x in StockCalibration.rejected)
             row(x.name, '${pct(x.winRate)} win, ${signedPct(x.net - x.baseline, 2)} vs holding'),
+          row('Buying a dip and selling the next day', '${pct(PlanAdvisor.oneDayWin)} win, ${signedPct(PlanAdvisor.oneDayGross, 2)} before fees'),
           const SizedBox(height: 8),
           const Muted('Those rejected ideas win often but make nothing after costs, because losses are bigger than wins. '
               'Caveats: the test used today\'s large companies, which flatters older results, and prices are daily closes, so this is not minute-by-minute day trading.'),

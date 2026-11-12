@@ -37,6 +37,22 @@ out because they did not beat costs. Results are baked into `lib/engine/stock_ca
 and tells you whether the short-term edge survives your costs. Prices are daily closes, so this is
 end-of-day trading, not minute-by-minute day trading. General information only, not financial advice.
 
+**My plan and Today.** Enter a starting amount and pick a way to trade; the **Today** card then gives
+a routine for the day with Sydney times (and the phone's own time if it is on another time zone):
+
+- *Leaders to hold:* at 10:15am, what to sell, what to hold, and what to buy with how many dollars.
+- *Short-term trades:* at 3:50pm, ten minutes before the close, because the rule was tested on closing
+  prices. In the morning the card already shows the price each leading share must be under at 3:50pm to
+  be a buy, and for a share you hold, the price above which it is a sell (otherwise hold another day).
+  These lines are worked out from earlier closes in `lib/engine/day_plan.dart`, and a test checks they
+  agree with the scanner the backtest uses.
+
+`tool/plan_backtest.dart` and `tool/short_backtest.dart` replay both routines for a real account
+(whole shares, CMC Invest brokerage) at each starting amount, and the page shows the result for your
+amount. With CMC's $11 minimum fee the leaders plan pays from about $2,000 and short-term trading from
+about $7,500; under $2,000 short-term trading lost the whole account to brokerage. A true one-day trade
+(sell at the next close) made only +0.14% a trade before brokerage, so it is listed as tested and left out.
+
 ## How good is it?
 
 The app keeps itself honest in two ways, both shown under **My picks → Model record**:

@@ -37,4 +37,38 @@ class MarketClock {
     final sameDay = barDate.year == s.year && barDate.month == s.month && barDate.day == s.day;
     return sameDay && asxOpen(now);
   }
+
+  /// Minutes from now until [hour]:[minute] Sydney time today (negative once passed).
+  static int minutesUntil(int hour, int minute, [DateTime? now]) {
+    final s = sydney(now);
+    return hour * 60 + minute - (s.hour * 60 + s.minute);
+  }
+
+  static String _clock(int minutes) {
+    final m = ((minutes % 1440) + 1440) % 1440;
+    final h = m ~/ 60;
+    return '${h % 12 == 0 ? 12 : h % 12}:${(m % 60).toString().padLeft(2, '0')}${h < 12 ? 'am' : 'pm'}';
+  }
+
+  /// A Sydney clock time such as "3:50pm". When the phone is on another time
+  /// zone its own time is added: "3:50pm Sydney (2:50pm your time)".
+  static String timeLabel(int hour, int minute, [DateTime? now]) {
+    final n = now ?? DateTime.now();
+    final diff = n.timeZoneOffset - sydneyOffset(n.toUtc());
+    final syd = _clock(hour * 60 + minute);
+    if (diff == Duration.zero) return syd;
+    return '$syd Sydney (${_clock(hour * 60 + minute + diff.inMinutes)} your time)';
+  }
+
+  /// The date of the latest ASX session that has started (Sydney calendar
+  /// date at midnight UTC, the way price bars are dated).
+  static DateTime lastSessionDate([DateTime? now]) {
+    final s = sydney(now);
+    var d = DateTime.utc(s.year, s.month, s.day);
+    if (s.hour < 10) d = d.subtract(const Duration(days: 1));
+    while (d.weekday > 5) {
+      d = d.subtract(const Duration(days: 1));
+    }
+    return d;
+  }
 }

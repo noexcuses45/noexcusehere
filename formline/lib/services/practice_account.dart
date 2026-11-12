@@ -24,7 +24,7 @@ class PracticeTrade {
   }) : lastPrice = lastPrice ?? entryPrice;
 
   final String code;
-  final String kind; // 'dip' (short-term) or 'leader'
+  final String kind; // practice: 'dip' or 'leader'; My plan: 'plan' (leaders) or 'short' (short-term)
   final DateTime entryDate;
   final double entryPrice;
   final double dollars; // cash put in, including the buy fee
@@ -152,13 +152,13 @@ class PracticeAccount extends ChangeNotifier {
 
   /// Brings open trades up to date with the latest scan: marks prices, and
   /// sells short-term and leader practice trades where the rule has said
-  /// sell. Plan trades (kind 'plan') are only re-priced: the user marks those
-  /// as sold, because they may be real.
+  /// sell. My plan trades (kinds 'plan' and 'short') are only re-priced: the
+  /// user marks those as sold, because they may be real.
   Future<void> sync(ScanResult r, [Map<String, Series> series = const {}]) async {
     if (!active) return;
     var changed = false;
     for (final t in trades.where((t) => t.open)) {
-      if (t.kind == 'plan') {
+      if (t.kind == 'plan' || t.kind == 'short') {
         final s = series[t.code];
         if (s != null && s.close(s.n - 1) != t.lastPrice) {
           t.lastPrice = s.close(s.n - 1);

@@ -18,6 +18,7 @@ class Settings extends ChangeNotifier {
   double brokerage = 5; // flat dollars per trade, each way (when not using a broker preset)
   String brokerModel = 'cmc'; // 'cmc' = CMC Invest rates, 'flat' = the flat fee above
   List<String> watchlist = [];
+  String planStyle = 'long'; // My plan: 'short' = short-term trades, 'long' = leaders to hold
 
   /// Brokerage to buy a parcel of [size] dollars.
   /// CMC Invest (Australian shares): first buy under \$1,000 per stock per day
@@ -55,6 +56,7 @@ class Settings extends ChangeNotifier {
     brokerage = p.getDouble('brokerage') ?? brokerage;
     brokerModel = p.getString('brokerModel') ?? brokerModel;
     watchlist = p.getStringList('watchlist') ?? watchlist;
+    planStyle = p.getString('planStyle') ?? planStyle;
     loaded = true;
     notifyListeners();
   }
@@ -71,6 +73,7 @@ class Settings extends ChangeNotifier {
     await p.setDouble('brokerage', brokerage);
     await p.setString('brokerModel', brokerModel);
     await p.setStringList('watchlist', watchlist);
+    await p.setString('planStyle', planStyle);
     notifyListeners();
   }
 
