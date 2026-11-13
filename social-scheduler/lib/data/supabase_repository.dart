@@ -22,6 +22,9 @@ AppException friendly(Object error) {
     if (error.status == 404) {
       return AppException('The server side of this app has not been set up yet, so signing in is not possible.');
     }
+    if (error.status == 0) {
+      return AppException('Could not reach this app\'s server. Check your connection and try again.');
+    }
     return AppException('The server could not complete that (code ${error.status}). Try again.');
   }
   if (error is AuthException) {

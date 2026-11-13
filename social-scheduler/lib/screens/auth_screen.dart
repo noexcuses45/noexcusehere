@@ -27,6 +27,7 @@ class _AuthScreenState extends State<AuthScreen> {
   bool? _hasOwner; // null while checking
   bool _busy = false;
   bool _hide = true;
+  bool _statusFailed = false;
   String? _error;
 
   @override
@@ -50,6 +51,7 @@ class _AuthScreenState extends State<AuthScreen> {
     setState(() {
       _hasOwner = null;
       _error = null;
+      _statusFailed = false;
     });
     try {
       final has = await _repo!.hasOwner();
@@ -59,6 +61,7 @@ class _AuthScreenState extends State<AuthScreen> {
       if (mounted) {
         setState(() {
           _hasOwner = true;
+          _statusFailed = true;
           _error = e.message;
         });
       }
@@ -192,6 +195,15 @@ class _AuthScreenState extends State<AuthScreen> {
                             if (_error != null) ...[
                               const SizedBox(height: 12),
                               Text(_error!, style: TextStyle(color: theme.colorScheme.error)),
+                              if (_statusFailed)
+                                Align(
+                                  alignment: Alignment.centerLeft,
+                                  child: TextButton.icon(
+                                    onPressed: _busy ? null : _checkOwner,
+                                    icon: const Icon(Icons.refresh, size: 18),
+                                    label: const Text('Check again'),
+                                  ),
+                                ),
                             ],
                             const SizedBox(height: 18),
                             FilledButton(
