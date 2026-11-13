@@ -3,6 +3,10 @@ name: Build APK
 on:
   push:
     branches: [main, master]
+    # Changes to the separate Mashwave player don't need a new fitness-app build.
+    paths-ignore:
+      - "mashwave/**"
+      - ".github/workflows/build-mashwave.yml"
   workflow_dispatch:
 
 permissions:
