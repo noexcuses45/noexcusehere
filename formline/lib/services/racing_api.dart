@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
@@ -6,24 +7,70 @@ import 'package:http/http.dart' as http;
 import '../models/race.dart';
 import 'cache.dart';
 
+/// Why the racing feed could not be read, in words for the screen.
+class RacingException implements Exception {
+  RacingException(this.reason);
+  final String reason;
+  @override
+  String toString() => reason;
+}
+
 /// TAB NZ affiliates feed: meetings, fields, form and results for
 /// thoroughbred, harness and greyhound racing worldwide. No key needed.
 class RacingApi {
-  /// The feed does not allow browser (cross-origin) requests, so the web
-  /// build goes through a same-origin relay configured in web/_redirects.
-  static final String _base =
-      kIsWeb ? Uri.base.resolve('/racing-api').toString() : 'https://api.tab.co.nz/affiliates/v1/racing';
-  static final _client = http.Client();
+  static const _direct = 'https://api.tab.co.nz/affiliates/v1/racing';
 
-  static Future<Map<String, dynamic>> _getJson(String url, {Duration ttl = Duration.zero}) async {
+  /// The Formline website relays the same feed. The web build has to use it
+  /// (the feed does not allow browser requests); the phone app falls back to
+  /// it when the feed refuses a direct connection, which happens on some
+  /// VPNs and overseas networks.
+  static const _relay = 'https://formline-app.netlify.app/racing-api';
+  static http.Client _client = http.Client();
+  static bool _useRelay = false; // the direct route failed last time
+
+  /// Lets tests stand in for the network.
+  @visibleForTesting
+  static void useClient(http.Client c) {
+    _client = c;
+    _useRelay = false;
+  }
+
+  static String _why(Object e) {
+    if (e is RacingException) return e.reason;
+    if (e is TimeoutException) return 'The racing feed did not answer.';
+    return 'No connection to the racing feed.';
+  }
+
+  /// Fetches [path] from the feed, trying the other route if the first fails.
+  static Future<Map<String, dynamic>> _fetch(String path) async {
+    final bases = kIsWeb ? [Uri.base.resolve('/racing-api').toString()] : (_useRelay ? [_relay, _direct] : [_direct, _relay]);
+    Object? error;
+    for (final base in bases) {
+      try {
+        // Give up on the first route sooner, so a blocked connection does not hold things up.
+        final limit = Duration(seconds: base == bases.last ? 20 : 12);
+        final res = await _client.get(Uri.parse('$base$path'), headers: {'Accept': 'application/json'}).timeout(limit);
+        if (res.statusCode != 200) throw RacingException('The racing feed refused the request (${res.statusCode}).');
+        final j = json.decode(res.body);
+        if (j is! Map<String, dynamic>) throw RacingException('The racing feed sent something unexpected.');
+        _useRelay = base == _relay;
+        return j;
+      } catch (e) {
+        // Keep the first route's reason: it is the one that says what is wrong.
+        error ??= e;
+      }
+    }
+    throw RacingException(_why(error!));
+  }
+
+  static Future<Map<String, dynamic>> _getJson(String path, {Duration ttl = Duration.zero}) async {
+    final key = 'racing:$path';
     if (ttl > Duration.zero) {
-      final c = await Cache.get(url, ttl);
+      final c = await Cache.get(key, ttl);
       if (c is Map<String, dynamic>) return c;
     }
-    final res = await _client.get(Uri.parse(url), headers: {'Accept': 'application/json'}).timeout(const Duration(seconds: 20));
-    if (res.statusCode != 200) throw Exception('Racing feed ${res.statusCode}');
-    final j = json.decode(res.body) as Map<String, dynamic>;
-    if (ttl > Duration.zero) await Cache.put(url, j, persist: false);
+    final j = await _fetch(path);
+    if (ttl > Duration.zero) await Cache.put(key, j, persist: false);
     return j;
   }
 
@@ -31,7 +78,7 @@ class RacingApi {
       '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
 
   static Future<List<Meeting>> meetings(DateTime day) async {
-    final j = await _getJson('$_base/meetings?date_from=${_iso(day)}&date_to=${_iso(day)}', ttl: const Duration(minutes: 5));
+    final j = await _getJson('/meetings?date_from=${_iso(day)}&date_to=${_iso(day)}', ttl: const Duration(minutes: 5));
     final out = <Meeting>[];
     for (final m in ((j['data']?['meetings']) as List? ?? [])) {
       final races = <RaceSummary>[];
@@ -63,7 +110,7 @@ class RacingApi {
   }
 
   static Future<Race> race(String raceId, {bool finished = false}) async {
-    final j = await _getJson('$_base/events/$raceId', ttl: finished ? const Duration(days: 30) : const Duration(minutes: 2));
+    final j = await _getJson('/events/$raceId', ttl: finished ? const Duration(days: 30) : const Duration(minutes: 2));
     return parseRace(j, raceId);
   }
 

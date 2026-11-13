@@ -56,7 +56,7 @@ class _RacingScreenState extends State<RacingScreen> {
       }).toList()
         ..sort((x, y) => x.races.first.start.compareTo(y.races.first.start));
     } catch (e) {
-      _error = 'Could not load race meetings.';
+      _error = 'Could not load race meetings. ${e is RacingException ? e.reason : 'Something went wrong reading the feed.'}\nIf you are on a VPN, turn it off and try again.';
     }
     if (mounted) setState(() => _loading = false);
   }
