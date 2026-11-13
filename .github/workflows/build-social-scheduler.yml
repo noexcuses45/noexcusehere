@@ -118,6 +118,13 @@ jobs:
       - name: Name the APK
         run: cp build/app/outputs/flutter-apk/app-release.apk build/social-scheduler.apk
 
+      # The release build strips resources it thinks are unused. The reminder
+      # icon is only referenced by name, so make sure it is still in the APK.
+      - name: Check the reminder icon is in the APK
+        run: |
+          AAPT2=$(ls "$ANDROID_HOME"/build-tools/*/aapt2 | sort -V | tail -1)
+          "$AAPT2" dump resources build/social-scheduler.apk | grep -q "drawable/ic_stat_reminder"
+
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:

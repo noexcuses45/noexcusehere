@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The reminder notification icon is looked up by name at run time, so the
+     release build's resource shrinker cannot see that it is used. Without
+     this file it is removed and reminders silently stop working. -->
+<resources xmlns:tools="http://schemas.android.com/tools"
+    tools:keep="@drawable/ic_stat_reminder" />
