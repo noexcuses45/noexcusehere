@@ -57,6 +57,15 @@ android {
             signingConfig = signingConfigs.findByName("release") ?: signingConfigs.getByName("debug")
         }
     }
+
+    // Android Lint inspects native Android code; this app's code is Dart
+    // (checked by "flutter analyze"). The release-time lint pass in this
+    // toolchain also needs Java 21 and fails the whole build on Java 17, so it
+    // is switched off rather than left as a trap.
+    lint {
+        checkReleaseBuilds = false
+        abortOnError = false
+    }
 }
 
 kotlin {

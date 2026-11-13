@@ -62,10 +62,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Same Java version the app was built and tested with.
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: "17"
+          java-version: "21"
 
       # Pinned: this is the version the app was built and tested with.
       - uses: subosito/flutter-action@v2
