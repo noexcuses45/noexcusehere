@@ -2,8 +2,6 @@
 
 An Android app for planning social media posts once and sending them to **Instagram, Facebook Pages, TikTok, YouTube and LinkedIn** at the time you choose. Posts are published by a small server, so they go out even when your phone is off.
 
-This folder is a separate project from the fitness app in the rest of this repository.
-
 ## What it does
 
 - **Calendar and queue** of everything scheduled, published, or needing attention.

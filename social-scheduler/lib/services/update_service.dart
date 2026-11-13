@@ -14,8 +14,8 @@ class AppUpdate {
 }
 
 /// Looks for a newer APK among this repository's GitHub releases. Scheduler
-/// releases are tagged `scheduler-v<build number>` so they never mix with
-/// other apps published from the same repository.
+/// releases are tagged `scheduler-v<build number>`; anything else (the
+/// repository also holds releases of an older, retired app) is ignored.
 class UpdateService {
   static Future<String> currentVersion() async {
     try {

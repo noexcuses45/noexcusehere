@@ -1,7 +1,6 @@
 name: Build Social Scheduler APK
 
-# Builds the app in social-scheduler/. Kept separate from the fitness app's
-# workflow: it only runs when something under social-scheduler/ changes.
+# Tests and builds the app in social-scheduler/ whenever something there changes.
 on:
   push:
     branches: [main, master, claude/social-media-scheduler-apk-qqybz7]
@@ -131,9 +130,8 @@ jobs:
           name: social-scheduler-apk
           path: social-scheduler/build/social-scheduler.apk
 
-      # Releases are how installed copies find updates. They are tagged
-      # scheduler-v<N> and never marked "latest", so the fitness app's own
-      # update check (which reads the latest release) is not affected.
+      # Releases are how installed copies find updates. The app looks for the
+      # newest release tagged scheduler-v<N>.
       - name: Publish release (over-the-air update)
         if: steps.signing.outputs.configured == 'true' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
         uses: softprops/action-gh-release@v2
@@ -141,5 +139,3 @@ jobs:
           tag_name: scheduler-v${{ github.run_number }}
           name: Social Scheduler 1.0.${{ github.run_number }}
           files: social-scheduler/build/social-scheduler.apk
-          prerelease: true
-          make_latest: "false"
