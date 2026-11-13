@@ -19,6 +19,9 @@ AppException friendly(Object error) {
   if (error is FunctionException) {
     final details = error.details;
     if (details is Map && details['error'] is String) return AppException(details['error'] as String);
+    if (error.status == 404) {
+      return AppException('The server side of this app has not been set up yet, so signing in is not possible.');
+    }
     return AppException('The server could not complete that (code ${error.status}). Try again.');
   }
   if (error is AuthException) {

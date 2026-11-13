@@ -550,6 +550,14 @@ begin
 end;
 $$;
 
+-- Lets the Edge Function find a login that already exists for an email address
+-- (used once, when the owner account is claimed).
+create function public.find_user_id_by_email(p_email text) returns uuid
+  language sql stable security definer set search_path = ''
+as $$
+  select u.id from auth.users u where lower(u.email) = lower(btrim(p_email)) limit 1;
+$$;
+
 -- Media files that are old enough to delete.
 create function public.media_to_purge(p_limit integer default 50)
   returns table (media_id uuid, storage_path text)
@@ -568,6 +576,8 @@ $$;
 revoke all on function public.claim_due_targets(integer) from public, anon, authenticated;
 revoke all on function public.claim_owner(uuid, text) from public, anon, authenticated;
 revoke all on function public.media_to_purge(integer) from public, anon, authenticated;
+revoke all on function public.find_user_id_by_email(text) from public, anon, authenticated;
+grant execute on function public.find_user_id_by_email(text) to service_role;
 grant execute on function public.claim_due_targets(integer) to service_role;
 grant execute on function public.claim_owner(uuid, text) to service_role;
 grant execute on function public.media_to_purge(integer) to service_role;

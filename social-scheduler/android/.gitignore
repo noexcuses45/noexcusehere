@@ -15,3 +15,6 @@ key.properties
 
 # Gradle output when Gradle is run directly from android/
 /build/
+
+# Kotlin compiler daemon files
+/.kotlin/

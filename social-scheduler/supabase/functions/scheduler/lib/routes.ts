@@ -53,16 +53,31 @@ export async function claimOwner(req: Request, db: SupabaseClient): Promise<Resp
 
   await openWindow(new Date(Date.now() + 30_000).toISOString());
   try {
+    let userId: string;
+    let created = true;
     const { data, error } = await db.auth.admin.createUser({ email, password, email_confirm: true });
-    if (error || !data?.user) {
-      throw new HttpError(400, error?.message ?? "Could not create the account.");
+    if (data?.user) {
+      userId = data.user.id;
+    } else {
+      // This address may already have a login in this project from before the
+      // scheduler was set up. While nobody owns the workspace yet, claiming it
+      // takes over that login and sets its password.
+      const { data: existing, error: findError } = await db.rpc("find_user_id_by_email", { p_email: email });
+      if (findError || !existing) {
+        throw new HttpError(400, error?.message ?? "Could not create the account.");
+      }
+      const { error: updateError } = await db.auth.admin.updateUserById(String(existing), {
+        password,
+        email_confirm: true,
+      });
+      if (updateError) throw new HttpError(400, updateError.message);
+      userId = String(existing);
+      created = false;
     }
-    const { data: claimed, error: claimError } = await db.rpc("claim_owner", {
-      p_user: data.user.id,
-      p_email: email,
-    });
+
+    const { data: claimed, error: claimError } = await db.rpc("claim_owner", { p_user: userId, p_email: email });
     if (claimError || claimed !== true) {
-      await db.auth.admin.deleteUser(data.user.id);
+      if (created) await db.auth.admin.deleteUser(userId);
       if (claimError) throw new Error(`claim owner: ${claimError.message}`);
       throw new HttpError(403, "This app already has an owner. Sign in instead.");
     }

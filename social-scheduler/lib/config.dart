@@ -7,9 +7,9 @@ class AppConfig {
   static const supabaseUrl = String.fromEnvironment('SUPABASE_URL', defaultValue: _defaultUrl);
   static const supabaseKey = String.fromEnvironment('SUPABASE_KEY', defaultValue: _defaultKey);
 
-  // Filled in when the backend is deployed.
-  static const _defaultUrl = '';
-  static const _defaultKey = '';
+  // The Supabase project this app talks to.
+  static const _defaultUrl = 'https://zmspizvogocvebmoctbo.supabase.co';
+  static const _defaultKey = 'sb_publishable_cgmwq8R_yvWJNZKDTvTRyg_WXUYEQ3y';
 
   static bool get hasBackend => supabaseUrl.isNotEmpty && supabaseKey.isNotEmpty;
 

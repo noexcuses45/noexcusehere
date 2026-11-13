@@ -31,6 +31,12 @@ begin
   assert (select count(*) from public.members) = 1, 'exactly one member';
 end $$;
 
+do $$
+begin
+  assert public.find_user_id_by_email('  OWNER@example.com ') = '00000000-0000-0000-0000-000000000001', 'lookup by email';
+  assert public.find_user_id_by_email('nobody@example.com') is null, 'unknown email';
+end $$;
+
 insert into public.social_accounts (id, platform, external_id, name) values
   ('10000000-0000-0000-0000-000000000001', 'facebook', 'page1', 'My Page'),
   ('10000000-0000-0000-0000-000000000002', 'instagram', 'ig1', 'my_ig'),
@@ -76,6 +82,11 @@ begin
   begin
     perform public.claim_owner('00000000-0000-0000-0000-000000000002', 'x');
     raise exception 'TEST FAILED: stranger called claim_owner';
+  exception when insufficient_privilege then null;
+  end;
+  begin
+    perform public.find_user_id_by_email('owner@example.com');
+    raise exception 'TEST FAILED: stranger looked up a user id';
   exception when insufficient_privilege then null;
   end;
   begin
