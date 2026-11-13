@@ -3,8 +3,9 @@
 // The video is relayed from storage in chunks. The upload session survives an
 // interrupted run: the next run asks YouTube how many bytes it has and resumes.
 //
-// Note for the owner: until a Google Cloud project has passed YouTube's API
-// audit, videos uploaded through the API are locked to private by YouTube.
+// YouTube stopped forcing API uploads from un-audited projects to private on
+// 2 Nov 2026. If a video still comes back private when another visibility was
+// asked for, the result carries a note saying so.
 
 import { PublishError } from "./errors.ts";
 import { asBody, MB, readRange, sourceSize } from "./media.ts";
@@ -24,36 +25,54 @@ export const YOUTUBE_SCOPES = [
 const CHUNK = 8 * MB;
 const WAIT_LIMIT_MS = 15 * 60 * 1000;
 
-const RECONNECT_REASONS = new Set(["authError", "unauthorized", "youtubeSignupRequired", "insufficientPermissions"]);
+const RECONNECT_REASONS = new Set([
+  "authError",
+  "expired",
+  "required",
+  "unauthorized",
+  "insufficientPermissions",
+  "accountDeleted",
+  "accountDisabled",
+]);
+const TRANSIENT_REASONS = new Set(["rateLimitExceeded", "userRateLimitExceeded", "backendError", "internalError"]);
 const FRIENDLY: Record<string, string> = {
   quotaExceeded:
-    "Your Google Cloud project has used up today's YouTube API quota (about 6 uploads a day by default). It resets at midnight Pacific time.",
-  uploadLimitExceeded: "YouTube says this channel has reached its upload limit for now. Try again later.",
+    "Your Google Cloud project has used up today's YouTube upload quota (100 uploads a day by default). It resets at midnight Pacific time.",
+  dailyLimitExceeded:
+    "Your Google Cloud project has used up today's YouTube API quota. It resets at midnight Pacific time.",
+  uploadLimitExceeded: "YouTube says this channel has reached its own daily upload limit. Try again tomorrow.",
   youtubeSignupRequired: "This Google account has no YouTube channel. Create one in YouTube, then reconnect.",
+  accessNotConfigured:
+    "The YouTube Data API v3 is not switched on in your Google Cloud project. Enable it in the Google Cloud console.",
+  channelClosed: "This YouTube channel is closed.",
+  channelSuspended: "This YouTube channel is suspended.",
+  authenticatedUserAccountClosed: "This YouTube account is closed.",
+  authenticatedUserAccountSuspended: "This YouTube account is suspended.",
   invalidTitle: "YouTube rejected the title. Titles must be 1-100 characters and cannot contain < or >.",
-  invalidDescription: "YouTube rejected the description (maximum 5000 characters, no < or >).",
-  invalidTags: "YouTube rejected the tags.",
+  invalidDescription: "YouTube rejected the description (maximum 5000 bytes, no < or >).",
+  invalidTags: "YouTube rejected the tags (500 characters in total at most).",
   invalidCategoryId: "YouTube rejected the video category.",
+  forbiddenPrivacySetting: "YouTube does not allow that visibility setting for this channel.",
   forbidden: "YouTube refused the request. Reconnect the channel and approve every permission.",
 };
 
 function toYouTubeError(status: number, json: any, raw: string): PublishError {
   const err = json?.error;
-  const reason = String(err?.errors?.[0]?.reason ?? err?.status ?? "");
+  const reason = String(err?.errors?.[0]?.reason ?? "");
   const message = String(err?.message ?? raw.slice(0, 200) ?? "");
-  if (status === 401 || RECONNECT_REASONS.has(reason)) {
-    return new PublishError(
-      FRIENDLY[reason] ?? `YouTube access has expired or was revoked - reconnect this channel. (${reason || status})`,
-      { reconnect: true },
-    );
+  const friendly = FRIENDLY[reason];
+  if (friendly) return new PublishError(friendly, { code: reason, status });
+  if (RECONNECT_REASONS.has(reason) || (status === 401 && !reason)) {
+    return new PublishError(`YouTube access has expired or was revoked - reconnect this channel. (${reason || status})`, {
+      reconnect: true,
+      code: reason,
+      status,
+    });
   }
-  if (reason === "quotaExceeded" || reason === "uploadLimitExceeded") {
-    return new PublishError(FRIENDLY[reason]);
+  if (status >= 500 || status === 429 || TRANSIENT_REASONS.has(reason)) {
+    return new PublishError(`YouTube is busy (${reason || status}). Will retry.`, { transient: true, code: reason, status });
   }
-  if (status >= 500 || status === 429 || reason === "rateLimitExceeded" || reason === "userRateLimitExceeded") {
-    return new PublishError(`YouTube is busy (${reason || status}). Will retry.`, { transient: true });
-  }
-  return new PublishError(FRIENDLY[reason] ?? `YouTube error: ${message}${reason ? ` (${reason})` : ""}`);
+  return new PublishError(`YouTube error: ${message}${reason ? ` (${reason})` : ""}`, { code: reason, status });
 }
 
 async function parse(res: Response): Promise<{ json: unknown; text: string }> {
@@ -81,6 +100,14 @@ function cleanText(value: string, max: number): string {
   return value.replace(/[<>]/g, "").slice(0, max);
 }
 
+/** YouTube limits descriptions by bytes, not characters. */
+function limitBytes(value: string, maxBytes: number): string {
+  const enc = new TextEncoder();
+  let out = value;
+  while (enc.encode(out).byteLength > maxBytes) out = out.slice(0, -Math.max(1, Math.ceil(out.length / 50)));
+  return out;
+}
+
 export function youtubeMetadata(job: PublishJob): Record<string, unknown> {
   const caption = job.caption.trim();
   const explicitTitle = typeof job.options.title === "string" ? job.options.title.trim() : "";
@@ -93,7 +120,7 @@ export function youtubeMetadata(job: PublishJob): Record<string, unknown> {
   return {
     snippet: {
       title,
-      description: cleanText(caption, 4900),
+      description: limitBytes(cleanText(caption, 5000), 4900),
       categoryId: String(job.options.category_id ?? "22"),
       ...(tags.length > 0 ? { tags } : {}),
     },
@@ -261,7 +288,7 @@ async function youtubeWait(job: PublishJob, ctx: StepContext): Promise<StepResul
   const wanted = String(job.options.privacy_status ?? "public");
   const actual = String(status.privacyStatus ?? "");
   const lockedNote = wanted !== "private" && actual === "private"
-    ? "YouTube set this video to PRIVATE. That happens when the Google Cloud project has not passed YouTube's API audit - change it to public in YouTube Studio."
+    ? "YouTube set this video to PRIVATE (a channel upload default, or a restriction on your Google Cloud project). Change the visibility in YouTube Studio."
     : undefined;
 
   if (upload === "processed") {

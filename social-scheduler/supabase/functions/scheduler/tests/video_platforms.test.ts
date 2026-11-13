@@ -358,11 +358,25 @@ Deno.test("youtube: quota exhaustion is explained and not retried", async () => 
   const s = scenario({ platform: "youtube", postType: "video", media: [{ kind: "video" }] });
   s.net.on("POST", /uploadType=resumable/, () =>
     jsonResponse({
-      error: { code: 403, message: "The request cannot be completed because you have exceeded your quota.", errors: [{ reason: "quotaExceeded" }] },
+      error: {
+        code: 403,
+        message: "The request cannot be completed because you have exceeded your quota.",
+        errors: [{ domain: "youtube.quota", reason: "quotaExceeded" }],
+      },
     }, 403));
   const summary = await runWorker(s.store, s.deps);
   assertEquals(summary.failed, 1);
   assertStringIncludes(s.target.error!, "quota");
+  assertEquals(s.store.accounts.get("acct1")!.status, "active", "a quota error is not a reason to reconnect");
+});
+
+Deno.test("youtube: revoked access flags the channel for reconnecting", async () => {
+  const s = scenario({ platform: "youtube", postType: "video", media: [{ kind: "video" }] });
+  s.net.on("POST", /uploadType=resumable/, () =>
+    jsonResponse({ error: { code: 401, message: "Invalid Credentials", errors: [{ reason: "authError" }] } }, 401));
+  await runWorker(s.store, s.deps);
+  assertEquals(s.target.status, "failed");
+  assertEquals(s.store.accounts.get("acct1")!.status, "needs_reconnect");
 });
 
 Deno.test("youtube: expired access token is refreshed with the stored refresh token", async () => {

@@ -11,8 +11,26 @@ import type { ConnectedAccount, Credentials, FetchFn, PublishJob, Publisher, Ste
 const AUTH_URL = "https://www.linkedin.com/oauth/v2/authorization";
 const TOKEN_URL = "https://www.linkedin.com/oauth/v2/accessToken";
 const API = "https://api.linkedin.com";
-/** LinkedIn API versions are monthly and each is supported for about a year. */
+/** The API version this code was written against (LinkedIn-Version header). */
 export const LINKEDIN_VERSION = "202610";
+
+/**
+ * LinkedIn releases a version most months and retires each after about a year
+ * (a retired version answers 426). The pinned version is used while it is
+ * comfortably supported; after that the header rolls forward to a release from
+ * about six months back, so posting does not suddenly stop a year from now.
+ */
+export function linkedinVersion(now: number): string {
+  const pinned = Date.UTC(Number(LINKEDIN_VERSION.slice(0, 4)), Number(LINKEDIN_VERSION.slice(4)) - 1, 1);
+  const tenMonths = 10 * 30 * 24 * 3600 * 1000;
+  if (now - pinned < tenMonths) return LINKEDIN_VERSION;
+  const d = new Date(now);
+  d.setUTCDate(1);
+  d.setUTCMonth(d.getUTCMonth() - 6);
+  // There is no December release.
+  if (d.getUTCMonth() === 11) d.setUTCMonth(10);
+  return `${d.getUTCFullYear()}${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
+}
 
 export const LINKEDIN_MEMBER_SCOPES = ["openid", "profile", "w_member_social"];
 export const LINKEDIN_ORG_SCOPES = ["w_organization_social", "r_organization_social", "rw_organization_admin"];
@@ -21,15 +39,26 @@ const VIDEO_WAIT_LIMIT_MS = 20 * 60 * 1000;
 const MAX_COMMENTARY = 3000;
 
 /**
- * LinkedIn's "little text format" treats these characters as markup; they
- * must be backslash-escaped or the post text is cut off or rejected.
- * Hashtags (#word) and plain URLs are left alone so LinkedIn links them.
+ * LinkedIn's "little text format" reserves | { } @ [ ] ( ) < > # \ * _ ~ and
+ * requires every one of them to be backslash-escaped in post text. The one
+ * exception kept here is a real hashtag: "#word" at the start of a word.
  */
 export function escapeCommentary(text: string): string {
-  return text
-    .replace(/[\\|{}@\[\]()<>*_~]/g, (ch) => `\\${ch}`)
-    // A lone # that does not start a hashtag would be read as markup.
-    .replace(/#(?![\p{L}\p{N}_])/gu, "\\#");
+  const reserved = "\\|{}@[]()<>*_~";
+  let out = "";
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (ch === "#") {
+      const startsWord = i === 0 || /\s/.test(text[i - 1]);
+      const hashtag = startsWord && /[\p{L}\p{N}]/u.test(text[i + 1] ?? "");
+      out += hashtag ? "#" : "\\#";
+    } else if (reserved.includes(ch)) {
+      out += "\\" + ch;
+    } else {
+      out += ch;
+    }
+  }
+  return out;
 }
 
 function toLinkedInError(status: number, json: any, raw: string): PublishError {
@@ -38,24 +67,34 @@ function toLinkedInError(status: number, json: any, raw: string): PublishError {
   if (status === 401) {
     return new PublishError("LinkedIn access has expired or was revoked - reconnect this account.", {
       reconnect: true,
+      code,
+      status,
     });
   }
   if (status === 403) {
     return new PublishError(
       `LinkedIn refused the request - the developer app is missing a product or permission for this account. ${message}`
         .trim(),
+      { code, status },
     );
   }
-  if (status === 429 || status >= 500) {
-    return new PublishError(`LinkedIn is busy (${status}). Will retry.`, { transient: true });
+  if (status === 426) {
+    return new PublishError("LinkedIn has retired the API version this app uses. Update the app.", { code, status });
   }
-  return new PublishError(`LinkedIn error: ${message || `HTTP ${status}`}${code ? ` (${code})` : ""}`);
+  if (status === 429 || status >= 500) {
+    return new PublishError(`LinkedIn is busy (${status}). Will retry.`, { transient: true, code, status });
+  }
+  return new PublishError(`LinkedIn error: ${message || `HTTP ${status}`}${code ? ` (${code})` : ""}`, {
+    code,
+    status,
+  });
 }
 
 interface CallOptions {
   method?: "GET" | "POST";
   body?: unknown;
   commit?: boolean;
+  now?: number;
 }
 
 async function rest(
@@ -70,7 +109,7 @@ async function rest(
       method: opts.method ?? "GET",
       headers: {
         Authorization: `Bearer ${token}`,
-        "LinkedIn-Version": LINKEDIN_VERSION,
+        "LinkedIn-Version": linkedinVersion(opts.now ?? Date.now()),
         "X-Restli-Protocol-Version": "2.0.0",
         ...(opts.body !== undefined ? { "Content-Type": "application/json" } : {}),
       },
@@ -97,17 +136,21 @@ async function rest(
   return { status: res.status, headers: res.headers, json: json ?? {} };
 }
 
+/** Image uploads need the bearer token; video part uploads must not carry one. */
 async function putBytes(
   fetchFn: FetchFn,
   url: string,
   bytes: Uint8Array,
-  token: string,
+  token: string | null,
 ): Promise<Response> {
   let res: Response;
   try {
     res = await fetchFn(url, {
       method: "PUT",
-      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/octet-stream" },
+      headers: {
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        "Content-Type": "application/octet-stream",
+      },
       body: asBody(bytes),
     });
   } catch (e) {
@@ -166,7 +209,7 @@ async function uploadVideo(job: PublishJob, ctx: StepContext): Promise<string> {
   const partIds: string[] = [];
   for (const part of instructions) {
     const bytes = await readRange(ctx.fetch, video.url, Number(part.firstByte), Number(part.lastByte), size);
-    const res = await putBytes(ctx.fetch, String(part.uploadUrl), bytes, job.accessToken);
+    const res = await putBytes(ctx.fetch, String(part.uploadUrl), bytes, null);
     await res.arrayBuffer().catch(() => undefined);
     const etag = res.headers.get("etag");
     if (!etag) throw new PublishError("LinkedIn did not confirm an uploaded video part.", { transient: true });
@@ -196,7 +239,7 @@ async function createPost(
   ctx: StepContext,
   content: Record<string, unknown> | undefined,
 ): Promise<StepResult> {
-  const commentary = escapeCommentary(job.caption.trim()).slice(0, MAX_COMMENTARY);
+  const commentary = escapeCommentary(job.caption.trim().slice(0, MAX_COMMENTARY));
   const body: Record<string, unknown> = {
     author: job.account.externalId,
     commentary,
@@ -222,8 +265,16 @@ export const linkedinStep: Publisher = async (job, ctx) => {
 
   if (state.phase === "video_wait") {
     const videoUrn = String(state.video);
-    const info = await rest(ctx.fetch, `/rest/videos/${encodeURIComponent(videoUrn)}`, job.accessToken);
-    const status = String(info.json?.status ?? "");
+    let status = "";
+    try {
+      const info = await rest(ctx.fetch, `/rest/videos/${encodeURIComponent(videoUrn)}`, job.accessToken);
+      status = String(info.json?.status ?? "");
+    } catch (e) {
+      // Apps with only the member-posting permission may not read video
+      // status. Skip the check; posting too early is retried below.
+      if (!(e instanceof PublishError) || e.status !== 403) throw e;
+      status = "AVAILABLE";
+    }
     if (status === "PROCESSING_FAILED") {
       throw new PublishError("LinkedIn could not process the video. Use an MP4 between 3 seconds and 30 minutes.");
     }
@@ -239,9 +290,21 @@ export const linkedinStep: Publisher = async (job, ctx) => {
   }
 
   if (state.phase === "post") {
-    return await createPost(job, ctx, {
-      media: { id: String(state.video), title: firstLine(caption, 100) || "Video" },
-    });
+    try {
+      return await createPost(job, ctx, {
+        media: { id: String(state.video), title: firstLine(caption, 100) || "Video" },
+      });
+    } catch (e) {
+      // LinkedIn has not finished processing the upload yet: nothing was
+      // posted, so go back to waiting.
+      if (e instanceof PublishError && /MEDIA_ASSET_(WAITING_UPLOAD|PROCESSING)\b/.test(`${e.code} ${e.message}`) &&
+        !/PROCESSING_FAILED/.test(`${e.code} ${e.message}`)) {
+        const started = typeof state.startedAt === "number" ? state.startedAt : ctx.now();
+        if (ctx.now() - started > VIDEO_WAIT_LIMIT_MS) throw new PublishError("LinkedIn took too long to process the video.");
+        return { kind: "wait", state: { ...state, phase: "video_wait", noStatus: true }, retryInSec: 30 };
+      }
+      throw e;
+    }
   }
 
   const images = job.media.filter((m) => m.kind === "image");
@@ -391,11 +454,16 @@ export async function linkedinConnect(
     try {
       const acls = await rest(
         fetchFn,
-        "/rest/organizationAcls?q=roleAssignee&role=ADMINISTRATOR&state=APPROVED&count=50",
+        "/rest/organizationAcls?q=roleAssignee&state=APPROVED&count=100",
         tokens.accessToken,
       );
+      const canPost = new Set(["ADMINISTRATOR", "CONTENT_ADMINISTRATOR", "CONTENT_ADMIN", "DIRECT_SPONSORED_CONTENT_POSTER"]);
+      const seen = new Set<string>();
       for (const el of acls.json?.elements ?? []) {
+        if (!canPost.has(String(el.role ?? ""))) continue;
         const urn = String(el.organization ?? "");
+        if (seen.has(urn)) continue;
+        seen.add(urn);
         const id = urn.split(":").pop();
         if (!urn || !id) continue;
         let name = "LinkedIn Page";

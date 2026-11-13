@@ -48,3 +48,7 @@ Email confirmation: by default Supabase requires new users to confirm their emai
 - `lib/theme.dart` — colours and styling
 - `scripts/patch_android.py` — adds Health Connect permissions after `flutter create`
 - `.github/workflows/build-apk.yml` — the free automatic APK builder
+
+## Also in this repository: Social Scheduler
+
+`social-scheduler/` is a separate Android app for scheduling posts to Instagram, Facebook Pages, TikTok, YouTube and LinkedIn. It has its own build workflow and its own README: see [social-scheduler/README.md](social-scheduler/README.md).

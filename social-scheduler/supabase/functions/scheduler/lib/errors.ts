@@ -9,16 +9,21 @@ export class PublishError extends Error {
   transient: boolean;
   reconnect: boolean;
   ambiguous: boolean;
+  /** The platform's own error code, when it gave one. */
+  code: string;
+  status: number;
 
   constructor(
     message: string,
-    opts: { transient?: boolean; reconnect?: boolean; ambiguous?: boolean } = {},
+    opts: { transient?: boolean; reconnect?: boolean; ambiguous?: boolean; code?: string; status?: number } = {},
   ) {
     super(message);
     this.name = "PublishError";
     this.transient = opts.transient ?? false;
     this.reconnect = opts.reconnect ?? false;
     this.ambiguous = opts.ambiguous ?? false;
+    this.code = opts.code ?? "";
+    this.status = opts.status ?? 0;
   }
 }
 

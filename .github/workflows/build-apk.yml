@@ -3,6 +3,11 @@ name: Build APK
 on:
   push:
     branches: [main, master]
+    # The Social Scheduler app has its own workflow; changes to it should not
+    # rebuild and re-release this app.
+    paths-ignore:
+      - "social-scheduler/**"
+      - ".github/workflows/build-social-scheduler.yml"
   workflow_dispatch:
 
 permissions:

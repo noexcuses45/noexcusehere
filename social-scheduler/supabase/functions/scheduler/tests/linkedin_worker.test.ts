@@ -1,6 +1,6 @@
 import { assert, assertEquals, assertStringIncludes, assertThrows } from "@std/assert";
 import { buildPrompt, parseCaptionJson } from "../lib/ai.ts";
-import { escapeCommentary, LINKEDIN_VERSION } from "../lib/linkedin.ts";
+import { escapeCommentary, LINKEDIN_VERSION, linkedinVersion } from "../lib/linkedin.ts";
 import { PLATFORMS } from "../lib/platforms.ts";
 import type { Publisher } from "../lib/types.ts";
 import { purgeOldMedia, runWorker } from "../lib/worker.ts";
@@ -21,6 +21,19 @@ Deno.test("linkedin: commentary escaping keeps hashtags and links, escapes marku
   assertEquals(escapeCommentary("We're # 1"), "We're \\# 1");
   assertEquals(escapeCommentary("email me@example.com"), "email me\\@example.com");
   assertEquals(escapeCommentary("https://example.com/a-b?x=1"), "https://example.com/a-b?x=1");
+  // "#" inside a word or URL is not a hashtag and must be escaped.
+  assertEquals(escapeCommentary("see https://example.com/page#top"), "see https://example.com/page\\#top");
+  assertEquals(escapeCommentary("#first line\n#second"), "#first line\n#second");
+  assertEquals(escapeCommentary("path C:\\dir"), "path C:\\\\dir");
+});
+
+Deno.test("linkedin: API version stays pinned while supported, then rolls forward", () => {
+  assertEquals(linkedinVersion(Date.parse("2026-11-13T00:00:00Z")), "202610");
+  assertEquals(linkedinVersion(Date.parse("2027-07-01T00:00:00Z")), "202610");
+  // Past the pinned version's safe window: about six months behind "now".
+  assertEquals(linkedinVersion(Date.parse("2027-11-20T00:00:00Z")), "202705");
+  // Never lands on December, which has no release.
+  assertEquals(linkedinVersion(Date.parse("2028-06-10T00:00:00Z")), "202711");
 });
 
 Deno.test("linkedin: text post as a member", async () => {
@@ -56,6 +69,7 @@ Deno.test("linkedin: photos are uploaded first, then attached", async () => {
   });
   const uploaded: number[] = [];
   s.net.on("PUT", /upload\.linkedin\.test\/img\d$/, (c) => {
+    assertEquals(c.headers.get("authorization"), "Bearer TOKEN", "image uploads need the token");
     uploaded.push(c.bytes!.byteLength);
     return new Response(null, { status: 201 });
   });
@@ -95,6 +109,7 @@ Deno.test("linkedin: video is uploaded in the parts LinkedIn asks for, then post
   const got = new Uint8Array(size);
   s.net.on("PUT", /upload\.linkedin\.test\/v\/p(\d)$/, (c) => {
     const part = Number(c.url.pathname.at(-1));
+    assertEquals(c.headers.get("authorization"), null, "video parts must not carry the token");
     got.set(c.bytes!, (part - 1) * 4_194_304);
     return new Response(null, { status: 200, headers: { etag: `"etag-${part}"` } });
   });
@@ -125,6 +140,35 @@ Deno.test("linkedin: video is uploaded in the parts LinkedIn asks for, then post
     s.store.stateLog.some((st) => st.phase === "post"),
     "the 'ready to post' step is saved before posting",
   );
+});
+
+Deno.test("linkedin: member-only apps that cannot read video status still post, retrying if too early", async () => {
+  const s = scenario({ platform: "linkedin", externalId: "urn:li:person:abc", media: [{ kind: "video", bytes: pattern(5000) }] });
+  s.net.on("POST", /rest\/videos\?action=initializeUpload$/, () =>
+    jsonResponse({
+      value: {
+        video: "urn:li:video:V2",
+        uploadToken: "",
+        uploadInstructions: [{ uploadUrl: "https://upload.linkedin.test/v/p1", firstByte: 0, lastByte: 4999 }],
+      },
+    }));
+  s.net.on("PUT", /upload\.linkedin\.test\/v\/p1$/, () => new Response(null, { status: 200, headers: { etag: "e1" } }));
+  s.net.on("POST", /rest\/videos\?action=finalizeUpload$/, () => new Response(null, { status: 200 }));
+  s.net.on("GET", /rest\/videos\//, () =>
+    jsonResponse({ status: 403, code: "ACCESS_DENIED", message: "Accessing this video resource is forbidden" }, 403));
+  let posts = 0;
+  s.net.on("POST", /rest\/posts$/, () => {
+    posts++;
+    return posts === 1
+      ? jsonResponse({ status: 400, code: "MEDIA_ASSET_PROCESSING", message: "Media asset is still processing" }, 400)
+      : new Response(null, { status: 201, headers: { "x-restli-id": "urn:li:ugcPost:77" } });
+  });
+  for (let i = 0; i < 6 && s.target.status !== "published"; i++) {
+    await runWorker(s.store, s.deps);
+    s.clock.advance(60_000);
+  }
+  assertEquals(s.target.status, "published");
+  assertEquals(posts, 2);
 });
 
 Deno.test("linkedin: a run that died while posting a video is not repeated", async () => {
