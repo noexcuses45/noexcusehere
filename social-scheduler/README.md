@@ -67,9 +67,9 @@ The publisher tests use simulated APIs. Posting to the real networks can only be
 
 Only needed if you move to a different Supabase project.
 
-1. Run `supabase/migrations/0001_init.sql`, then `0002_cron.sql`, in the SQL editor.
+1. Paste `supabase/setup.sql` into the Supabase SQL editor and run it once (it is the two migrations plus step 3 in one file).
 2. Deploy `supabase/functions/scheduler` as a function named `scheduler` with JWT verification **off** (the function checks sign-in itself). The copy running on Supabase was uploaded as one bundled file built by `supabase/functions/tools/bundle-for-upload.cjs`; the script prints a checksum, so you can confirm the deployed code matches these sources.
-3. Point the job at it:
+3. If you ran the migrations separately instead of `setup.sql`, point the job at the function:
    ```sql
    update public.app_config
       set function_url = 'https://<project-ref>.supabase.co/functions/v1/scheduler';

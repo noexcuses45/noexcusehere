@@ -53,6 +53,12 @@ jobs:
           PGPASSWORD: postgres
         run: tests/run.sh
 
+      - name: setup.sql is up to date with the migrations
+        working-directory: social-scheduler/supabase
+        run: |
+          ./make-setup.sh
+          git diff --exit-code -- setup.sql
+
   build:
     runs-on: ubuntu-latest
     defaults:
