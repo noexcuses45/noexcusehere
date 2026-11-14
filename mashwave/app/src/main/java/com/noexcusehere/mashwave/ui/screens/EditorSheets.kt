@@ -58,6 +58,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -195,6 +196,16 @@ fun ClipPickerSheet(onDismiss: () -> Unit, onPickedEntries: (List<MediaEntry>) -
     val fromPhotos = rememberLauncherForActivityResult(ActivityResultContracts.PickMultipleVisualMedia(40)) { picked(it) }
     val fromFiles = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { picked(it) }
 
+    // The phone's own photos should simply be there: ask for access straight away, once, rather
+    // than waiting for a tap. (If video access was already given, Android grants this silently.)
+    var asked by rememberSaveable { mutableStateOf(false) }
+    LaunchedEffect(Unit) {
+        if (!canSeePhotos && !asked) {
+            asked = true
+            runCatching { askForPhotos.launch(photoPermissions()) }
+        }
+    }
+
     val all = remember(videos, photos) { (videos + photos).sortedByDescending { it.dateAdded } }
     val sources = remember(all) { MediaSource.entries.filter { s -> s != MediaSource.OTHER && all.any { it.source == s } } }
     val shown = remember(all, filter, query) {
@@ -211,7 +222,7 @@ fun ClipPickerSheet(onDismiss: () -> Unit, onPickedEntries: (List<MediaEntry>) -
     }
 
     MwSheet(onDismiss) {
-        SheetTitle("Add clips", "They go in after the clip you are on") {
+        SheetTitle("Add clips", "Every photo and video on this phone is below") {
             PillButton(
                 text = if (selected.isEmpty()) "Done" else "Add ${selected.size}",
                 onClick = {
@@ -221,6 +232,12 @@ fun ClipPickerSheet(onDismiss: () -> Unit, onPickedEntries: (List<MediaEntry>) -
                 filled = selected.isNotEmpty(),
             )
         }
+        Text(
+            "Only online, not saved on this phone? Get it from:",
+            style = MaterialTheme.typography.bodySmall,
+            color = TextMid,
+            modifier = Modifier.padding(horizontal = 22.dp),
+        )
         Row(Modifier.padding(horizontal = 16.dp, vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             SourceButton(Icons.Rounded.PhotoLibrary, "Google Photos", Modifier.weight(1f)) {
                 runCatching { fromPhotos.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo)) }
@@ -245,7 +262,7 @@ fun ClipPickerSheet(onDismiss: () -> Unit, onPickedEntries: (List<MediaEntry>) -
                 Column(Modifier.weight(1f)) {
                     Text("Show my photos here", style = MaterialTheme.typography.titleMedium, color = TextHi)
                     Text(
-                        "Allow access once and every photo on the phone - camera, WhatsApp, saved Messenger pictures - is listed below.",
+                        "Allow access once and every photo on the phone - camera roll, WhatsApp, saved Messenger pictures - is listed below.",
                         style = MaterialTheme.typography.bodySmall,
                         color = TextMid,
                     )

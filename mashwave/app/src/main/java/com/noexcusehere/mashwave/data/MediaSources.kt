@@ -44,8 +44,11 @@ fun sourceOfFolder(folder: String): MediaSource {
     }
 }
 
+private val sourceByFolder = java.util.concurrent.ConcurrentHashMap<String, MediaSource>()
+
+/** Looked up per folder and remembered, so sorting a gallery of thousands of photos stays instant. */
 val MediaEntry.source: MediaSource
-    get() = sourceOfFolder(folder)
+    get() = sourceByFolder.getOrPut(folder) { sourceOfFolder(folder) }
 
 /** True for something added from Google Drive, Google Photos or another app rather than found on the phone. */
 val MediaEntry.isFromCloud: Boolean

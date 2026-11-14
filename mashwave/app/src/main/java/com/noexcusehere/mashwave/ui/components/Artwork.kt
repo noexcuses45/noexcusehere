@@ -104,7 +104,7 @@ object ArtworkLoader {
                         failures[failKey] = SystemClock.elapsedRealtime()
                         cache.get(key(entry, !large))
                     } else {
-                        if (!accents.containsKey(entry.artKey)) {
+                        if (!entry.isImage && !accents.containsKey(entry.artKey)) {
                             runCatching { accents[entry.artKey] = pickAccent(bitmap) }
                         }
                         bitmap.asImageBitmap().also {
