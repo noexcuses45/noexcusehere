@@ -25,6 +25,12 @@ class UiState {
     var queueOpen by mutableStateOf(false)
     var streamDialogOpen by mutableStateOf(false)
 
+    /** The "play on a TV" sheet. */
+    var castOpen by mutableStateOf(false)
+
+    /** Id of the video project open in the editor, which covers the whole screen. */
+    var editingProjectId by mutableStateOf<String?>(null)
+
     /** A bottom-bar tab to jump to (set when a notification is tapped). */
     var pendingTab by mutableStateOf<String?>(null)
 
@@ -43,9 +49,14 @@ class UiState {
         menuPlaylistId = playlistId
     }
 
+    /** Set by the app shell: the TV connection, when there is one, takes over playback. */
+    var castRoute: ((List<MediaEntry>, Int) -> Boolean)? = null
+
     /** Starts a list playing; videos jump straight to the full-screen player. */
     fun play(player: PlayerConnection, entries: List<MediaEntry>, index: Int) {
         if (entries.isEmpty()) return
+        // While connected to a TV, everything the user starts plays there instead of on the phone.
+        if (castRoute?.invoke(entries, index.coerceIn(0, entries.lastIndex)) == true) return
         player.play(entries, index)
         if (entries[index.coerceIn(0, entries.lastIndex)].isVideo) {
             videoFullscreen = true
@@ -62,6 +73,7 @@ object Routes {
     const val VIDEOS = "videos"
     const val MASHUP = "mashup"
     const val PLAYLISTS = "playlists"
+    const val EDITOR = "editor"
     const val SEARCH = "search"
     const val EQUALIZER = "equalizer"
     const val COLLECTION = "collection/{type}/{key}"

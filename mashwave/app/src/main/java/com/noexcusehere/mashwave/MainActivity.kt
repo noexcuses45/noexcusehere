@@ -58,8 +58,10 @@ class MainActivity : ComponentActivity() {
                 ui.mashupMode = 1
                 ui.pendingTab = Routes.MASHUP
             }
+            ACTION_SHOW_EDITOR -> ui.pendingTab = Routes.EDITOR
+            ACTION_SHOW_CAST -> ui.castOpen = true
             Intent.ACTION_VIEW -> {
-                // "Open with Mashwave" from a file manager, browser or chat app.
+                // "Open with Ultimate Beats" from a file manager, browser or chat app.
                 val uri = intent.data ?: return
                 val entry = describeUri(this, uri, intent.type)
                 ui.play(app.player, listOf(entry), 0)
@@ -71,5 +73,7 @@ class MainActivity : ComponentActivity() {
     companion object {
         const val ACTION_SHOW_PLAYER = "com.noexcusehere.mashwave.SHOW_PLAYER"
         const val ACTION_SHOW_MASHUP = "com.noexcusehere.mashwave.SHOW_MASHUP"
+        const val ACTION_SHOW_EDITOR = "com.noexcusehere.mashwave.SHOW_EDITOR"
+        const val ACTION_SHOW_CAST = "com.noexcusehere.mashwave.SHOW_CAST"
     }
 }

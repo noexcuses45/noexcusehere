@@ -33,6 +33,7 @@ import androidx.compose.material.icons.automirrored.rounded.QueueMusic
 import androidx.compose.material.icons.rounded.GraphicEq
 import androidx.compose.material.icons.rounded.Home
 import androidx.compose.material.icons.rounded.LibraryMusic
+import androidx.compose.material.icons.rounded.MovieCreation
 import androidx.compose.material.icons.rounded.Pause
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.SkipNext
@@ -78,6 +79,8 @@ import com.noexcusehere.mashwave.ui.components.Artwork
 import com.noexcusehere.mashwave.ui.components.ArtworkLoader
 import com.noexcusehere.mashwave.ui.components.rememberAccent
 import com.noexcusehere.mashwave.ui.screens.CollectionScreen
+import com.noexcusehere.mashwave.ui.screens.EditorHomeScreen
+import com.noexcusehere.mashwave.ui.screens.EditorScreen
 import com.noexcusehere.mashwave.ui.screens.EqualizerScreen
 import com.noexcusehere.mashwave.ui.screens.HomeScreen
 import com.noexcusehere.mashwave.ui.screens.LibraryScreen
@@ -104,6 +107,7 @@ private val tabs = listOf(
     Tab(Routes.LIBRARY, "Library", Icons.Rounded.LibraryMusic),
     Tab(Routes.VIDEOS, "Videos", Icons.Rounded.VideoLibrary),
     Tab(Routes.MASHUP, "Mashup", Icons.Rounded.GraphicEq),
+    Tab(Routes.EDITOR, "Edit", Icons.Rounded.MovieCreation),
     Tab(Routes.PLAYLISTS, "Playlists", Icons.AutoMirrored.Rounded.QueueMusic),
 )
 
@@ -122,7 +126,25 @@ fun AppRoot(ui: UiState) {
     val app = LocalContext.current.app
     val nav = rememberNavController()
     val player by app.player.state.collectAsStateWithLifecycle()
+    val cast by app.cast.state.collectAsStateWithLifecycle()
     val snackbar = remember { SnackbarHostState() }
+
+    // While a TV is connected, whatever the user starts plays there instead of on the phone.
+    ui.castRoute = { entries, index ->
+        if (app.cast.isConnected) {
+            app.player.pause()
+            app.cast.play(entries, index)
+            true
+        } else {
+            false
+        }
+    }
+    LaunchedEffect(cast.device?.id) {
+        if (cast.device != null) {
+            ui.videoFullscreen = false
+            ui.nowPlayingOpen = false
+        }
+    }
 
     var hasPermission by remember { mutableStateOf(app.library.hasAudioPermission()) }
     var skippedWelcome by rememberSaveable { mutableStateOf(false) }
@@ -180,6 +202,7 @@ fun AppRoot(ui: UiState) {
                             composable(Routes.VIDEOS) { VideosScreen() }
                             composable(Routes.MASHUP) { MashupScreen() }
                             composable(Routes.PLAYLISTS) { PlaylistsScreen() }
+                            composable(Routes.EDITOR) { EditorHomeScreen() }
                             composable(Routes.SEARCH) { SearchScreen() }
                             composable(Routes.EQUALIZER) { EqualizerScreen() }
                             composable(
@@ -197,7 +220,15 @@ fun AppRoot(ui: UiState) {
                         }
                     }
                     AnimatedVisibility(
-                        visible = player.current != null,
+                        visible = cast.device != null,
+                        enter = expandVertically() + fadeIn(),
+                        exit = shrinkVertically() + fadeOut(),
+                    ) {
+                        CastBar(cast, onOpen = { ui.castOpen = true })
+                    }
+                    AnimatedVisibility(
+                        // While a TV is connected its bar replaces the mini player, unless the phone itself is playing.
+                        visible = player.current != null && (cast.device == null || player.isPlaying),
                         enter = expandVertically() + fadeIn(),
                         exit = shrinkVertically() + fadeOut(),
                     ) {
@@ -211,21 +242,6 @@ fun AppRoot(ui: UiState) {
                     BottomBar(
                         current = nav.currentBackStackEntryAsState().value?.destination?.route,
                         onSelect = { nav.openTab(it) },
-                    )
-                }
-
-                SnackbarHost(
-                    hostState = snackbar,
-                    modifier = Modifier
-                        .align(Alignment.BottomCenter)
-                        .navigationBarsPadding()
-                        .padding(bottom = 132.dp),
-                ) { data ->
-                    Snackbar(
-                        snackbarData = data,
-                        containerColor = Surface3,
-                        contentColor = TextHi,
-                        shape = RoundedCornerShape(14.dp),
                     )
                 }
 
@@ -252,6 +268,29 @@ fun AppRoot(ui: UiState) {
                 }
                 if (ui.streamDialogOpen) {
                     OpenStreamDialog { ui.streamDialogOpen = false }
+                }
+
+                // The video editor covers everything else while a project is open.
+                ui.editingProjectId?.let { id ->
+                    EditorScreen(id, onClose = { ui.editingProjectId = null })
+                }
+                SnackbarHost(
+                    hostState = snackbar,
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .navigationBarsPadding()
+                        .padding(bottom = 132.dp),
+                ) { data ->
+                    Snackbar(
+                        snackbarData = data,
+                        containerColor = Surface3,
+                        contentColor = TextHi,
+                        shape = RoundedCornerShape(14.dp),
+                    )
+                }
+
+                if (ui.castOpen) {
+                    CastSheet { ui.castOpen = false }
                 }
             }
         }

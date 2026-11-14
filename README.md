@@ -49,8 +49,8 @@ Email confirmation: by default Supabase requires new users to confirm their emai
 - `scripts/patch_android.py` — adds Health Connect permissions after `flutter create`
 - `.github/workflows/build-apk.yml` — the free automatic APK builder
 
-## Also in this repo: Mashwave
+## Also in this repo: Ultimate Beats
 
-The `mashwave/` folder holds a separate app - a music and video player with a two-deck
-Mashup Studio. It has its own README (`mashwave/README.md`) and its own build workflow
+The `mashwave/` folder holds a separate app, Ultimate Beats - a music and video player with
+automatic and two-deck mashups, a video editor and casting to TVs. It has its own README (`mashwave/README.md`) and its own build workflow
 (`.github/workflows/build-mashwave.yml`); neither affects the fitness app.

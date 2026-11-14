@@ -12,11 +12,18 @@
     <!-- Background playback with lock-screen / notification controls -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
+    <!-- Finishing a video export when the app is not in front -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
 
     <!-- Network streams (radio, HLS, DASH, RTSP ...) -->
     <uses-permission android:name="android.permission.INTERNET" />
+
+    <!-- Casting: find TVs on the home Wi-Fi and let them fetch the media from this phone -->
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+    <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE" />
 
     <!-- Equalizer / bass boost -->
     <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
@@ -42,7 +49,7 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
 
-            <!-- "Open with Mashwave" from file managers, downloads, chat apps ... -->
+            <!-- "Open with Ultimate Beats" from file managers, downloads, chat apps ... -->
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
@@ -94,6 +101,17 @@
             android:name=".playback.MashupService"
             android:exported="false"
             android:foregroundServiceType="mediaPlayback" />
+
+        <!-- Keeps a video export or a cast session going while the app is in the background -->
+        <service
+            android:name=".KeepAliveService"
+            android:exported="false"
+            android:foregroundServiceType="mediaPlayback|dataSync" />
+
+        <!-- Chromecast: use the standard built-in receiver -->
+        <meta-data
+            android:name="com.google.android.gms.cast.framework.OPTIONS_PROVIDER_CLASS_NAME"
+            android:value="com.noexcusehere.mashwave.cast.CastOptionsProvider" />
     </application>
 
 </manifest>

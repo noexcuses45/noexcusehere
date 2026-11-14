@@ -1,6 +1,7 @@
-name: Build Mashwave APK
+name: Build Ultimate Beats APK
 
-# Builds the Mashwave music/video player in the mashwave/ folder.
+# Builds Ultimate Beats (music/video player, mashups, video editor) in the mashwave/ folder.
+# The folder and the secret names keep the app's earlier name, Mashwave.
 # The fitness app has its own workflow (build-apk.yml) and is not affected.
 on:
   push:
@@ -52,13 +53,13 @@ jobs:
         run: ./gradlew :app:assembleRelease -PappVersionName=1.0.${{ github.run_number }}
 
       - name: Name the APK
-        run: cp app/build/outputs/apk/release/app-release.apk mashwave.apk
+        run: cp app/build/outputs/apk/release/app-release.apk UltimateBeats.apk
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: mashwave-apk
-          path: mashwave/mashwave.apk
+          name: ultimate-beats-apk
+          path: mashwave/UltimateBeats.apk
 
       # Published as a pre-release on purpose: the fitness app's updater reads this
       # repo's "latest release", and pre-releases never count as latest.
@@ -66,8 +67,8 @@ jobs:
         if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: mashwave-v${{ github.run_number }}
-          name: Mashwave 1.0.${{ github.run_number }}
+          tag_name: ultimate-beats-v${{ github.run_number }}
+          name: Ultimate Beats 1.0.${{ github.run_number }}
           prerelease: true
           make_latest: "false"
-          files: mashwave/mashwave.apk
+          files: mashwave/UltimateBeats.apk

@@ -8,6 +8,7 @@ import android.os.Build
 import android.os.Environment
 import android.provider.MediaStore
 import android.util.Log
+import com.noexcusehere.mashwave.APP_NAME
 import com.noexcusehere.mashwave.app
 import com.noexcusehere.mashwave.data.AutoMashup
 import com.noexcusehere.mashwave.data.MediaEntry
@@ -216,7 +217,7 @@ class AutoMashupMaker(private val context: Context, private val scope: Coroutine
                 uri = uri,
                 title = name,
                 artist = "Auto mashup",
-                album = "Mashwave",
+                album = APP_NAME,
                 durationMs = (plan.seconds * 1000).toLong(),
                 dateAdded = System.currentTimeMillis() / 1000,
                 size = temp.length(),
@@ -258,7 +259,7 @@ class AutoMashupMaker(private val context: Context, private val scope: Coroutine
         return "$base ($n)"
     }
 
-    /** Copies the finished file into the phone's Music/Mashwave folder and returns its address. */
+    /** Copies the finished file into the phone's Music/<app name> folder and returns its address. */
     private fun save(file: File, name: String, extension: String, mime: String): String {
         val fileName = name.replace(Regex("[\\\\/:*?\"<>|]"), " ").replace(Regex("\\s+"), " ").trim() + "." + extension
         if (Build.VERSION.SDK_INT >= 29) {
@@ -266,7 +267,7 @@ class AutoMashupMaker(private val context: Context, private val scope: Coroutine
             val values = ContentValues().apply {
                 put(MediaStore.Audio.Media.DISPLAY_NAME, fileName)
                 put(MediaStore.Audio.Media.MIME_TYPE, mime)
-                put(MediaStore.Audio.Media.RELATIVE_PATH, Environment.DIRECTORY_MUSIC + "/Mashwave")
+                put(MediaStore.Audio.Media.RELATIVE_PATH, Environment.DIRECTORY_MUSIC + "/" + APP_NAME)
                 put(MediaStore.Audio.Media.IS_PENDING, 1)
             }
             val collection = MediaStore.Audio.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
@@ -286,7 +287,7 @@ class AutoMashupMaker(private val context: Context, private val scope: Coroutine
             return ContentUris.withAppendedId(MediaStore.Audio.Media.getContentUri(MediaStore.VOLUME_EXTERNAL), id).toString()
         }
         // Older Android: keep it in the app's own music folder (no extra permission needed).
-        val dir = File(context.getExternalFilesDir(Environment.DIRECTORY_MUSIC) ?: context.filesDir, "Mashwave")
+        val dir = File(context.getExternalFilesDir(Environment.DIRECTORY_MUSIC) ?: context.filesDir, APP_NAME)
         dir.mkdirs()
         var target = File(dir, fileName)
         var n = 2

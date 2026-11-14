@@ -35,6 +35,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import com.noexcusehere.mashwave.APP_NAME
 import com.noexcusehere.mashwave.ui.components.PlayingBars
 import com.noexcusehere.mashwave.ui.theme.BrandGradient
 import com.noexcusehere.mashwave.ui.theme.Cyan
@@ -68,7 +69,7 @@ fun WelcomeScreen(onAllow: () -> Unit, onSkip: () -> Unit, askedBefore: Boolean)
             PlayingBars(playing = true, modifier = Modifier.size(52.dp), color = Color.White)
         }
         Spacer(Modifier.height(26.dp))
-        Text("Mashwave", style = MaterialTheme.typography.displaySmall, color = TextHi)
+        Text(APP_NAME, style = MaterialTheme.typography.displaySmall, color = TextHi)
         Spacer(Modifier.height(6.dp))
         Text(
             "Your music, your videos, your mixes - all in one player.",
@@ -125,7 +126,7 @@ fun WelcomeScreen(onAllow: () -> Unit, onSkip: () -> Unit, askedBefore: Boolean)
                 .padding(horizontal = 16.dp, vertical = 12.dp),
         )
         Text(
-            "Mashwave only reads your media. Nothing leaves your phone.",
+            "$APP_NAME only reads your media. Nothing leaves your phone unless you play it on your TV.",
             style = MaterialTheme.typography.bodySmall,
             color = TextMid,
             textAlign = TextAlign.Center,

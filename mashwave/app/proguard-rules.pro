@@ -1,4 +1,4 @@
-# Mashwave is a sideloaded personal app: we only want R8 to strip unused code
+# Ultimate Beats is a sideloaded personal app: we only want R8 to strip unused code
 # (mainly the huge Material icon set), not to rename anything.
 -dontobfuscate
 

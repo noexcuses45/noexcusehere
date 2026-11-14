@@ -1,8 +1,13 @@
-# Mashwave
+# Ultimate Beats
 
-A music **and** video player for Android that can also make mashups: automatically ("pick songs, get a mix") or by hand on two decks.
+A music **and** video player for Android that can also make mashups (automatically or by hand
+on two decks), edit videos, and play on a TV.
 Native Android app (Kotlin, Jetpack Compose, Media3 / ExoPlayer). It lives in its own
 folder and does not touch the No Excuse Here fitness app in the rest of this repo.
+
+The app used to be called Mashwave. Only the name people see changed: the folder, the code
+package and the app's internal id are still `mashwave`, so the new version installs over the
+old one and keeps playlists, likes and mashups.
 
 ## What it does
 
@@ -23,7 +28,7 @@ folder and does not touch the No Excuse Here fitness app in the rest of this rep
 
 **Auto Mashup** (Mashup tab → Auto)
 - Pick 2 to 6 songs and press **Create mashup**; the app does the rest and saves one new track
-  into `Music/Mashwave`, where it shows up in the library like any other song
+  into `Music/Ultimate Beats`, where it shows up in the library like any other song
 - It finds each song's tempo, beat grid, bars and notes, chooses a shared tempo (counting a song
   in half or double time when that needs less stretching) and a pitch shift of at most three
   semitones per song so their notes agree
@@ -44,8 +49,38 @@ steady beat work best; live recordings, rubato and beatless music don't.
 - Crossfader (the middle is both songs at full volume), start points, restart together
 - Save mashups by name and reopen them later
 
+**Video editor** (Edit tab, next to Mashup)
+- Join videos from the app's library with photos and videos from the phone's gallery
+- A film-strip timeline: drag to move through the video, pinch to zoom, tap a caption or the
+  music bar to change it. Tools work on the clip under the white line
+- Split, trim, copy, re-order and delete clips; set how long a photo shows
+- Speed from 0.25× to 4× (voices keep their pitch), clip volume and mute, rotate, flip
+- Filters (Vivid, Warm, Cool, Fade, B&W, Noir, Sepia) and brightness / contrast / colour
+- Background music from the app's library, including your own mashups: choose where the song
+  starts and how loud it is; it repeats if the video is longer
+- Text and emoji, with colour, size, position and timing
+- Canvas shapes (original, 16:9, 9:16, 1:1, 4:5) with black bars or a blurred background
+- Undo / redo; projects are saved as you go
+- **Save** makes an MP4 (480p, 720p or 1080p) in `Movies/Ultimate Beats`; it keeps going in
+  the background and the notification shows progress
+
+Not in the editor: transitions, stickers / GIFs, picture-in-picture, cut-out, auto captions,
+reverse and freeze-frame.
+
+**Play on a TV** (cast button on Home, Videos and both players)
+- **Chromecast / Google TV / "Chromecast built-in" TVs**, through Google Play services
+- **Smart TVs and speakers that support DLNA / UPnP** (most Samsung, LG, Sony, Hisense ...)
+- **Fire TV Stick:** it has no built-in receiver, so install a free receiver app on it (for
+  example AirScreen); the stick then shows up in the list
+- While connected, anything you start in the app plays on the TV, the queue moves on by
+  itself, and the phone is the remote (play / pause, seek, next / previous, TV volume)
+- The TV fetches the file from the phone over your Wi-Fi; phone and TV must be on the same
+  network. The TV has to be able to play the file's format itself - the phone does not convert
+- The manual two-deck mashup is mixed live on the phone and cannot be cast; saved Auto
+  Mashups are ordinary songs and can
+
 **Opens almost anything**
-- "Open with Mashwave" from any file manager, browser or chat app
+- "Open with Ultimate Beats" from any file manager, browser or chat app
 - Open a file with the system picker, or paste a network stream address
 - Formats: MP3, AAC/M4A, FLAC, OGG Vorbis, Opus, WAV, AMR, MIDI, MP4, MKV, WebM, MOV,
   AVI, TS, FLV, 3GP, plus HLS, DASH, SmoothStreaming and RTSP streams
@@ -58,8 +93,8 @@ codecs (WMV, RealVideo, 10-bit H.264) may not play on every phone.
 ## Getting the APK
 
 **From GitHub (nothing to install):** every push that changes this folder runs the
-*Build Mashwave APK* workflow. Open the run under the **Actions** tab and download
-**mashwave-apk** (unzip it to get `mashwave.apk`). Pushes to `main` also publish it under
+*Build Ultimate Beats APK* workflow. Open the run under the **Actions** tab and download
+**ultimate-beats-apk** (unzip it to get `UltimateBeats.apk`). Pushes to `main` also publish it under
 **Releases** as a pre-release, with a direct `.apk` download.
 
 **On a PC:** install JDK 17+ and the Android SDK, then from this folder run
@@ -108,13 +143,30 @@ app/src/main/java/com/noexcusehere/mashwave/
   automash/AutoMashupMaker.kt           runs the whole thing and saves the file
   playback/BpmAnalyzer.kt               tempo detection
   playback/AudioFx.kt                   equalizer / bass / surround
+  editor/EditorModels.kt, EditorOps.kt  a video project and every edit that can be made to it
+  editor/CompositionFactory.kt          turns a project into what the video engine plays / saves
+  editor/EditorSession.kt               the open project (undo / redo) and the live preview
+  editor/ExportManager.kt               saving the finished MP4 into the phone's library
+  cast/MediaServer.kt                   the small web server a TV fetches files from
+  cast/Dlna.kt                          finding and controlling smart TVs (UPnP / DLNA)
+  cast/Chromecast.kt                    Chromecast through Google Play services
+  cast/CastController.kt                the queue that plays on the TV
+  KeepAliveService.kt                   keeps a save or a cast session alive in the background
   ui/                                   Compose screens, sheets, theme and components
-app/src/test/                           unit tests (tempo and beat detection, the auto-mixer, saved data)
+app/src/test/                           unit tests (tempo and beat detection, the auto-mixer, saved data,
+                                        editing rules, the media server, TV control)
 ```
 
-User data (playlists, likes, history, mashups, sound settings) is stored as JSON in the
-app's private storage. Nothing is sent anywhere; the internet permission is only used for
-streams you open yourself.
+User data (playlists, likes, history, mashups, video projects, sound settings) is stored as
+JSON in the app's private storage. The app itself sends nothing to the internet; the network is
+only used for streams you open yourself and, while casting, to talk to the TV on your own Wi-Fi
+(the TV fetches the song or video straight from the phone).
+
+One exception to know about: Chromecast support uses Google's own Cast library. It is only
+switched on when you open the cast list, and like every app that can cast it may then report
+its own usage statistics to Google. It never gets your library. To leave it out entirely,
+remove the `play-services-cast-framework` line from `app/build.gradle.kts` together with
+`cast/Chromecast.kt`; smart-TV (DLNA) casting keeps working.
 
 ## Licences
 
@@ -124,3 +176,4 @@ streams you open yourself.
   under GPL-3.0 as well or remove that one dependency from `app/build.gradle.kts` (the app
   still works, just without AC3 / DTS / TrueHD audio).
 - AndroidX, Media3, Kotlin: Apache 2.0
+- Google Play services Cast framework (Chromecast): Android Software Development Kit License

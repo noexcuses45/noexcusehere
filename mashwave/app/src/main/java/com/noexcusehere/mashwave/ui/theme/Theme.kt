@@ -15,7 +15,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
 import com.noexcusehere.mashwave.R
 
-// Mashwave is always dark: near-black "ink" with neon violet / pink / cyan accents.
+// The app is always dark: near-black "ink" with neon violet / pink / cyan accents.
 val Ink = Color(0xFF07070C)
 val Surface1 = Color(0xFF111119)
 val Surface2 = Color(0xFF1A1A25)

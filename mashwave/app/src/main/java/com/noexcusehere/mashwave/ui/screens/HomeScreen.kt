@@ -120,6 +120,7 @@ fun HomeScreen() {
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(greeting, style = MaterialTheme.typography.headlineLarge, color = TextHi, modifier = Modifier.weight(1f))
+                com.noexcusehere.mashwave.ui.CastButton()
                 HeaderIcon(Icons.Rounded.Search, "Search", { nav.navigate(Routes.SEARCH) })
                 HeaderIcon(Icons.Rounded.Equalizer, "Equalizer", { nav.navigate(Routes.EQUALIZER) })
                 Box {

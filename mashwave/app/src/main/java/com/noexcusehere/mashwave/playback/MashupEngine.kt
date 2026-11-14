@@ -92,7 +92,7 @@ class MashupEngine(private val context: Context, private val scope: CoroutineSco
                 .build(),
         )
         .setOnAudioFocusChangeListener { change ->
-            // Another player (including Mashwave's own main player) took over the speakers.
+            // Another player (including this app's own main player) took over the speakers.
             if (change == AudioManager.AUDIOFOCUS_LOSS || change == AudioManager.AUDIOFOCUS_LOSS_TRANSIENT) {
                 pauseBoth()
             }

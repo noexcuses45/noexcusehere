@@ -49,6 +49,7 @@ import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.noexcusehere.mashwave.APP_NAME
 import com.noexcusehere.mashwave.app
 import com.noexcusehere.mashwave.automash.AutoMashupMaker
 import com.noexcusehere.mashwave.data.AutoMashup
@@ -120,7 +121,7 @@ fun AutoMashupSection() {
             Column {
                 Text("Auto Mashup", style = MaterialTheme.typography.titleLarge, color = TextHi)
                 Text(
-                    "Pick 2 to ${AutoMashupMaker.MAX_SONGS} songs. Mashwave lines up their beats, matches their keys and blends them into one new track.",
+                    "Pick 2 to ${AutoMashupMaker.MAX_SONGS} songs. $APP_NAME lines up their beats, matches their keys and blends them into one new track.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = TextMid,
                 )
@@ -264,7 +265,7 @@ fun AutoMashupSection() {
                     color = TextMid,
                 )
                 Text(
-                    "Saved with your music, in the Mashwave folder.",
+                    "Saved with your music, in the $APP_NAME folder.",
                     style = MaterialTheme.typography.bodySmall,
                     color = TextMid,
                 )

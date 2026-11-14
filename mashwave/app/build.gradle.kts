@@ -123,9 +123,15 @@ dependencies {
     implementation("androidx.media3:media3-exoplayer-rtsp:$media3")
     implementation("androidx.media3:media3-session:$media3")
     implementation("androidx.media3:media3-ui:$media3")
+    // Video editor: live preview and export of an edited timeline.
+    implementation("androidx.media3:media3-transformer:$media3")
+    implementation("androidx.media3:media3-effect:$media3")
     // Software audio decoders (AC3, E-AC3, DTS, TrueHD, ALAC, ...) for files the
     // phone's own decoders can't handle.
     implementation("org.jellyfin.media3:media3-ffmpeg-decoder:1.9.0+1")
+
+    // Casting to Chromecast (through Google Play services on the phone).
+    implementation("com.google.android.gms:play-services-cast-framework:22.3.1")
 
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.9.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")

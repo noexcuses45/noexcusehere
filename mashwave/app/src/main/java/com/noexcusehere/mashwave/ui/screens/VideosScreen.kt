@@ -77,6 +77,7 @@ fun VideosScreen() {
             .statusBarsPadding(),
     ) {
         ScreenHeader("Videos") {
+            com.noexcusehere.mashwave.ui.CastButton()
             HeaderIcon(Icons.Rounded.Link, "Open network stream", { ui.streamDialogOpen = true })
             HeaderIcon(Icons.Rounded.FolderOpen, "Open a file", openFiles)
         }

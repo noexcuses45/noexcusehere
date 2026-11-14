@@ -328,6 +328,7 @@ fun VideoPlayerScreen() {
                             overflow = TextOverflow.Ellipsis,
                             modifier = Modifier.weight(1f),
                         )
+                        com.noexcusehere.mashwave.ui.CastButton(tint = Color.White)
                         IconButton(onClick = { sheet = "tracks" }) {
                             Icon(Icons.Rounded.Subtitles, contentDescription = "Audio and subtitles", tint = Color.White)
                         }
