@@ -54,7 +54,10 @@ class MainActivity : ComponentActivity() {
     private fun handleIntent(intent: Intent?) {
         when (intent?.action) {
             ACTION_SHOW_PLAYER -> ui.nowPlayingOpen = true
-            ACTION_SHOW_MASHUP -> ui.pendingTab = Routes.MASHUP
+            ACTION_SHOW_MASHUP -> {
+                ui.mashupMode = 1
+                ui.pendingTab = Routes.MASHUP
+            }
             Intent.ACTION_VIEW -> {
                 // "Open with Mashwave" from a file manager, browser or chat app.
                 val uri = intent.data ?: return

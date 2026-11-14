@@ -1,6 +1,6 @@
 # Mashwave
 
-A music **and** video player for Android with a built-in two-deck **Mashup Studio**.
+A music **and** video player for Android that can also make mashups: automatically ("pick songs, get a mix") or by hand on two decks.
 Native Android app (Kotlin, Jetpack Compose, Media3 / ExoPlayer). It lives in its own
 folder and does not touch the No Excuse Here fitness app in the rest of this repo.
 
@@ -21,7 +21,23 @@ folder and does not touch the No Excuse Here fitness app in the rest of this rep
 - Audio-track and subtitle selection, playback speed
 - Keeps playing as audio when you leave the video
 
-**Mashup Studio**
+**Auto Mashup** (Mashup tab → Auto)
+- Pick 2 to 6 songs and press **Create mashup**; the app does the rest and saves one new track
+  into `Music/Mashwave`, where it shows up in the library like any other song
+- It finds each song's tempo, beat grid, bars and notes, chooses a shared tempo (counting a song
+  in half or double time when that needs less stretching) and a pitch shift of at most three
+  semitones per song so their notes agree
+- The mix is a chain of eight-bar sections: each song first rides on top of the previous one,
+  then takes over the rhythm, then hands over to the next
+- "Try another version" re-arranges the same songs differently
+- Everything runs on the phone; nothing is uploaded
+
+How it layers songs: it cannot pull a voice out of a recording, so instead it splits by
+frequency the way a DJ uses the EQ - bass and drums from one song, the middle (voices,
+melodies) from the other, with the bass swapped exactly on the bar line. Songs with a clear,
+steady beat work best; live recordings, rubato and beatless music don't.
+
+**Manual decks** (Mashup tab → Manual decks)
 - Two decks that play at the same time, each with its own tempo, pitch (in semitones) and volume
 - Automatic BPM detection, plus tap-tempo if you want to set it by hand
 - "Match tempo" brings one deck to the other's beat
@@ -84,11 +100,16 @@ app/src/main/java/com/noexcusehere/mashwave/
   data/                                 library scan (MediaStore), models, saved user data
   playback/PlaybackService.kt           the main player (background service + media session)
   playback/PlayerConnection.kt          what the screens use to control the player
-  playback/MashupEngine.kt              the two mashup decks and their background service
+  playback/MashupEngine.kt              the two manual mashup decks and their background service
+  automash/Analysis.kt                  song analysis: beat tracking, bars, notes
+  automash/MixPlanner.kt                the automatic arrangement (tempo, pitch shifts, sections)
+  automash/Mixer.kt                     time-stretching, band splitting and mixing
+  automash/AudioIo.kt                   decoding songs and encoding the result (AAC)
+  automash/AutoMashupMaker.kt           runs the whole thing and saves the file
   playback/BpmAnalyzer.kt               tempo detection
   playback/AudioFx.kt                   equalizer / bass / surround
   ui/                                   Compose screens, sheets, theme and components
-app/src/test/                           unit tests (tempo detection, library grouping, saved data)
+app/src/test/                           unit tests (tempo and beat detection, the auto-mixer, saved data)
 ```
 
 User data (playlists, likes, history, mashups, sound settings) is stored as JSON in the

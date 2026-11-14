@@ -80,7 +80,7 @@ fun WelcomeScreen(onAllow: () -> Unit, onSkip: () -> Unit, askedBefore: Boolean)
         Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Feature(Icons.Rounded.LibraryMusic, Pink, "Plays what's on your phone", "MP3, FLAC, AAC, OGG, WAV and more, with playlists and likes.")
             Feature(Icons.Rounded.VideoLibrary, Cyan, "Video too", "MP4, MKV, WebM, streams, subtitles and audio tracks.")
-            Feature(Icons.Rounded.GraphicEq, Violet, "Mashup Studio", "Layer two songs, match their tempo and save the mix.")
+            Feature(Icons.Rounded.GraphicEq, Violet, "Mashups", "Pick songs and get an automatic mashup, or blend two by hand.")
         }
         Spacer(Modifier.weight(1f))
         Box(

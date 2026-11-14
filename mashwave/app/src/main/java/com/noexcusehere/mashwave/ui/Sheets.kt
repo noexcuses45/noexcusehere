@@ -34,6 +34,7 @@ import androidx.compose.material.icons.automirrored.rounded.PlaylistPlay
 import androidx.compose.material.icons.automirrored.rounded.QueueMusic
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Album
+import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.Close
@@ -79,6 +80,7 @@ import androidx.media3.common.C
 import androidx.navigation.NavHostController
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import com.noexcusehere.mashwave.app
+import com.noexcusehere.mashwave.automash.AutoMashupMaker
 import com.noexcusehere.mashwave.data.MediaEntry
 import com.noexcusehere.mashwave.data.countLabel
 import com.noexcusehere.mashwave.data.describeUri
@@ -181,15 +183,23 @@ fun TrackMenuSheet(entry: MediaEntry, playlistId: String?, onDismiss: () -> Unit
                 tint = if (liked) Pink else TextHi,
             )
             if (!entry.isStream) {
-                SheetAction(Icons.Rounded.GraphicEq, "Mash up: load on Deck A", {
+                SheetAction(Icons.Rounded.AutoAwesome, "Add to Auto Mashup", {
+                    app.autoMashup.add(listOf(entry))
+                    val count = app.autoMashup.state.value.songs.size
+                    app.say("Auto Mashup: $count of ${AutoMashupMaker.MAX_SONGS} songs chosen")
+                    onDismiss()
+                }, tint = Pink)
+                SheetAction(Icons.Rounded.GraphicEq, "Manual mashup: load on Deck A", {
                     app.mashup.load(0, entry)
                     ui.nowPlayingOpen = false
+                    ui.mashupMode = 1
                     nav.openTab(Routes.MASHUP)
                     onDismiss()
                 }, tint = DeckA)
-                SheetAction(Icons.Rounded.GraphicEq, "Mash up: load on Deck B", {
+                SheetAction(Icons.Rounded.GraphicEq, "Manual mashup: load on Deck B", {
                     app.mashup.load(1, entry)
                     ui.nowPlayingOpen = false
+                    ui.mashupMode = 1
                     nav.openTab(Routes.MASHUP)
                     onDismiss()
                 }, tint = DeckB)

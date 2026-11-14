@@ -267,6 +267,15 @@ object BpmAnalyzer {
         return if (used == 0) Float.NEGATIVE_INFINITY else score / used
     }
 
+    /** How sharply the loudness of [power] rises at each step (0 while steady or falling). */
+    internal fun rise(power: FloatArray, rate: Float): FloatArray {
+        val n = power.size
+        val loud = loudness(power, n, max(1, Math.round(rate * 0.04f)))
+        val out = FloatArray(n)
+        for (i in 1 until n) out[i] = max(0f, loud[i] - loud[i - 1])
+        return out
+    }
+
     /** Moving-average the power over [window] steps, then compress it like the ear does. */
     private fun loudness(power: FloatArray, n: Int, window: Int): FloatArray {
         val out = FloatArray(n)

@@ -24,6 +24,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.Equalizer
 import androidx.compose.material.icons.rounded.Favorite
 import androidx.compose.material.icons.rounded.FolderOpen
@@ -173,7 +174,8 @@ fun HomeScreen() {
                     }
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    QuickTile("Mashup Studio", Icons.Rounded.GraphicEq, listOf(DeckA, DeckB), Modifier.weight(1f)) {
+                    QuickTile("Auto Mashup", Icons.Rounded.AutoAwesome, listOf(DeckA, DeckB), Modifier.weight(1f)) {
+                        ui.mashupMode = 0
                         nav.openTab(Routes.MASHUP)
                     }
                     QuickTile("Videos", Icons.Rounded.VideoLibrary, listOf(Color(0xFFE11D48), Violet), Modifier.weight(1f)) {
@@ -208,6 +210,7 @@ fun HomeScreen() {
                     items(data.mashups, key = { it.id }) { mashup ->
                         MashupCard(mashup) {
                             app.mashup.open(mashup, autoPlay = true)
+                            ui.mashupMode = 1
                             nav.openTab(Routes.MASHUP)
                         }
                     }

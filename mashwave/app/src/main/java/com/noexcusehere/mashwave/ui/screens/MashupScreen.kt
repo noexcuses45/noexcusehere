@@ -72,8 +72,10 @@ import com.noexcusehere.mashwave.data.MediaEntry
 import com.noexcusehere.mashwave.data.formatDuration
 import com.noexcusehere.mashwave.playback.DeckState
 import com.noexcusehere.mashwave.ui.DeckBadge
+import com.noexcusehere.mashwave.ui.LocalUi
 import com.noexcusehere.mashwave.ui.SongPickerSheet
 import com.noexcusehere.mashwave.ui.components.Artwork
+import com.noexcusehere.mashwave.ui.components.Chip
 import com.noexcusehere.mashwave.ui.components.ConfirmDialog
 import com.noexcusehere.mashwave.ui.components.HeaderIcon
 import com.noexcusehere.mashwave.ui.components.MwSlider
@@ -117,6 +119,7 @@ private fun rememberDeckPosition(index: Int): State<Long> {
 @Composable
 fun MashupScreen() {
     val app = LocalContext.current.app
+    val ui = LocalUi.current
     val engine = app.mashup
     val state by engine.state.collectAsStateWithLifecycle()
     val data by app.store.data.collectAsStateWithLifecycle()
@@ -130,13 +133,24 @@ fun MashupScreen() {
             .background(Brush.verticalGradient(listOf(DeckA.copy(alpha = 0.16f), Ink, DeckB.copy(alpha = 0.10f))))
             .statusBarsPadding(),
     ) {
-        ScreenHeader("Mashup Studio") {
-            HeaderIcon(Icons.Rounded.Save, "Save this mashup", {
-                if (state.ready) saving = true else app.say("Load a song on both decks first")
-            }, tint = if (state.ready) TextHi else TextLow)
+        ScreenHeader("Mashup") {
+            if (ui.mashupMode == 1) {
+                HeaderIcon(Icons.Rounded.Save, "Save this mashup", {
+                    if (state.ready) saving = true else app.say("Load a song on both decks first")
+                }, tint = if (state.ready) TextHi else TextLow)
+            }
+        }
+        Row(
+            Modifier.padding(start = 14.dp, end = 14.dp, top = 4.dp, bottom = 10.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Chip("Auto", selected = ui.mashupMode == 0, onClick = { ui.mashupMode = 0 })
+            Chip("Manual decks", selected = ui.mashupMode == 1, onClick = { ui.mashupMode = 1 })
         }
 
-        Column(
+        if (ui.mashupMode == 0) {
+            AutoMashupSection()
+        } else Column(
             Modifier
                 .fillMaxSize()
                 .verticalScroll(rememberScrollState())

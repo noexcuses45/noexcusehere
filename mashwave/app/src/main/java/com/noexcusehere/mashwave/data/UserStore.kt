@@ -146,6 +146,12 @@ class UserStore(context: Context, private val scope: CoroutineScope) {
 
     fun deleteMashup(id: String) = edit { d -> d.copy(mashups = d.mashups.filterNot { it.id == id }) }
 
+    fun addAutoMashup(mashup: AutoMashup) = edit { d ->
+        d.copy(autoMashups = listOf(mashup) + d.autoMashups.filterNot { it.id == mashup.id })
+    }
+
+    fun deleteAutoMashup(id: String) = edit { d -> d.copy(autoMashups = d.autoMashups.filterNot { it.id == id }) }
+
     // ---- settings ----------------------------------------------------------------------
 
     fun setFx(fx: FxSettings) = edit { it.copy(fx = fx) }

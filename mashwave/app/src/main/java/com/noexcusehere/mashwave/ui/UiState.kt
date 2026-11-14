@@ -28,6 +28,9 @@ class UiState {
     /** A bottom-bar tab to jump to (set when a notification is tapped). */
     var pendingTab by mutableStateOf<String?>(null)
 
+    /** Which half of the Mashup tab is showing: 0 = Auto Mashup, 1 = the two manual decks. */
+    var mashupMode by mutableStateOf(0)
+
     /** Entry whose "..." menu is showing, and the playlist it was opened from (if any). */
     var menuEntry by mutableStateOf<MediaEntry?>(null)
     var menuPlaylistId by mutableStateOf<String?>(null)

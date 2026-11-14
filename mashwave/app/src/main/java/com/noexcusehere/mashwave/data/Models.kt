@@ -80,6 +80,18 @@ data class Mashup(
     val createdAt: Long = 0,
 )
 
+/** A finished automatic mashup: one audio file made from several songs. */
+@Serializable
+data class AutoMashup(
+    val id: String,
+    val name: String,
+    /** The rendered file, playable like any other song. */
+    val entry: MediaEntry,
+    val sources: List<MediaEntry> = emptyList(),
+    val tempo: Float = 0f,
+    val createdAt: Long = 0,
+)
+
 @Serializable
 data class FxSettings(
     val enabled: Boolean = false,
@@ -96,6 +108,7 @@ data class UserData(
     val history: List<MediaEntry> = emptyList(),
     val playCounts: Map<String, Int> = emptyMap(),
     val mashups: List<Mashup> = emptyList(),
+    val autoMashups: List<AutoMashup> = emptyList(),
     val fx: FxSettings = FxSettings(),
     val songSort: String = "TITLE",
     val onboarded: Boolean = false,
