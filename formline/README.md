@@ -15,7 +15,14 @@ What it shows:
   build-your-own multi where leg correlation is handled by simulation.
 - **Racing tab** — thoroughbred, harness and greyhound meetings worldwide (AUS, NZ, UK, IRE, FR,
   USA, SAF...). Each meeting shows **quaddie picks** (top-rated runners per leg, combos, chance)
-  and the top three for every race with fair odds vs the TAB price and a VALUE tag.
+  and the top three for every race with fair odds vs the TAB price and a VALUE tag. After each race
+  the card shows the placings with win, place and exotic dividends, and how the model's top pick
+  went (results come in by themselves while the meeting is open). The quaddie card follows the
+  TAB's own four legs: the winner and win dividend of each leg, whether our picks are still alive,
+  what the quaddie **paid**, and while it is running what a $1 quaddie **would pay** if each horse
+  wins the next leg. The feed has no live will-pays, so those are estimated from win prices
+  (`lib/engine/quaddie_value.dart`); `tool/quaddie_fit.py` checked the estimate on 72 finished
+  quaddies, where it was within double or half the real payout about nine times in ten.
 - **My picks** — save any multi or horse; it is graded automatically once the event finishes, so you
   can see hit rate vs the model's expected rate and your return.
 

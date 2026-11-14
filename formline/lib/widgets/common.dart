@@ -5,6 +5,21 @@ import '../theme.dart';
 
 String pct(double p) => '${(p * 100).round()}%';
 String odds(double o) => o >= 100 ? o.toStringAsFixed(0) : (o >= 10 ? o.toStringAsFixed(1) : o.toStringAsFixed(2));
+/// A dividend or payout, with cents and thousands separators.
+String payout(double v) => '\$${NumberFormat('#,##0.00').format(v)}';
+
+/// A rounded estimate of a payout, to about two or three figures.
+String roughly(double v) {
+  if (v < 20) return '\$${v.toStringAsFixed(v < 10 ? 2 : 1)}';
+  final step = v < 200 ? 1 : (v < 1000 ? 5 : (v < 10000 ? 50 : 500));
+  return '\$${NumberFormat('#,##0').format((v / step).round() * step)}';
+}
+
+String ordinal(int n) {
+  if (n % 100 >= 11 && n % 100 <= 13) return '${n}th';
+  return switch (n % 10) { 1 => '${n}st', 2 => '${n}nd', 3 => '${n}rd', _ => '${n}th' };
+}
+
 String num1(double x) => x == x.roundToDouble() ? x.toStringAsFixed(0) : x.toStringAsFixed(1);
 String timeLocal(DateTime d) => DateFormat('EEE h:mma').format(d.toLocal()).replaceAll('AM', 'am').replaceAll('PM', 'pm');
 String clockLocal(DateTime d) => DateFormat('h:mma').format(d.toLocal()).replaceAll('AM', 'am').replaceAll('PM', 'pm');

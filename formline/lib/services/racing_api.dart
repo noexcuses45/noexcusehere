@@ -109,8 +109,12 @@ class RacingApi {
     return out;
   }
 
-  static Future<Race> race(String raceId, {bool finished = false}) async {
-    final j = await _getJson('/events/$raceId', ttl: finished ? const Duration(days: 30) : const Duration(minutes: 2));
+  /// One race with its field, and its result and dividends once run.
+  /// [fresh] asks for a copy no older than half a minute (used while waiting
+  /// on a result).
+  static Future<Race> race(String raceId, {bool finished = false, bool fresh = false}) async {
+    final ttl = finished ? const Duration(days: 30) : (fresh ? const Duration(seconds: 30) : const Duration(minutes: 2));
+    final j = await _getJson('/events/$raceId', ttl: ttl);
     return parseRace(j, raceId);
   }
 
@@ -162,10 +166,40 @@ class RacingApi {
           position: (x['position'] as num).toInt(),
           number: (x['runner_number'] as num?)?.toInt() ?? 0,
           name: x['name'] as String? ?? '',
+          margin: (x['margin_length'] as num?)?.toDouble(),
         ));
       } catch (_) {}
     }
     results.sort((a, b) => a.position.compareTo(b.position));
+    // Dividends come twice (interim, then final): keep the final one of each.
+    final byKey = <String, Dividend>{};
+    for (final x in (d['dividends'] as List? ?? [])) {
+      try {
+        final amount = (x['dividend'] as num?)?.toDouble() ?? 0;
+        if (amount <= 0) continue;
+        final product = (x['product_name'] as String? ?? '').replaceFirst('Pool ', '');
+        final description = x['description'] as String? ?? '';
+        final isFinal = '${x['status']}'.toLowerCase() == 'final';
+        final key = '$product|$description';
+        if (byKey.containsKey(key) && !isFinal) continue;
+        byKey[key] = Dividend(
+          product: product,
+          amount: amount,
+          numbers: [for (final p in (x['positions'] as List? ?? [])) ((p as Map)['runner_number'] as num?)?.toInt() ?? 0],
+          description: description,
+          isFinal: isFinal,
+          pool: (x['pool_size'] as num?)?.toDouble() ?? 0,
+        );
+      } catch (_) {}
+    }
+    var quaddieLegs = const <int>[];
+    var quaddiePool = 0.0;
+    for (final t in (d['tote_pools'] as List? ?? [])) {
+      if (t is Map && t['product_type'] == 'Quadrella' && t['quaddie'] is List) {
+        quaddieLegs = [for (final n in t['quaddie'] as List) (n as num).toInt()];
+        quaddiePool = (t['total'] as num?)?.toDouble() ?? 0;
+      }
+    }
     final startSecs = (r['advertised_start'] as num?)?.toInt();
     return Race(
       id: '${r['event_id'] ?? raceId}',
@@ -183,6 +217,9 @@ class RacingApi {
       positionsPaid: (r['positions_paid'] as num?)?.toInt() ?? 3,
       runners: runners,
       results: results,
+      dividends: byKey.values.toList(),
+      quaddieLegs: quaddieLegs,
+      quaddiePool: quaddiePool,
     );
   }
 }
