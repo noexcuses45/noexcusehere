@@ -111,14 +111,33 @@ private val tabs = listOf(
     Tab(Routes.PLAYLISTS, "Playlists", Icons.AutoMirrored.Rounded.QueueMusic),
 )
 
-fun mediaPermissions(): Array<String> = if (Build.VERSION.SDK_INT >= 33) {
-    arrayOf(
+fun mediaPermissions(): Array<String> = when {
+    Build.VERSION.SDK_INT >= 34 -> arrayOf(
         Manifest.permission.READ_MEDIA_AUDIO,
         Manifest.permission.READ_MEDIA_VIDEO,
+        Manifest.permission.READ_MEDIA_IMAGES,
+        // Lets the app cope when the user chooses "only the photos I select".
+        Manifest.permission.READ_MEDIA_VISUAL_USER_SELECTED,
         Manifest.permission.POST_NOTIFICATIONS,
     )
-} else {
-    arrayOf(Manifest.permission.READ_EXTERNAL_STORAGE)
+    Build.VERSION.SDK_INT >= 33 -> arrayOf(
+        Manifest.permission.READ_MEDIA_AUDIO,
+        Manifest.permission.READ_MEDIA_VIDEO,
+        Manifest.permission.READ_MEDIA_IMAGES,
+        Manifest.permission.POST_NOTIFICATIONS,
+    )
+    else -> arrayOf(Manifest.permission.READ_EXTERNAL_STORAGE)
+}
+
+/** What the video editor asks for so it can show the photos and videos on the phone. */
+fun photoPermissions(): Array<String> = when {
+    Build.VERSION.SDK_INT >= 34 -> arrayOf(
+        Manifest.permission.READ_MEDIA_IMAGES,
+        Manifest.permission.READ_MEDIA_VIDEO,
+        Manifest.permission.READ_MEDIA_VISUAL_USER_SELECTED,
+    )
+    Build.VERSION.SDK_INT >= 33 -> arrayOf(Manifest.permission.READ_MEDIA_IMAGES, Manifest.permission.READ_MEDIA_VIDEO)
+    else -> arrayOf(Manifest.permission.READ_EXTERNAL_STORAGE)
 }
 
 @Composable

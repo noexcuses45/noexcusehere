@@ -7,6 +7,7 @@ import android.media.MediaMetadataRetriever
 import android.net.Uri
 import android.os.Build
 import android.provider.OpenableColumns
+import android.util.Log
 import android.util.LruCache
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.ui.graphics.ImageBitmap
@@ -33,16 +34,24 @@ object ClipProbe {
 
     suspend fun describeEntries(context: Context, entries: List<MediaEntry>): List<EditClip> = withContext(Dispatchers.IO) {
         entries.mapNotNull { entry ->
-            runCatching { video(context, Uri.parse(entry.uri), entry.title) }.getOrNull()
+            val uri = Uri.parse(entry.uri)
+            runCatching { if (entry.isImage) image(context, uri, entry.title) else video(context, uri, entry.title) }
+                .onFailure { Log.w("UltimateBeats", "Could not read ${entry.title} for the editor", it) }
+                .getOrNull()
         }
     }
 
     private fun describe(context: Context, uri: Uri): EditClip? {
-        val type = context.contentResolver.getType(uri).orEmpty()
+        val type = runCatching { context.contentResolver.getType(uri) }.getOrNull().orEmpty()
         val name = displayName(context, uri)
+        val extension = name.substringAfterLast('.', "").lowercase()
         val looksLikeImage = type.startsWith("image/") ||
-            (type.isEmpty() && name.substringAfterLast('.', "").lowercase() in setOf("jpg", "jpeg", "png", "webp", "heic", "heif", "bmp"))
-        return if (looksLikeImage) image(context, uri, name) else video(context, uri, name)
+            (!type.startsWith("video/") && extension in setOf("jpg", "jpeg", "png", "webp", "heic", "heif", "bmp", "gif"))
+        // Whatever the label says, try the other reading too before giving up on a file.
+        val first = runCatching { if (looksLikeImage) image(context, uri, name) else video(context, uri, name) }
+            .onFailure { Log.w("UltimateBeats", "Could not read $name for the editor", it) }
+            .getOrNull()
+        return first ?: runCatching { if (looksLikeImage) video(context, uri, name) else image(context, uri, name) }.getOrNull()
     }
 
     private fun video(context: Context, uri: Uri, title: String): EditClip? {
@@ -73,8 +82,11 @@ object ClipProbe {
     }
 
     private fun image(context: Context, uri: Uri, title: String): EditClip? {
+        // Only the picture's size is read here. (Measuring never hands back a picture, so the
+        // result of the call itself says nothing about success - the measured size does.)
         val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-        context.contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, bounds) } ?: return null
+        val stream = context.contentResolver.openInputStream(uri) ?: return null
+        stream.use { BitmapFactory.decodeStream(it, null, bounds) }
         if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
         var width = bounds.outWidth
         var height = bounds.outHeight

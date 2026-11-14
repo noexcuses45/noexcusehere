@@ -169,7 +169,7 @@ fun TrackMenuSheet(entry: MediaEntry, playlistId: String?, onDismiss: () -> Unit
                 app.say("Added to queue")
                 onDismiss()
             })
-            SheetAction(Icons.AutoMirrored.Rounded.PlaylistAdd, "Add to playlist", {
+            SheetAction(Icons.AutoMirrored.Rounded.PlaylistAdd, if (entry.isVideo) "Add to watch list" else "Add to playlist", {
                 ui.addToPlaylist = listOf(entry)
                 onDismiss()
             })
@@ -220,8 +220,20 @@ fun TrackMenuSheet(entry: MediaEntry, playlistId: String?, onDismiss: () -> Unit
                 })
             }
             if (playlistId != null) {
-                SheetAction(Icons.Rounded.RemoveCircleOutline, "Remove from this playlist", {
+                val inWatchList = data.playlists.firstOrNull { it.id == playlistId }?.video == true
+                SheetAction(Icons.Rounded.RemoveCircleOutline, if (inWatchList) "Remove from this watch list" else "Remove from this playlist", {
                     app.store.removeFromPlaylist(playlistId, entry.uri)
+                    onDismiss()
+                })
+            }
+            if (data.imported.any { it.uri == entry.uri }) {
+                SheetAction(Icons.Rounded.RemoveCircleOutline, "Remove from my library", {
+                    app.store.removeImported(entry.uri)
+                    // Give back the access Android was keeping for this file.
+                    runCatching {
+                        context.contentResolver.releasePersistableUriPermission(Uri.parse(entry.uri), Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                    }
+                    app.say("Removed. The file itself stays in ${entry.folderName}.")
                     onDismiss()
                 })
             }
@@ -271,16 +283,19 @@ fun AddToPlaylistSheet(entries: List<MediaEntry>, onDismiss: () -> Unit) {
     val app = LocalContext.current.app
     val data by app.store.data.collectAsStateWithLifecycle()
     var creating by remember { mutableStateOf(false) }
+    // Videos go into watch lists, songs (or a mix) into playlists.
+    val video = entries.isNotEmpty() && entries.all { it.isVideo }
+    val lists = remember(data.playlists, video) { data.playlists.filter { it.video == video } }
 
     MwSheet(onDismiss) {
         Text(
-            "Add to playlist",
+            if (video) "Add to watch list" else "Add to playlist",
             style = MaterialTheme.typography.titleLarge,
             modifier = Modifier.padding(horizontal = 22.dp, vertical = 8.dp),
         )
-        SheetAction(Icons.Rounded.Add, "New playlist", { creating = true }, tint = Pink)
+        SheetAction(Icons.Rounded.Add, if (video) "New watch list" else "New playlist", { creating = true }, tint = Pink)
         LazyColumn(Modifier.heightIn(max = 420.dp)) {
-            items(data.playlists, key = { it.id }) { playlist ->
+            items(lists, key = { it.id }) { playlist ->
                 Row(
                     Modifier
                         .fillMaxWidth()
@@ -305,12 +320,12 @@ fun AddToPlaylistSheet(entries: List<MediaEntry>, onDismiss: () -> Unit) {
 
     if (creating) {
         TextPromptDialog(
-            title = "New playlist",
-            label = "Playlist name",
+            title = if (video) "New watch list" else "New playlist",
+            label = if (video) "Watch list name" else "Playlist name",
             confirm = "Create",
             onDismiss = { creating = false },
             onConfirm = { name ->
-                val playlist = app.store.createPlaylist(name, entries)
+                val playlist = app.store.createPlaylist(name, entries, video = video)
                 app.say("Added to ${playlist.name}")
                 creating = false
                 onDismiss()
@@ -379,6 +394,8 @@ fun SongPickerSheet(
     title: String,
     multiSelect: Boolean,
     onDismiss: () -> Unit,
+    /** Show only videos (for filling a watch list). */
+    videosOnly: Boolean = false,
     onPicked: (List<MediaEntry>) -> Unit,
 ) {
     val app = LocalContext.current.app
@@ -386,7 +403,7 @@ fun SongPickerSheet(
     val videos by app.library.videos.collectAsStateWithLifecycle()
     var query by remember { mutableStateOf("") }
     val selected = remember { mutableStateListOf<MediaEntry>() }
-    val all = remember(songs, videos) { songs + videos }
+    val all = remember(songs, videos, videosOnly) { if (videosOnly) videos else songs + videos }
     val shown = remember(all, query) {
         val q = query.trim()
         if (q.isEmpty()) all else all.filter { it.title.contains(q, true) || it.artist.contains(q, true) || it.album.contains(q, true) }
@@ -432,7 +449,7 @@ fun SongPickerSheet(
         )
         if (shown.isEmpty()) {
             Text(
-                if (all.isEmpty()) "No music on this phone yet." else "Nothing matches \"$query\".",
+                if (all.isEmpty()) (if (videosOnly) "No videos in your library yet." else "No music on this phone yet.") else "Nothing matches \"$query\".",
                 style = MaterialTheme.typography.bodyMedium,
                 color = TextMid,
                 modifier = Modifier.padding(horizontal = 22.dp, vertical = 28.dp),
@@ -609,26 +626,14 @@ private fun TrackOptionRow(label: String, selected: Boolean, onClick: () -> Unit
 
 // ---- opening things that aren't in the library -------------------------------------------
 
-/** Returns a function that opens the system file picker and plays whatever is chosen. */
+/**
+ * Returns a function that opens the system file picker (Google Drive, Downloads, ...), plays
+ * whatever is chosen and keeps it in the library.
+ */
 @Composable
 fun rememberOpenFiles(): () -> Unit {
-    val context = LocalContext.current
-    val app = context.app
-    val ui = LocalUi.current
-    val launcher = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
-        if (uris.isNotEmpty()) {
-            val entries = uris.map { uri ->
-                // Keep access after a restart so the file can live in playlists.
-                runCatching {
-                    context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                }
-                describeUri(context, uri)
-            }
-            ui.play(app.player, entries, 0)
-            if (!entries.first().isVideo) ui.nowPlayingOpen = true
-        }
-    }
-    return { runCatching { launcher.launch(arrayOf("audio/*", "video/*", "application/ogg", "application/x-matroska")) } }
+    val importer = rememberMediaImporter()
+    return { importer.fromFiles(ImportKind.ANY) }
 }
 
 @Composable

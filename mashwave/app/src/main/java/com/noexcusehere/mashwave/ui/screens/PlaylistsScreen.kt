@@ -104,7 +104,7 @@ fun PlaylistsScreen() {
                     }
                 }
             }
-            items(data.playlists, key = { it.id }) { playlist ->
+            items(data.playlists.filter { !it.video }, key = { it.id }) { playlist ->
                 PlaylistRow(
                     playlist = playlist,
                     onClick = { nav.navigate(Routes.collection("playlist", playlist.id)) },
@@ -115,7 +115,30 @@ fun PlaylistsScreen() {
                     onDelete = { deleting = playlist },
                 )
             }
-            if (data.playlists.isEmpty()) {
+            // Watch lists live in the Videos tab; they are listed here too so nothing is hidden.
+            val watchLists = data.playlists.filter { it.video }
+            if (watchLists.isNotEmpty()) {
+                item {
+                    Text(
+                        "Watch lists",
+                        style = MaterialTheme.typography.titleLarge,
+                        color = TextHi,
+                        modifier = Modifier.padding(start = 16.dp, top = 18.dp, bottom = 4.dp),
+                    )
+                }
+                items(watchLists, key = { it.id }) { playlist ->
+                    PlaylistRow(
+                        playlist = playlist,
+                        onClick = { nav.navigate(Routes.collection("playlist", playlist.id)) },
+                        onPlay = {
+                            if (playlist.items.isEmpty()) app.say("This watch list is empty") else ui.play(app.player, playlist.items, 0)
+                        },
+                        onRename = { renaming = playlist },
+                        onDelete = { deleting = playlist },
+                    )
+                }
+            }
+            if (data.playlists.none { !it.video }) {
                 item {
                     EmptyState(
                         icon = Icons.AutoMirrored.Rounded.QueueMusic,
@@ -144,8 +167,8 @@ fun PlaylistsScreen() {
     }
     renaming?.let { playlist ->
         TextPromptDialog(
-            title = "Rename playlist",
-            label = "Playlist name",
+            title = if (playlist.video) "Rename watch list" else "Rename playlist",
+            label = "Name",
             confirm = "Save",
             initial = playlist.name,
             onDismiss = { renaming = null },
@@ -158,7 +181,11 @@ fun PlaylistsScreen() {
     deleting?.let { playlist ->
         ConfirmDialog(
             title = "Delete \"${playlist.name}\"?",
-            message = "The playlist is removed. The songs themselves stay on your phone.",
+            message = if (playlist.video) {
+                "The watch list is removed. The videos themselves stay where they are."
+            } else {
+                "The playlist is removed. The songs themselves stay on your phone."
+            },
             confirm = "Delete",
             onDismiss = { deleting = null },
             onConfirm = {

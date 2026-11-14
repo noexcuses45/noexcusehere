@@ -45,7 +45,7 @@ class MashwaveApp : Application() {
     override fun onCreate() {
         super.onCreate()
         store = UserStore(this, scope)
-        library = LibraryRepository(this, scope)
+        library = LibraryRepository(this, scope, store)
         player = PlayerConnection(this, scope)
         mashup = MashupEngine(this, scope)
         autoMashup = AutoMashupMaker(this, scope)

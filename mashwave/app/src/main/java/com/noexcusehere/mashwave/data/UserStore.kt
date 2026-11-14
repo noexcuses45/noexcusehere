@@ -87,14 +87,16 @@ class UserStore(context: Context, private val scope: CoroutineScope) {
 
     // ---- playlists ---------------------------------------------------------------------
 
-    fun createPlaylist(name: String, items: List<MediaEntry> = emptyList()): Playlist {
+    /** [video] makes it a watch list instead of a music playlist. */
+    fun createPlaylist(name: String, items: List<MediaEntry> = emptyList(), video: Boolean = false): Playlist {
         val now = System.currentTimeMillis()
         val playlist = Playlist(
             id = UUID.randomUUID().toString(),
-            name = name.trim().ifBlank { "My playlist" },
+            name = name.trim().ifBlank { if (video) "My watch list" else "My playlist" },
             items = items.distinctBy { it.uri },
             createdAt = now,
             updatedAt = now,
+            video = video,
         )
         edit { it.copy(playlists = listOf(playlist) + it.playlists) }
         return playlist
@@ -137,6 +139,24 @@ class UserStore(context: Context, private val scope: CoroutineScope) {
             },
         )
     }
+
+    // ---- things added from Google Drive, Google Photos and other apps ---------------------
+
+    /** Remembers picked files so they stay in the library. Returns how many were new. */
+    fun addImported(entries: List<MediaEntry>): Int {
+        var added = 0
+        edit { d ->
+            val existing = d.imported.mapTo(HashSet()) { it.uri }
+            val fresh = entries.filter { existing.add(it.uri) }
+            added = fresh.size
+            d.copy(imported = fresh + d.imported)
+        }
+        return added
+    }
+
+    fun removeImported(uri: String) = edit { d -> d.copy(imported = d.imported.filterNot { it.uri == uri }) }
+
+    fun isImported(uri: String): Boolean = _data.value.imported.any { it.uri == uri }
 
     // ---- mashups -----------------------------------------------------------------------
 

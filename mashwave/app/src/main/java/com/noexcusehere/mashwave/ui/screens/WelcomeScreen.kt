@@ -93,7 +93,7 @@ fun WelcomeScreen(onAllow: () -> Unit, onSkip: () -> Unit, askedBefore: Boolean)
                 .clickable(onClick = onAllow),
             contentAlignment = Alignment.Center,
         ) {
-            Text("Allow access to music & videos", style = MaterialTheme.typography.titleMedium, color = Color.White)
+            Text("Allow access to music, photos & videos", style = MaterialTheme.typography.titleMedium, color = Color.White)
         }
         if (askedBefore) {
             // After a refusal Android may stop showing its prompt, so offer the Settings page too.

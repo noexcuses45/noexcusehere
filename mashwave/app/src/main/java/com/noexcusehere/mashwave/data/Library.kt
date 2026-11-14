@@ -136,6 +136,52 @@ class MediaScanner(private val context: Context) {
         return out
     }
 
+    /** Every photo on the phone the app is allowed to see, newest first. */
+    fun scanImages(): List<MediaEntry> {
+        val collection = if (Build.VERSION.SDK_INT >= 29) {
+            MediaStore.Images.Media.getContentUri(MediaStore.VOLUME_EXTERNAL)
+        } else {
+            MediaStore.Images.Media.EXTERNAL_CONTENT_URI
+        }
+        val projection = arrayOf(
+            MediaStore.Images.Media._ID,
+            MediaStore.Images.Media.DISPLAY_NAME,
+            MediaStore.Images.Media.DATE_ADDED,
+            MediaStore.Images.Media.SIZE,
+            MediaStore.Images.Media.DATA,
+            MediaStore.Images.Media.WIDTH,
+            MediaStore.Images.Media.HEIGHT,
+        )
+        val out = ArrayList<MediaEntry>()
+        runCatching {
+            context.contentResolver.query(collection, projection, null, null, MediaStore.Images.Media.DATE_ADDED + " DESC")?.use { c ->
+                val id = c.getColumnIndexOrThrow(MediaStore.Images.Media._ID)
+                val name = c.getColumnIndexOrThrow(MediaStore.Images.Media.DISPLAY_NAME)
+                val added = c.getColumnIndexOrThrow(MediaStore.Images.Media.DATE_ADDED)
+                val size = c.getColumnIndexOrThrow(MediaStore.Images.Media.SIZE)
+                val data = c.getColumnIndexOrThrow(MediaStore.Images.Media.DATA)
+                val width = c.getColumnIndexOrThrow(MediaStore.Images.Media.WIDTH)
+                val height = c.getColumnIndexOrThrow(MediaStore.Images.Media.HEIGHT)
+                while (c.moveToNext()) {
+                    val path = c.string(data)
+                    // Empty leftovers (failed downloads and the like) cannot be shown anyway.
+                    if (c.long(size) in 1..199) continue
+                    out += MediaEntry(
+                        uri = ContentUris.withAppendedId(collection, c.getLong(id)).toString(),
+                        title = cleanTitle("", c.string(name), path),
+                        isImage = true,
+                        folder = parentOf(path),
+                        dateAdded = c.long(added),
+                        size = c.long(size),
+                        width = c.int(width),
+                        height = c.int(height),
+                    )
+                }
+            }
+        }.onFailure { Log.w("Mashwave", "Could not read the photo list", it) }
+        return out
+    }
+
     private fun cleanTitle(title: String, displayName: String, path: String): String {
         if (title.isNotBlank()) return title
         val base = displayName.ifBlank { path.substringAfterLast('/') }
@@ -149,13 +195,21 @@ class MediaScanner(private val context: Context) {
     private fun Cursor.int(i: Int): Int = if (isNull(i)) 0 else getInt(i)
 }
 
-class LibraryRepository(private val context: Context, private val scope: CoroutineScope) {
+class LibraryRepository(private val context: Context, private val scope: CoroutineScope, private val store: UserStore) {
     private val scanner = MediaScanner(context)
     private var scanJob: Job? = null
     private var observing = false
+    private var foundSongs: List<MediaEntry> = emptyList()
+    private var foundVideos: List<MediaEntry> = emptyList()
 
+    /** Songs on the phone plus the ones added from Google Drive and other apps. */
     val songs = MutableStateFlow<List<MediaEntry>>(emptyList())
+
+    /** Videos on the phone plus the ones added from Google Photos, Drive and other apps. */
     val videos = MutableStateFlow<List<MediaEntry>>(emptyList())
+
+    /** Photos on the phone, newest first. Only used by the video editor. */
+    val photos = MutableStateFlow<List<MediaEntry>>(emptyList())
     val loading = MutableStateFlow(false)
     val scannedOnce = MutableStateFlow(false)
 
@@ -163,9 +217,34 @@ class LibraryRepository(private val context: Context, private val scope: Corouti
         override fun onChange(selfChange: Boolean) = refresh(debounceMs = 1500)
     }
 
+    init {
+        // Things added from other apps show up (or go away) without waiting for a rescan.
+        scope.launch {
+            var last: List<MediaEntry>? = null
+            store.data.collect { data ->
+                if (data.imported !== last) {
+                    last = data.imported
+                    publish()
+                }
+            }
+        }
+    }
+
     fun hasAudioPermission(): Boolean = granted(
         if (Build.VERSION.SDK_INT >= 33) Manifest.permission.READ_MEDIA_AUDIO else Manifest.permission.READ_EXTERNAL_STORAGE,
     )
+
+    /** True when the app may list photos (all of them, or the ones the user picked on Android 14+). */
+    fun hasPhotoPermission(): Boolean = when {
+        Build.VERSION.SDK_INT >= 34 ->
+            granted(Manifest.permission.READ_MEDIA_IMAGES) || granted(Manifest.permission.READ_MEDIA_VISUAL_USER_SELECTED)
+        Build.VERSION.SDK_INT >= 33 -> granted(Manifest.permission.READ_MEDIA_IMAGES)
+        else -> granted(Manifest.permission.READ_EXTERNAL_STORAGE)
+    }
+
+    /** True when the user chose "only the photos I select" instead of all photos (Android 14+). */
+    fun photoAccessIsPartial(): Boolean = Build.VERSION.SDK_INT >= 34 &&
+        !granted(Manifest.permission.READ_MEDIA_IMAGES) && granted(Manifest.permission.READ_MEDIA_VISUAL_USER_SELECTED)
 
     private fun granted(permission: String) =
         ContextCompat.checkSelfPermission(context, permission) == PackageManager.PERMISSION_GRANTED
@@ -179,9 +258,11 @@ class LibraryRepository(private val context: Context, private val scope: Corouti
                 val (audio, video) = withContext(Dispatchers.IO) {
                     scanner.scanAudio() to scanner.scanVideo()
                 }
-                songs.value = audio.sortedBy { it.title.lowercase() }
-                videos.value = video.sortedByDescending { it.dateAdded }
+                foundSongs = audio
+                foundVideos = video
+                publish()
                 scannedOnce.value = true
+                photos.value = if (hasPhotoPermission()) withContext(Dispatchers.IO) { scanner.scanImages() } else emptyList()
             } finally {
                 loading.value = false
             }
@@ -191,8 +272,19 @@ class LibraryRepository(private val context: Context, private val scope: Corouti
             runCatching {
                 context.contentResolver.registerContentObserver(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, true, observer)
                 context.contentResolver.registerContentObserver(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, true, observer)
+                context.contentResolver.registerContentObserver(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, true, observer)
             }
         }
+    }
+
+    private fun publish() {
+        val imported = store.data.value.imported
+        val known = HashSet<String>()
+        foundSongs.forEach { known += it.uri }
+        foundVideos.forEach { known += it.uri }
+        val extra = imported.filter { it.uri !in known }
+        songs.value = (foundSongs + extra.filter { !it.isVideo && !it.isImage }).sortedBy { it.title.lowercase() }
+        videos.value = (foundVideos + extra.filter { it.isVideo }).sortedByDescending { it.dateAdded }
     }
 
     /** Finds the library entry for a uri, e.g. to show full details for an item restored from disk. */
@@ -223,7 +315,11 @@ fun describeUri(context: Context, uri: Uri, mimeHint: String? = null): MediaEntr
     val lower = (title.ifBlank { text }).lowercase().substringBefore('?')
     val videoExt = listOf(".mp4", ".mkv", ".webm", ".avi", ".mov", ".m4v", ".3gp", ".ts", ".flv", ".mpg", ".mpeg", ".m3u8", ".mpd", ".wmv")
     val audioExt = listOf(".mp3", ".m4a", ".aac", ".flac", ".ogg", ".opus", ".wav", ".wma", ".amr", ".mka", ".aiff", ".mid")
+    val imageExt = listOf(".jpg", ".jpeg", ".png", ".webp", ".heic", ".heif", ".bmp", ".gif")
+    val isImage = mime?.startsWith("image/") == true ||
+        (mime?.startsWith("video/") != true && mime?.startsWith("audio/") != true && imageExt.any { lower.endsWith(it) })
     val isVideo = when {
+        isImage -> false
         mime?.startsWith("video/") == true -> true
         mime?.startsWith("audio/") == true -> false
         audioExt.any { lower.endsWith(it) } -> false
@@ -231,5 +327,5 @@ fun describeUri(context: Context, uri: Uri, mimeHint: String? = null): MediaEntr
         else -> uri.scheme == "rtsp"
     }
     val display = title.substringBeforeLast('.').ifBlank { title }.ifBlank { uri.host ?: "Stream" }
-    return MediaEntry(uri = text, title = display, isVideo = isVideo, size = size)
+    return MediaEntry(uri = text, title = display, isVideo = isVideo, size = size, isImage = isImage)
 }

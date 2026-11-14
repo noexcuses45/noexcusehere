@@ -29,6 +29,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.Sort
 import androidx.compose.material.icons.rounded.Folder
 import androidx.compose.material.icons.rounded.LibraryMusic
+import androidx.compose.material.icons.rounded.CloudDownload
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Shuffle
 import androidx.compose.material3.DropdownMenu
@@ -55,7 +56,9 @@ import com.noexcusehere.mashwave.data.toAlbums
 import com.noexcusehere.mashwave.data.toArtists
 import com.noexcusehere.mashwave.data.toFolders
 import com.noexcusehere.mashwave.ui.LocalNav
+import com.noexcusehere.mashwave.ui.ImportKind
 import com.noexcusehere.mashwave.ui.LocalUi
+import com.noexcusehere.mashwave.ui.rememberMediaImporter
 import com.noexcusehere.mashwave.ui.Routes
 import com.noexcusehere.mashwave.ui.components.Artwork
 import com.noexcusehere.mashwave.ui.components.Chip
@@ -95,6 +98,7 @@ fun LibraryScreen() {
     val player by app.player.state.collectAsStateWithLifecycle()
     var tab by rememberSaveable { mutableStateOf(0) }
     var sortOpen by remember { mutableStateOf(false) }
+    val importer = rememberMediaImporter()
     val tabs = listOf("Songs", "Albums", "Artists", "Folders")
 
     Column(
@@ -103,6 +107,7 @@ fun LibraryScreen() {
             .statusBarsPadding(),
     ) {
         ScreenHeader("Library") {
+            HeaderIcon(Icons.Rounded.CloudDownload, "Add music from Google Drive or files", { importer.fromFiles(ImportKind.MUSIC) })
             HeaderIcon(Icons.Rounded.Search, "Search", { nav.navigate(Routes.SEARCH) })
             if (tab == 0) {
                 Box {

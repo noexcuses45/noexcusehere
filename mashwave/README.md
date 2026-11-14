@@ -20,7 +20,10 @@ old one and keeps playlists, likes and mashups.
 - Reopens where you left off
 
 **Video**
-- Video library with thumbnails and folders
+- Video library with thumbnails, filtered by where a video came from (WhatsApp, Camera,
+  Downloads, Google Drive ...) or by folder
+- **Watch lists**: playlists for videos. Make one from the Videos tab or a video's menu
+  ("Add to watch list"), then play it through, reorder it, rename it
 - Full-screen player: double-tap either side to skip 10 s, swipe up/down on the left for
   brightness and on the right for volume, fit / zoom / stretch, rotate, lock controls
 - Audio-track and subtitle selection, playback speed
@@ -50,7 +53,9 @@ steady beat work best; live recordings, rubato and beatless music don't.
 - Save mashups by name and reopen them later
 
 **Video editor** (Edit tab, next to Mashup)
-- Join videos from the app's library with photos and videos from the phone's gallery
+- "Add clips" shows every photo and video on the phone in one grid, with filters for where
+  they came from - Camera, WhatsApp, Messenger, Texts, Screenshots, Downloads - and a search
+  box, plus buttons that reach into Google Photos and Google Drive
 - A film-strip timeline: drag to move through the video, pinch to zoom, tap a caption or the
   music bar to change it. Tools work on the clip under the white line
 - Split, trim, copy, re-order and delete clips; set how long a photo shows
@@ -78,6 +83,26 @@ reverse and freeze-frame.
   network. The TV has to be able to play the file's format itself - the phone does not convert
 - The manual two-deck mashup is mixed live on the phone and cannot be cast; saved Auto
   Mashups are ordinary songs and can
+
+**Google Drive, Google Photos and other apps**
+- Library has an "add from Google Drive or files" button, Videos has "From Google Photos" and
+  "From Google Drive or files" under **+**. They open Android's own pickers; whatever you
+  choose is kept in the library (marked with where it came from) until you remove it
+- In the file picker, open the side menu to switch to Google Drive, then long-press to select
+  several files, or use the menu's "Select all"
+- Android lets an app keep a few hundred picked files; beyond that they play but are not kept
+
+What the app can and cannot reach, and why:
+- **WhatsApp:** received photos and videos are ordinary files on the phone, so they all show
+  up once photo and video access is allowed (unless "media visibility" is off in WhatsApp)
+- **Messenger:** only pictures and videos you saved out of a chat. The rest never leaves
+  Messenger's own storage and no other app can read it
+- **Text messages:** only pictures you saved from a text. Reading messages directly needs the
+  SMS permission, which the app deliberately does not ask for: Google Play Protect treats
+  sideloaded apps with that permission as suspicious and can refuse to install them, and
+  modern chat-style texts (RCS) are not readable that way in any case
+- **Google Drive / Google Photos:** only through the pickers above. Listing a whole Drive
+  automatically would need Google sign-in registered in a Google Cloud project of your own
 
 **Opens almost anything**
 - "Open with Ultimate Beats" from any file manager, browser or chat app
@@ -109,7 +134,7 @@ The APK appears at `app/build/outputs/apk/release/app-release.apk`.
 
 Copy the APK to the phone, tap it, and allow "install unknown apps" when asked — normal for
 apps outside the Play Store. Needs Android 8.0 or newer. On first launch tap
-**Allow access to music & videos**.
+**Allow access to music, photos & videos**.
 
 ### Updates and the signing key
 
@@ -143,6 +168,8 @@ app/src/main/java/com/noexcusehere/mashwave/
   automash/AutoMashupMaker.kt           runs the whole thing and saves the file
   playback/BpmAnalyzer.kt               tempo detection
   playback/AudioFx.kt                   equalizer / bass / surround
+  data/MediaSources.kt                  works out where a file came from (WhatsApp, Camera, Drive ...)
+  ui/Import.kt                          adding files from Google Drive, Google Photos and other apps
   editor/EditorModels.kt, EditorOps.kt  a video project and every edit that can be made to it
   editor/CompositionFactory.kt          turns a project into what the video engine plays / saves
   editor/EditorSession.kt               the open project (undo / redo) and the live preview

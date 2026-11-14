@@ -127,7 +127,7 @@ fun HomeScreen() {
                     HeaderIcon(Icons.Rounded.Add, "Open", { menuOpen = true })
                     DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }, containerColor = Surface2) {
                         DropdownMenuItem(
-                            text = { Text("Open a file") },
+                            text = { Text("Add from Google Drive or files") },
                             leadingIcon = { Icon(Icons.Rounded.FolderOpen, contentDescription = null) },
                             onClick = {
                                 menuOpen = false

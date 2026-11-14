@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Image
 import androidx.compose.material.icons.rounded.Movie
 import androidx.compose.material.icons.rounded.MusicNote
 import androidx.compose.material.icons.rounded.Podcasts
@@ -43,6 +44,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.palette.graphics.Palette
 import com.noexcusehere.mashwave.data.MediaEntry
+import com.noexcusehere.mashwave.data.isFromCloud
 import com.noexcusehere.mashwave.ui.theme.Violet
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
@@ -151,6 +153,18 @@ object ArtworkLoader {
                 if (fromAlbum != null) return fromAlbum.fit(size)
             }
         }
+        if (entry.isImage) {
+            val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            resolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, bounds) }
+            if (bounds.outWidth <= 0) return null
+            var sample = 1
+            while (max(bounds.outWidth, bounds.outHeight) / (sample * 2) >= size) sample *= 2
+            val options = BitmapFactory.Options().apply { inSampleSize = sample }
+            return resolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, options) }?.fit(size)
+        }
+        // Looking inside a file kept in Google Drive would download all of it just for a small
+        // picture, so those keep their placeholder unless the other app offered a thumbnail above.
+        if (entry.isFromCloud) return null
         // Last resort: look inside the file itself.
         val retriever = MediaMetadataRetriever()
         return try {
@@ -231,6 +245,7 @@ fun Artwork(
             Icon(
                 imageVector = when {
                     entry?.isStream == true -> Icons.Rounded.Podcasts
+                    entry?.isImage == true -> Icons.Rounded.Image
                     entry?.isVideo == true -> Icons.Rounded.Movie
                     else -> Icons.Rounded.MusicNote
                 },

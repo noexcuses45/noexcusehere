@@ -76,6 +76,8 @@ data class CollectionModel(
     val entries: List<MediaEntry>,
     val playlistId: String? = null,
     val emptyMessage: String = "Nothing here yet.",
+    /** A playlist of videos. */
+    val watchList: Boolean = false,
 )
 
 fun resolveCollection(
@@ -119,13 +121,19 @@ fun resolveCollection(
 
     "playlist" -> {
         val playlist = data.playlists.firstOrNull { it.id == key }
+        val watchList = playlist?.video == true
         CollectionModel(
-            kind = "Playlist",
+            kind = if (watchList) "Watch list" else "Playlist",
             title = playlist?.name ?: "Playlist",
             subtitle = "",
             entries = playlist?.items ?: emptyList(),
             playlistId = playlist?.id,
-            emptyMessage = "This playlist is empty. Tap \"Add songs\" to fill it.",
+            emptyMessage = if (watchList) {
+                "This watch list is empty. Tap \"Add videos\" to fill it."
+            } else {
+                "This playlist is empty. Tap \"Add songs\" to fill it."
+            },
+            watchList = watchList,
         )
     }
 
@@ -228,7 +236,7 @@ fun CollectionScreen(type: String, key: String) {
                     horizontalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
                     if (playlistId != null) {
-                        PillButton("Add songs", { picking = true }, icon = Icons.Rounded.Add)
+                        PillButton(if (model.watchList) "Add videos" else "Add songs", { picking = true }, icon = Icons.Rounded.Add)
                         if (model.entries.size > 1) {
                             PillButton(if (editing) "Done" else "Reorder", { editing = !editing }, filled = editing)
                         }
@@ -259,7 +267,7 @@ fun CollectionScreen(type: String, key: String) {
                     icon = Icons.Rounded.MusicNote,
                     title = "Nothing here yet",
                     message = model.emptyMessage,
-                    action = if (playlistId != null) "Add songs" else null,
+                    action = if (playlistId != null) (if (model.watchList) "Add videos" else "Add songs") else null,
                     onAction = if (playlistId != null) ({ picking = true }) else null,
                 )
             }
@@ -304,6 +312,7 @@ fun CollectionScreen(type: String, key: String) {
             title = "Add to ${model.title}",
             multiSelect = true,
             onDismiss = { picking = false },
+            videosOnly = model.watchList,
             onPicked = { picked ->
                 if (picked.isNotEmpty()) {
                     val added = app.store.addToPlaylist(playlistId, picked)
@@ -314,8 +323,8 @@ fun CollectionScreen(type: String, key: String) {
     }
     if (renaming && playlistId != null) {
         TextPromptDialog(
-            title = "Rename playlist",
-            label = "Playlist name",
+            title = if (model.watchList) "Rename watch list" else "Rename playlist",
+            label = "Name",
             confirm = "Save",
             initial = model.title,
             onDismiss = { renaming = false },
@@ -329,7 +338,11 @@ fun CollectionScreen(type: String, key: String) {
         if (playlistId != null) {
             ConfirmDialog(
                 title = "Delete \"${model.title}\"?",
-                message = "The playlist is removed. The songs themselves stay on your phone.",
+                message = if (model.watchList) {
+                    "The watch list is removed. The videos themselves stay where they are."
+                } else {
+                    "The playlist is removed. The songs themselves stay on your phone."
+                },
                 confirm = "Delete",
                 onDismiss = { deleting = false },
                 onConfirm = {

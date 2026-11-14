@@ -34,10 +34,12 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.CheckCircle
+import androidx.compose.material.icons.rounded.CloudDownload
 import androidx.compose.material.icons.rounded.DeleteOutline
 import androidx.compose.material.icons.rounded.MusicNote
 import androidx.compose.material.icons.rounded.PhotoLibrary
 import androidx.compose.material.icons.rounded.PlayArrow
+import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Share
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
@@ -77,6 +79,8 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.noexcusehere.mashwave.app
 import com.noexcusehere.mashwave.data.MediaEntry
+import com.noexcusehere.mashwave.data.MediaSource
+import com.noexcusehere.mashwave.data.source
 import com.noexcusehere.mashwave.data.describeUri
 import com.noexcusehere.mashwave.data.formatDuration
 import com.noexcusehere.mashwave.editor.ClipFilter
@@ -89,6 +93,7 @@ import com.noexcusehere.mashwave.editor.EditorStore
 import com.noexcusehere.mashwave.editor.ExportState
 import com.noexcusehere.mashwave.editor.FrameCache
 import com.noexcusehere.mashwave.ui.MwSheet
+import com.noexcusehere.mashwave.ui.photoPermissions
 import com.noexcusehere.mashwave.ui.SongPickerSheet
 import com.noexcusehere.mashwave.ui.components.Artwork
 import com.noexcusehere.mashwave.ui.components.Chip
@@ -156,22 +161,55 @@ private fun ChipRow(content: @Composable () -> Unit) {
 
 // ---- adding clips ----------------------------------------------------------------------------
 
-/** Pick videos from the app's own library, or photos and videos from the phone's gallery. */
+/**
+ * Everything that can go on the timeline, in one place: the photos and videos on the phone
+ * (grouped by where they came from - camera, WhatsApp, Messenger ...), plus buttons that reach
+ * into Google Photos and Google Drive.
+ */
 @Composable
 fun ClipPickerSheet(onDismiss: () -> Unit, onPickedEntries: (List<MediaEntry>) -> Unit, onPickedUris: (List<Uri>) -> Unit) {
     val context = LocalContext.current
-    val videos by context.app.library.videos.collectAsStateWithLifecycle()
+    val app = context.app
+    val videos by app.library.videos.collectAsStateWithLifecycle()
+    val photos by app.library.photos.collectAsStateWithLifecycle()
     val selected = remember { mutableStateListOf<MediaEntry>() }
-    val gallery = rememberLauncherForActivityResult(ActivityResultContracts.PickMultipleVisualMedia(30)) { uris ->
-        if (uris.isNotEmpty()) {
-            // Ask to keep access so the project still opens tomorrow.
-            uris.forEach { uri ->
-                runCatching { context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION) }
+    var filter by remember { mutableStateOf("ALL") }
+    var query by remember { mutableStateOf("") }
+    var canSeePhotos by remember { mutableStateOf(app.library.hasPhotoPermission()) }
+    var partial by remember { mutableStateOf(app.library.photoAccessIsPartial()) }
+
+    val askForPhotos = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
+        canSeePhotos = app.library.hasPhotoPermission()
+        partial = app.library.photoAccessIsPartial()
+        app.library.refresh()
+    }
+    fun picked(uris: List<Uri>) {
+        if (uris.isEmpty()) return
+        // Ask to keep access so the project still opens tomorrow.
+        uris.forEach { uri ->
+            runCatching { context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION) }
+        }
+        onPickedUris(uris)
+        onDismiss()
+    }
+    val fromPhotos = rememberLauncherForActivityResult(ActivityResultContracts.PickMultipleVisualMedia(40)) { picked(it) }
+    val fromFiles = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { picked(it) }
+
+    val all = remember(videos, photos) { (videos + photos).sortedByDescending { it.dateAdded } }
+    val sources = remember(all) { MediaSource.entries.filter { s -> s != MediaSource.OTHER && all.any { it.source == s } } }
+    val shown = remember(all, filter, query) {
+        val q = query.trim()
+        all.filter { entry ->
+            val inGroup = when (filter) {
+                "ALL" -> true
+                "PHOTOS" -> entry.isImage
+                "VIDEOS" -> entry.isVideo
+                else -> entry.source.name == filter
             }
-            onPickedUris(uris)
-            onDismiss()
+            inGroup && (q.isEmpty() || entry.title.contains(q, true) || entry.folder.contains(q, true))
         }
     }
+
     MwSheet(onDismiss) {
         SheetTitle("Add clips", "They go in after the clip you are on") {
             PillButton(
@@ -183,78 +221,124 @@ fun ClipPickerSheet(onDismiss: () -> Unit, onPickedEntries: (List<MediaEntry>) -
                 filled = selected.isNotEmpty(),
             )
         }
-        Row(
-            Modifier
-                .padding(horizontal = 16.dp, vertical = 6.dp)
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(14.dp))
-                .background(Surface2)
-                .clickable {
-                    gallery.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo))
-                }
-                .padding(14.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Icon(Icons.Rounded.PhotoLibrary, contentDescription = null, tint = Pink)
-            Spacer(Modifier.width(14.dp))
-            Column {
-                Text("Photos and gallery", style = MaterialTheme.typography.titleMedium, color = TextHi)
-                Text("Pick pictures or videos from the phone's gallery", style = MaterialTheme.typography.bodySmall, color = TextMid)
+        Row(Modifier.padding(horizontal = 16.dp, vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            SourceButton(Icons.Rounded.PhotoLibrary, "Google Photos", Modifier.weight(1f)) {
+                runCatching { fromPhotos.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo)) }
+                    .onFailure { app.say("No photo picker is available on this phone") }
+            }
+            SourceButton(Icons.Rounded.CloudDownload, "Google Drive / files", Modifier.weight(1f)) {
+                runCatching { fromFiles.launch(arrayOf("image/*", "video/*")) }
+                    .onFailure { app.say("No file picker is available on this phone") }
             }
         }
-        Text(
-            if (videos.isEmpty()) "No videos in your library yet - use the gallery button above." else "Videos in your library",
-            style = MaterialTheme.typography.labelLarge,
-            color = TextMid,
-            modifier = Modifier.padding(horizontal = 22.dp, vertical = 8.dp),
+        if (!canSeePhotos) {
+            Row(
+                Modifier
+                    .padding(horizontal = 16.dp, vertical = 6.dp)
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(14.dp))
+                    .background(Pink.copy(alpha = 0.16f))
+                    .clickable { askForPhotos.launch(photoPermissions()) }
+                    .padding(14.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(Modifier.weight(1f)) {
+                    Text("Show my photos here", style = MaterialTheme.typography.titleMedium, color = TextHi)
+                    Text(
+                        "Allow access once and every photo on the phone - camera, WhatsApp, saved Messenger pictures - is listed below.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = TextMid,
+                    )
+                }
+                Spacer(Modifier.width(10.dp))
+                Text("Allow", style = MaterialTheme.typography.labelLarge, color = Pink)
+            }
+        } else if (partial) {
+            Text(
+                "Only the photos and videos you chose are shown. Tap here to choose more or allow all.",
+                style = MaterialTheme.typography.bodySmall,
+                color = Pink,
+                modifier = Modifier
+                    .padding(horizontal = 12.dp)
+                    .clip(RoundedCornerShape(8.dp))
+                    .clickable { askForPhotos.launch(photoPermissions()) }
+                    .padding(horizontal = 10.dp, vertical = 6.dp),
+            )
+        }
+        ChipRow {
+            Chip("All", selected = filter == "ALL", onClick = { filter = "ALL" })
+            Chip("Photos", selected = filter == "PHOTOS", onClick = { filter = "PHOTOS" })
+            Chip("Videos", selected = filter == "VIDEOS", onClick = { filter = "VIDEOS" })
+            sources.forEach { source ->
+                Chip(source.label, selected = filter == source.name, onClick = { filter = source.name })
+            }
+        }
+        TextField(
+            value = query,
+            onValueChange = { query = it },
+            singleLine = true,
+            placeholder = { Text("Search by name or folder", color = TextLow) },
+            leadingIcon = { Icon(Icons.Rounded.Search, contentDescription = null, tint = TextMid) },
+            colors = TextFieldDefaults.colors(
+                focusedContainerColor = Surface2,
+                unfocusedContainerColor = Surface2,
+                focusedIndicatorColor = Color.Transparent,
+                unfocusedIndicatorColor = Color.Transparent,
+                cursorColor = Pink,
+            ),
+            shape = RoundedCornerShape(14.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 4.dp),
         )
+        if (shown.isEmpty()) {
+            Text(
+                when {
+                    all.isEmpty() && !canSeePhotos -> "Nothing to show yet. Allow access above, or use the Google Photos and Google Drive buttons."
+                    all.isEmpty() -> "No photos or videos were found on this phone. Use the Google Photos and Google Drive buttons above."
+                    else -> "Nothing here matches."
+                },
+                style = MaterialTheme.typography.bodyMedium,
+                color = TextMid,
+                modifier = Modifier.padding(horizontal = 22.dp, vertical = 20.dp),
+            )
+        }
         LazyVerticalGrid(
-            columns = GridCells.Fixed(3),
-            modifier = Modifier.height(380.dp),
-            contentPadding = PaddingValues(horizontal = 14.dp),
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
-            verticalArrangement = Arrangement.spacedBy(6.dp),
+            columns = GridCells.Fixed(4),
+            modifier = Modifier.height(340.dp),
+            contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp),
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
-            items(videos, key = { it.uri }) { entry ->
+            items(shown, key = { it.uri }) { entry ->
                 val order = selected.indexOfFirst { it.uri == entry.uri }
                 Box(
                     Modifier
                         .aspectRatio(1f)
-                        .clip(RoundedCornerShape(10.dp))
+                        .clip(RoundedCornerShape(8.dp))
                         .background(Surface2)
-                        .then(if (order >= 0) Modifier.border(2.5.dp, Pink, RoundedCornerShape(10.dp)) else Modifier)
+                        .then(if (order >= 0) Modifier.border(2.5.dp, Pink, RoundedCornerShape(8.dp)) else Modifier)
                         .clickable { if (order >= 0) selected.removeAt(order) else selected.add(entry) },
                 ) {
-                    Artwork(entry, Modifier.fillMaxSize(), RoundedCornerShape(10.dp))
-                    Text(
-                        formatDuration(entry.durationMs),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = Color.White,
-                        modifier = Modifier
-                            .align(Alignment.BottomEnd)
-                            .padding(5.dp)
-                            .clip(RoundedCornerShape(4.dp))
-                            .background(Color.Black.copy(alpha = 0.65f))
-                            .padding(horizontal = 4.dp, vertical = 1.dp),
-                    )
-                    Text(
-                        entry.title,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = Color.White,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier
-                            .align(Alignment.TopStart)
-                            .padding(5.dp)
-                            .clip(RoundedCornerShape(4.dp))
-                            .background(Color.Black.copy(alpha = 0.55f))
-                            .padding(horizontal = 4.dp, vertical = 1.dp),
-                    )
+                    Artwork(entry, Modifier.fillMaxSize(), RoundedCornerShape(8.dp))
+                    if (entry.isVideo) {
+                        Text(
+                            if (entry.durationMs > 0) formatDuration(entry.durationMs) else "Video",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = Color.White,
+                            modifier = Modifier
+                                .align(Alignment.BottomEnd)
+                                .padding(4.dp)
+                                .clip(RoundedCornerShape(4.dp))
+                                .background(Color.Black.copy(alpha = 0.65f))
+                                .padding(horizontal = 4.dp, vertical = 1.dp),
+                        )
+                    }
                     if (order >= 0) {
                         Box(
                             Modifier
                                 .align(Alignment.Center)
-                                .size(30.dp)
+                                .size(28.dp)
                                 .clip(CircleShape)
                                 .background(BrandGradient),
                             contentAlignment = Alignment.Center,
@@ -265,6 +349,22 @@ fun ClipPickerSheet(onDismiss: () -> Unit, onPickedEntries: (List<MediaEntry>) -
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun SourceButton(icon: androidx.compose.ui.graphics.vector.ImageVector, label: String, modifier: Modifier = Modifier, onClick: () -> Unit) {
+    Row(
+        modifier
+            .clip(RoundedCornerShape(14.dp))
+            .background(Surface2)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(icon, contentDescription = null, tint = Pink, modifier = Modifier.size(22.dp))
+        Spacer(Modifier.width(10.dp))
+        Text(label, style = MaterialTheme.typography.labelLarge, color = TextHi, maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
 }
 

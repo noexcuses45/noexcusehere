@@ -22,6 +22,8 @@ data class MediaEntry(
     val track: Int = 0,
     val width: Int = 0,
     val height: Int = 0,
+    /** A still picture. Photos only ever appear in the video editor's picker, never in the players. */
+    val isImage: Boolean = false,
 ) {
     val isStream: Boolean
         get() = uri.startsWith("http://") || uri.startsWith("https://") || uri.startsWith("rtsp://")
@@ -31,6 +33,8 @@ data class MediaEntry(
             isStream -> "Network stream"
             isVideo -> "Video"
             artist.isNotBlank() -> artist
+            // Added from another app: say which one, since the file's own details are not read.
+            folder.startsWith(CLOUD_FOLDER) -> folderName
             else -> "Unknown artist"
         }
 
@@ -57,6 +61,8 @@ data class Playlist(
     val items: List<MediaEntry> = emptyList(),
     val createdAt: Long = 0,
     val updatedAt: Long = 0,
+    /** True for a watch list (a playlist of videos, shown in the Videos tab). */
+    val video: Boolean = false,
 )
 
 /** A saved two-deck mix: which songs, and how each deck was tuned. */
@@ -109,6 +115,8 @@ data class UserData(
     val playCounts: Map<String, Int> = emptyMap(),
     val mashups: List<Mashup> = emptyList(),
     val autoMashups: List<AutoMashup> = emptyList(),
+    /** Songs and videos the user added from Google Drive, Google Photos or another app. */
+    val imported: List<MediaEntry> = emptyList(),
     val fx: FxSettings = FxSettings(),
     val songSort: String = "TITLE",
     val onboarded: Boolean = false,
