@@ -3,6 +3,11 @@ name: Build APK
 on:
   push:
     branches: [main, master]
+    # The VPN app has its own workflow; changes to it must not publish a new fitness-app
+    # release (which every fitness-app user would then be prompted to install).
+    paths-ignore:
+      - "vpn-app/**"
+      - ".github/workflows/build-vpn-apk.yml"
   workflow_dispatch:
 
 permissions:
