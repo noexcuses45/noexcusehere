@@ -29,7 +29,7 @@ data class ExportState(
     val progress: Float = 0f,
     /** Address of the finished video, once it is in the phone's library. */
     val savedUri: String? = null,
-    /** Plain words for where it went, e.g. "Movies › Ultimate Beats". */
+    /** Plain words for where it went, e.g. "Movies › Ultimate Media Manager". */
     val savedWhere: String? = null,
     val error: String? = null,
 )

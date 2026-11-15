@@ -5,6 +5,7 @@
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
+    <!-- electric indigo to hot pink, corner to corner -->
     <path android:pathData="M0,0h108v108h-108z">
         <aapt:attr name="android:fillColor">
             <gradient
@@ -13,14 +14,19 @@
                 android:startX="0"
                 android:startY="0"
                 android:type="linear">
-                <item android:color="#FF6D3BF5" android:offset="0" />
-                <item android:color="#FFD946EF" android:offset="0.55" />
-                <item android:color="#FFFF4D9D" android:offset="1" />
+                <item android:color="#FF4F1DFF" android:offset="0" />
+                <item android:color="#FFB026E8" android:offset="0.5" />
+                <item android:color="#FFFF3D81" android:offset="1" />
             </gradient>
         </aapt:attr>
     </path>
+    <!-- a soft light from the top left and a shadow in the bottom right give it depth -->
+    <path
+        android:fillAlpha="0.13"
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M26,22m-58,0a58,58 0,1 1,116 0a58,58 0,1 1,-116 0" />
     <path
         android:fillAlpha="0.16"
-        android:fillColor="#FFFFFFFF"
-        android:pathData="M54,54m-44,0a44,44 0,1 1,88 0a44,44 0,1 1,-88 0" />
+        android:fillColor="#FF12003A"
+        android:pathData="M86,96m-46,0a46,46 0,1 1,92 0a46,46 0,1 1,-92 0" />
 </vector>

@@ -80,6 +80,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavHostController
 import com.noexcusehere.mashwave.MashwaveApp
 import com.noexcusehere.mashwave.app
+import com.noexcusehere.mashwave.iptv.LiveCushion
 import com.noexcusehere.mashwave.iptv.TvAccount
 import com.noexcusehere.mashwave.iptv.TvCatalog
 import com.noexcusehere.mashwave.iptv.TvException
@@ -731,7 +732,17 @@ private fun TvServicesSheet(state: TvState, onAdd: () -> Unit, onEdit: (String) 
                 IconButton(onClick = { removing = account }) { Icon(Icons.Rounded.Delete, contentDescription = "Remove ${account.name}", tint = TextMid) }
             }
         }
-        Spacer(Modifier.height(6.dp))
+        Text("Live TV buffering", style = MaterialTheme.typography.titleMedium, color = TextHi, modifier = Modifier.padding(start = 22.dp, end = 22.dp, top = 14.dp))
+        Row(Modifier.padding(horizontal = 22.dp, vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            LiveCushion.entries.forEach { option -> Chip(option.label, option == state.cushion, { app.tv.setCushion(option) }) }
+        }
+        Text(
+            state.cushion.note + " Applies from the next channel you start.",
+            style = MaterialTheme.typography.bodySmall,
+            color = TextMid,
+            modifier = Modifier.padding(horizontal = 22.dp),
+        )
+        Spacer(Modifier.height(10.dp))
         SheetAction(Icons.Rounded.Refresh, "Refresh the lists now", {
             app.tv.refresh()
             app.say("Getting the latest lists from your service")

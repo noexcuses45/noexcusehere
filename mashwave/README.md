@@ -1,13 +1,17 @@
-# Ultimate Beats
+# Ultimate Media Manager
 
-A music **and** video player for Android that can also make mashups (automatically or by hand
-on two decks), edit videos, and play on a TV.
+A music **and** video player for Android that also plays your own TV service (live channels,
+movies, shows), makes mashups (automatically or by hand on two decks), edits videos, and plays
+on a TV.
 Native Android app (Kotlin, Jetpack Compose, Media3 / ExoPlayer). It lives in its own
 folder and does not touch the No Excuse Here fitness app in the rest of this repo.
 
-The app used to be called Mashwave. Only the name people see changed: the folder, the code
-package and the app's internal id are still `mashwave`, so the new version installs over the
-old one and keeps playlists, likes and mashups.
+The app has been called Mashwave and then Ultimate Beats. Only the name and the logo people
+see changed: the folder, the code package and the app's internal id are still `mashwave`, so
+each new version installs over the old one and keeps playlists, likes, mashups, video projects
+and TV sign-ins. Mashups and exported videos made before the latest rename stay in their
+`Ultimate Beats` folders and still show in the library; new ones go into
+`Ultimate Media Manager` folders.
 
 ## What it does
 
@@ -65,12 +69,16 @@ old one and keeps playlists, likes and mashups.
 - **Casting** works here too. The stream passes through the phone on its way to the TV, so the
   TV never sees the login, and the remote's arrows change channel. See the notes under
   "Play on a TV"
+- **Live TV buffering** (settings button): how much of a channel is kept in reserve - Quick,
+  Smoother (about 5 seconds, the default) or Smoothest (about 10). A live stream arrives exactly
+  as fast as it plays, so the reserve is what rides out a hiccup on the line; more reserve means
+  channels take a little longer to start
 - Channel lists are kept on the phone (the tab opens at once) and refreshed when older than
   half a day, or from the settings button
 
 **Auto Mashup** (Mashup tab → Auto)
 - Pick 2 to 6 songs, choose how long it should be (Auto, or 1 to 7 minutes) and press
-  **Create mashup**; the app does the rest and saves one new track into `Music/Ultimate Beats`,
+  **Create mashup**; the app does the rest and saves one new track into `Music/Ultimate Media Manager`,
   where it shows up in the library like any other song
 - It finds each song's tempo, beat grid, bars and notes, chooses a shared tempo (counting a song
   in half or double time when that needs less stretching) and a pitch shift of at most three
@@ -116,7 +124,7 @@ different tempos have to be stretched a lot to meet, and that can be heard.
 - Text and emoji, with colour, size, position and timing
 - Canvas shapes (original, 16:9, 9:16, 1:1, 4:5) with black bars or a blurred background
 - Undo / redo; projects are saved as you go
-- **Save** makes an MP4 (480p, 720p or 1080p) in `Movies/Ultimate Beats`; it keeps going in
+- **Save** makes an MP4 (480p, 720p or 1080p) in `Movies/Ultimate Media Manager`; it keeps going in
   the background and the notification shows progress
 
 Not in the editor: transitions, stickers / GIFs, picture-in-picture, cut-out, auto captions,
@@ -162,7 +170,7 @@ What the app can and cannot reach, and why:
   automatically would need Google sign-in registered in a Google Cloud project of your own
 
 **Opens almost anything**
-- "Open with Ultimate Beats" from any file manager, browser or chat app
+- "Open with Ultimate Media Manager" from any file manager, browser or chat app
 - Open a file with the system picker, or paste a network stream address
 - Formats: MP3, AAC/M4A, FLAC, OGG Vorbis, Opus, WAV, AMR, MIDI, MP4, MKV, WebM, MOV,
   AVI, TS, FLV, 3GP, plus HLS, DASH, SmoothStreaming and RTSP streams
@@ -175,8 +183,8 @@ codecs (WMV, RealVideo, 10-bit H.264) may not play on every phone.
 ## Getting the APK
 
 **From GitHub (nothing to install):** every push that changes this folder runs the
-*Build Ultimate Beats APK* workflow. Open the run under the **Actions** tab and download
-**ultimate-beats-apk** (unzip it to get `UltimateBeats.apk`). Pushes to `main` also publish it under
+*Build Ultimate Media Manager APK* workflow. Open the run under the **Actions** tab and download
+**ultimate-media-manager-apk** (unzip it to get `UltimateMediaManager.apk`). Pushes to `main` also publish it under
 **Releases** as a pre-release, with a direct `.apk` download.
 
 **On a PC:** install JDK 17+ and the Android SDK, then from this folder run

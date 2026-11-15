@@ -465,6 +465,40 @@ class TvTest {
     }
 
     @Test
+    fun liveChannelsWaitForTheChosenReserve() {
+        val quick = com.noexcusehere.mashwave.iptv.LiveCushion.QUICK
+        val smoother = com.noexcusehere.mashwave.iptv.LiveCushion.SMOOTHER
+        val smoothest = com.noexcusehere.mashwave.iptv.LiveCushion.SMOOTHEST
+
+        // Never more eager than the player itself.
+        assertFalse(smoothest.mayStart(readyAnyway = false, bufferedMs = 60_000, afterStall = false))
+
+        // "Quick" is the player's own behaviour.
+        assertTrue(quick.mayStart(true, 2_500, afterStall = false))
+        assertTrue(quick.mayStart(true, 5_000, afterStall = true))
+
+        // The others hold out for their reserve, and for more after the picture has stopped once.
+        assertFalse(smoother.mayStart(true, 3_000, afterStall = false))
+        assertTrue(smoother.mayStart(true, 5_000, afterStall = false))
+        assertFalse(smoother.mayStart(true, 7_000, afterStall = true))
+        assertTrue(smoother.mayStart(true, 10_000, afterStall = true))
+        assertFalse(smoothest.mayStart(true, 9_000, afterStall = false))
+        assertTrue(smoothest.mayStart(true, 10_000, afterStall = false))
+
+        // Ready with less than usual means there is no more to wait for (memory full): start.
+        assertTrue(smoothest.mayStart(true, 1_200, afterStall = false))
+        assertTrue(smoothest.mayStart(true, 4_000, afterStall = true))
+
+        // A stream that only ever runs 8 seconds behind the broadcast cannot collect 10: half its window has to do.
+        assertTrue(smoothest.mayStart(true, 4_000, afterStall = false, liveWindowMs = 8_000))
+        assertFalse(smoothest.mayStart(true, 3_000, afterStall = false, liveWindowMs = 8_000))
+        assertFalse(smoothest.mayStart(true, 9_000, afterStall = false, liveWindowMs = 30_000))
+
+        assertEquals(smoother, com.noexcusehere.mashwave.iptv.LiveCushion.of("nonsense"))
+        assertEquals(smoothest, com.noexcusehere.mashwave.iptv.LiveCushion.of("SMOOTHEST"))
+    }
+
+    @Test
     fun streamNotesSurviveARoundTrip() {
         val ref = TvRef(TvRef.EPISODE, "acct", "9001", "77")
         assertEquals(ref, TvRef.parse(ref.encode()))

@@ -229,6 +229,8 @@ class PlaybackService : MediaSessionService() {
         }
         player = ExoPlayer.Builder(this, mashwaveRenderers(this))
             .setMediaSourceFactory(DefaultMediaSourceFactory(named))
+            // Live channels keep a few seconds in reserve so a hiccup on the line doesn't stop the picture.
+            .setLoadControl(CushionedLoadControl { if (TvNet.playingLive) TvNet.cushion else null })
             .setAudioAttributes(
                 AudioAttributes.Builder()
                     .setUsage(C.USAGE_MEDIA)
@@ -369,6 +371,7 @@ class PlaybackService : MediaSessionService() {
 
         override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
             TvNet.playbackAgent = mashwave.tv.agentFor(mediaItem?.toEntry())
+            TvNet.playingLive = mediaItem?.toEntry()?.isLiveTv == true
             // A different channel starts with a clean slate.
             stalls = 0
             retryTimes.clear()
@@ -439,6 +442,7 @@ class PlaybackService : MediaSessionService() {
             userChangedQueue = true
             // Known before the first byte is asked for: the name this queue's TV service accepts.
             TvNet.playbackAgent = mashwave.tv.agentFor(mediaItems.firstOrNull()?.toEntry())
+            TvNet.playingLive = mediaItems.firstOrNull()?.toEntry()?.isLiveTv == true
             val resolved = mediaItems.map { item ->
                 if (item.localConfiguration != null) {
                     item

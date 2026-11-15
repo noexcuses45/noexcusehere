@@ -3,6 +3,7 @@ package com.noexcusehere.mashwave.ui.screens
 import android.content.Intent
 import android.net.Uri
 import android.provider.Settings
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -33,9 +34,11 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.noexcusehere.mashwave.APP_NAME
+import com.noexcusehere.mashwave.R
 import com.noexcusehere.mashwave.ui.components.PlayingBars
 import com.noexcusehere.mashwave.ui.theme.BrandGradient
 import com.noexcusehere.mashwave.ui.theme.Cyan
@@ -66,13 +69,18 @@ fun WelcomeScreen(onAllow: () -> Unit, onSkip: () -> Unit, askedBefore: Boolean)
                 .background(BrandGradient),
             contentAlignment = Alignment.Center,
         ) {
-            PlayingBars(playing = true, modifier = Modifier.size(52.dp), color = Color.White)
+            // The app's logo, the same drawing the home-screen icon uses.
+            Image(
+                painter = painterResource(R.drawable.ic_launcher_foreground),
+                contentDescription = null,
+                modifier = Modifier.size(170.dp),
+            )
         }
         Spacer(Modifier.height(26.dp))
-        Text(APP_NAME, style = MaterialTheme.typography.displaySmall, color = TextHi)
+        Text(APP_NAME, style = MaterialTheme.typography.displaySmall, color = TextHi, textAlign = TextAlign.Center)
         Spacer(Modifier.height(6.dp))
         Text(
-            "Your music, your videos, your mixes - all in one player.",
+            "Music, videos, TV, mashups and video editing - all in one place.",
             style = MaterialTheme.typography.bodyLarge,
             color = TextMid,
             textAlign = TextAlign.Center,

@@ -17,7 +17,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableSharedFlow
 
 /** The name people see: on the home screen, inside the app, and on the folders it saves into. */
-const val APP_NAME = "Ultimate Beats"
+const val APP_NAME = "Ultimate Media Manager"
 
 /** Holds the few long-lived objects the whole app shares. */
 class MashwaveApp : Application() {

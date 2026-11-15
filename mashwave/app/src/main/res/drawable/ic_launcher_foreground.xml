@@ -1,13 +1,44 @@
 <?xml version="1.0" encoding="utf-8"?>
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
     android:width="108dp"
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
-    <!-- five rounded bars, centred in the 66dp safe zone -->
-    <path android:fillColor="#FFFFFFFF" android:pathData="M33,47a3,3 0,0 1,6 0v14a3,3 0,0 1,-6 0z" />
-    <path android:fillColor="#FFFFFFFF" android:pathData="M42,38a3,3 0,0 1,6 0v32a3,3 0,0 1,-6 0z" />
-    <path android:fillColor="#FFFFFFFF" android:pathData="M51,30a3,3 0,0 1,6 0v48a3,3 0,0 1,-6 0z" />
-    <path android:fillColor="#FFFFFFFF" android:pathData="M60,40a3,3 0,0 1,6 0v28a3,3 0,0 1,-6 0z" />
-    <path android:fillColor="#FFFFFFFF" android:pathData="M69,46a3,3 0,0 1,6 0v16a3,3 0,0 1,-6 0z" />
+    <!-- A bold "U" for Ultimate that cradles a play button: everything the app plays, in one place.
+         Drawn inside the 66dp circle that every launcher shape keeps visible. -->
+    <path
+        android:pathData="M36.5,33 L36.5,55.5 A17.5,17.5 0 0 0 71.5,55.5 L71.5,33"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:strokeWidth="10.5" />
+    <!-- the play button: a rounded triangle in ice blue, the one cool note against the warm background -->
+    <path
+        android:pathData="M49.2,40.2 L49.2,58.6 L64.2,49.4 Z"
+        android:strokeLineJoin="round"
+        android:strokeWidth="4.4">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:endX="64"
+                android:endY="58"
+                android:startX="49"
+                android:startY="40"
+                android:type="linear">
+                <item android:color="#FFE6FBFF" android:offset="0" />
+                <item android:color="#FF5EE6FA" android:offset="1" />
+            </gradient>
+        </aapt:attr>
+        <aapt:attr name="android:strokeColor">
+            <gradient
+                android:endX="64"
+                android:endY="58"
+                android:startX="49"
+                android:startY="40"
+                android:type="linear">
+                <item android:color="#FFE6FBFF" android:offset="0" />
+                <item android:color="#FF5EE6FA" android:offset="1" />
+            </gradient>
+        </aapt:attr>
+    </path>
 </vector>

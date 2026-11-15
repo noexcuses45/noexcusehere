@@ -32,6 +32,7 @@ data class TvState(
     val favourites: List<TvItem> = emptyList(),
     val recents: List<TvItem> = emptyList(),
     val section: TvSection = TvSection.LIVE,
+    val cushion: LiveCushion = LiveCushion.SMOOTHER,
 ) {
     fun shelf(section: TvSection): TvShelf = shelves[section] ?: TvShelf()
 
@@ -68,6 +69,7 @@ class TvRepository(context: Context, private val scope: CoroutineScope) {
         }
         scope.launch {
             saved = withContext(Dispatchers.IO) { store.load() }
+            TvNet.cushion = LiveCushion.of(saved.cushion)
             publish()
             if (active() != null) ensure(saved.section)
         }
@@ -90,6 +92,7 @@ class TvRepository(context: Context, private val scope: CoroutineScope) {
                 favourites = account?.let { a -> saved.favourites[a.id] }.orEmpty(),
                 recents = account?.let { a -> saved.recents[a.id] }.orEmpty(),
                 section = saved.section,
+                cushion = LiveCushion.of(saved.cushion),
             )
         }
     }
@@ -318,6 +321,12 @@ class TvRepository(context: Context, private val scope: CoroutineScope) {
             val list = s.recents[account.id].orEmpty().filterNot { it.section == item.section && it.id == item.id }
             s.copy(recents = s.recents + (account.id to (listOf(item) + list).take(RECENTS)))
         }
+    }
+
+    /** Chooses how much of a live channel is kept in reserve; applies from the next time a channel loads. */
+    fun setCushion(cushion: LiveCushion) {
+        TvNet.cushion = cushion
+        edit { it.copy(cushion = cushion.name) }
     }
 
     fun clearRecents() {

@@ -18,6 +18,8 @@ data class TvSaved(
     /** Recently watched, newest first, per service. */
     val recents: Map<String, List<TvItem>> = emptyMap(),
     val section: TvSection = TvSection.LIVE,
+    /** Name of the [LiveCushion] chosen for live channels. */
+    val cushion: String = LiveCushion.SMOOTHER.name,
 )
 
 /**

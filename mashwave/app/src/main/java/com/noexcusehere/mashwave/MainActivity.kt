@@ -61,7 +61,7 @@ class MainActivity : ComponentActivity() {
             ACTION_SHOW_EDITOR -> ui.pendingTab = Routes.EDITOR
             ACTION_SHOW_CAST -> ui.castOpen = true
             Intent.ACTION_VIEW -> {
-                // "Open with Ultimate Beats" from a file manager, browser or chat app.
+                // "Open with Ultimate Media Manager" from a file manager, browser or chat app.
                 val uri = intent.data ?: return
                 val entry = describeUri(this, uri, intent.type)
                 ui.play(app.player, listOf(entry), 0)

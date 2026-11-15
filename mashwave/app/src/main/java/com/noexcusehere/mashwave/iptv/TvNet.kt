@@ -26,6 +26,14 @@ object TvNet {
     /** The open-source VLC player, which nearly every service accepts. */
     const val VLC_AGENT = "VLC/3.0.21 LibVLC/3.0.21"
 
+    /** True while the thing playing is a live TV channel (set by the player). */
+    @Volatile
+    var playingLive: Boolean = false
+
+    /** How much of a live channel to keep in reserve (the user's choice in the TV settings). */
+    @Volatile
+    var cushion: LiveCushion = LiveCushion.SMOOTHER
+
     /** What the player sends for the stream that is on now; null means the app's own name. */
     @Volatile
     var playbackAgent: String? = null
