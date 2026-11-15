@@ -36,20 +36,31 @@ old one and keeps playlists, likes and mashups.
 - Keeps playing as audio when you leave the video
 
 **Auto Mashup** (Mashup tab → Auto)
-- Pick 2 to 6 songs and press **Create mashup**; the app does the rest and saves one new track
-  into `Music/Ultimate Beats`, where it shows up in the library like any other song
+- Pick 2 to 6 songs, choose how long it should be (Auto, or 1 to 7 minutes) and press
+  **Create mashup**; the app does the rest and saves one new track into `Music/Ultimate Beats`,
+  where it shows up in the library like any other song
 - It finds each song's tempo, beat grid, bars and notes, chooses a shared tempo (counting a song
   in half or double time when that needs less stretching) and a pitch shift of at most three
   semitones per song so their notes agree
-- The mix is a chain of eight-bar sections: each song first rides on top of the previous one,
-  then takes over the rhythm, then hands over to the next
-- "Try another version" re-arranges the same songs differently
+- It then plans the mix the way a DJ plans a set:
+  - **finds each song's hook** - the eight bars that keep coming back - and where the singing is
+  - follows an **energy curve**: ease in, build to a first high point, take a breath, build to
+    the biggest moment about four fifths of the way through, then land
+  - each new song first **sings over the previous song's beat**, then takes over the rhythm
+  - at the high points there is a **drop**: the old beat has its bass pulled out for a bar and
+    echoes away, and the new song's chorus lands at full power on the first beat
+  - under a voice it uses a stretch of the other song with strong drums and little singing, so
+    two voices don't fight
+  - short mashups of many songs switch to quick four-bar cuts; long ones bring songs back with
+    a different part each time
+- "See how it was mixed" lists what happens when; "Try another version" re-arranges the same songs
 - Everything runs on the phone; nothing is uploaded
 
 How it layers songs: it cannot pull a voice out of a recording, so instead it splits by
 frequency the way a DJ uses the EQ - bass and drums from one song, the middle (voices,
 melodies) from the other, with the bass swapped exactly on the bar line. Songs with a clear,
-steady beat work best; live recordings, rubato and beatless music don't.
+steady beat work best; live recordings, rubato and beatless music don't. Songs with very
+different tempos have to be stretched a lot to meet, and that can be heard.
 
 **Manual decks** (Mashup tab → Manual decks)
 - Two decks that play at the same time, each with its own tempo, pitch (in semitones) and volume
@@ -169,7 +180,8 @@ app/src/main/java/com/noexcusehere/mashwave/
   playback/PlayerConnection.kt          what the screens use to control the player
   playback/MashupEngine.kt              the two manual mashup decks and their background service
   automash/Analysis.kt                  song analysis: beat tracking, bars, notes
-  automash/MixPlanner.kt                the automatic arrangement (tempo, pitch shifts, sections)
+  automash/MixPlanner.kt                the automatic arrangement: tempo, pitch shifts, the DJ-style
+                                        running order (hooks, energy curve, blends, drops), length
   automash/Mixer.kt                     time-stretching, band splitting and mixing
   automash/AudioIo.kt                   decoding songs and encoding the result (AAC)
   automash/AutoMashupMaker.kt           runs the whole thing and saves the file

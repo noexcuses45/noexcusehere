@@ -31,6 +31,8 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.foundation.horizontalScroll
+import com.noexcusehere.mashwave.ui.components.Chip
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
@@ -164,6 +166,19 @@ fun AutoMashupSection() {
             }
         }
 
+        // ---- how long it should be ----
+        if (!state.working) {
+            Text("How long should it be?", style = MaterialTheme.typography.labelLarge, color = TextMid)
+            Row(
+                Modifier.horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                lengthChoices.forEach { (seconds, label) ->
+                    Chip(label, selected = state.lengthSeconds == seconds, onClick = { maker.setLength(seconds) })
+                }
+            }
+        }
+
         // ---- the one button ----
         if (!state.working) {
             val ready = state.songs.size >= 2
@@ -269,6 +284,25 @@ fun AutoMashupSection() {
                     style = MaterialTheme.typography.bodySmall,
                     color = TextMid,
                 )
+                if (result.story.isNotEmpty()) {
+                    // What the "DJ" decided, moment by moment.
+                    var open by remember(result.id) { mutableStateOf(false) }
+                    Text(
+                        if (open) "Hide how it was mixed" else "See how it was mixed",
+                        style = MaterialTheme.typography.labelLarge,
+                        color = Pink,
+                        modifier = Modifier
+                            .padding(top = 6.dp)
+                            .clip(RoundedCornerShape(8.dp))
+                            .clickable { open = !open }
+                            .padding(vertical = 6.dp),
+                    )
+                    if (open) {
+                        result.story.forEach { line ->
+                            Text(line, style = MaterialTheme.typography.bodySmall, color = TextMid, modifier = Modifier.padding(vertical = 2.dp))
+                        }
+                    }
+                }
                 Spacer(Modifier.height(12.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     PillButton("Play", {
@@ -353,3 +387,6 @@ fun AutoMashupSection() {
         )
     }
 }
+
+/** Lengths offered for a mashup: seconds to label. Zero lets the app choose. */
+private val lengthChoices = listOf(0 to "Auto", 60 to "1 min", 120 to "2 min", 180 to "3 min", 240 to "4 min", 300 to "5 min", 420 to "7 min")

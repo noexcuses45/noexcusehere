@@ -41,6 +41,8 @@ data class AutoMashState(
     val result: AutoMashup? = null,
     /** A line about how the songs were fitted together. */
     val summary: String = "",
+    /** How long the next mashup should be, in seconds; 0 lets the app decide. */
+    val lengthSeconds: Int = 0,
 )
 
 /**
@@ -92,14 +94,18 @@ class AutoMashupMaker(private val context: Context, private val scope: Coroutine
         job?.cancel()
     }
 
+    /** Sets how long the next mashup should be; 0 = let the app decide. */
+    fun setLength(seconds: Int) = _state.update { it.copy(lengthSeconds = seconds.coerceAtLeast(0)) }
+
     /** Starts mixing. [variation] makes a different arrangement of the same songs. */
     fun create(variation: Boolean = false) {
         val songs = _state.value.songs
         if (songs.size < 2 || _state.value.working) return
+        val length = _state.value.lengthSeconds
         _state.update { it.copy(working = true, step = "Getting ready", progress = 0f, error = null) }
         job = scope.launch {
             try {
-                val made = withContext(Dispatchers.Default) { make(songs, variation) }
+                val made = withContext(Dispatchers.Default) { make(songs, variation, length) }
                 context.app.store.addAutoMashup(made.first)
                 context.app.library.refresh()
                 _state.update { it.copy(working = false, step = "", progress = 1f, result = made.first, summary = made.second) }
@@ -118,7 +124,7 @@ class AutoMashupMaker(private val context: Context, private val scope: Coroutine
 
     private fun report(step: String, progress: Float) = _state.update { it.copy(step = step, progress = progress.coerceIn(0f, 1f)) }
 
-    private suspend fun make(songs: List<MediaEntry>, variation: Boolean): Pair<AutoMashup, String> = withContext(Dispatchers.Default) {
+    private suspend fun make(songs: List<MediaEntry>, variation: Boolean, lengthSeconds: Int): Pair<AutoMashup, String> = withContext(Dispatchers.Default) {
         workDir.mkdirs()
         // Forget prepared songs that are not part of this mashup.
         val wanted = songs.mapTo(HashSet()) { it.uri }
@@ -173,8 +179,13 @@ class AutoMashupMaker(private val context: Context, private val scope: Coroutine
 
         // 2. Decide the arrangement.
         ensureActive()
-        report("Matching tempo and key", 0.6f)
-        val plan = MixPlanner.plan(analyses, seed = if (variation) Random.nextLong() else 1L, shuffle = variation)
+        report("Planning the mix like a DJ", 0.6f)
+        val plan = MixPlanner.plan(
+            analyses,
+            seed = if (variation) Random.nextLong() else 1L,
+            shuffle = variation,
+            targetSeconds = lengthSeconds.toFloat(),
+        )
         if (plan.clips.isEmpty()) throw MashupProblem("These songs are too short to mix. Try longer ones.")
 
         // 3. Mix it down to one file.
@@ -238,11 +249,26 @@ class AutoMashupMaker(private val context: Context, private val scope: Coroutine
                 sources = songs,
                 tempo = plan.tempo,
                 createdAt = System.currentTimeMillis(),
+                story = storyOf(plan, songs),
             ) to summary
         } finally {
             sources.forEach { it.close() }
             temp.delete()
         }
+    }
+
+    /** The mix told as a short running order, with the time each thing happens. */
+    private fun storyOf(plan: MixPlan, songs: List<MediaEntry>): List<String> = plan.scenes.map { scene ->
+        val seconds = (scene.beat * 60.0 / plan.tempo).toInt()
+        val time = "%d:%02d".format(seconds / 60, seconds % 60)
+        fun title(index: Int) = songs.getOrNull(index)?.title?.take(32) ?: "?"
+        val what = when (scene.kind) {
+            SceneKind.INTRO -> "${title(scene.song)} starts on its own"
+            SceneKind.BLEND -> "${title(scene.song)} comes in over the beat of ${title(scene.other)}"
+            SceneKind.DROP -> "Drop: the beat cuts out and ${title(scene.song)} takes over at full power"
+            SceneKind.OUTRO -> "${title(scene.song)} plays out and fades"
+        }
+        "$time  $what"
     }
 
     private fun nameFor(songs: List<MediaEntry>): String {

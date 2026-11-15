@@ -11,6 +11,7 @@ import kotlin.math.floor
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.pow
+import kotlin.math.roundToInt
 import kotlin.math.roundToLong
 import kotlin.math.sin
 import kotlin.math.sqrt
@@ -331,9 +332,27 @@ interface PcmSink {
 
 /** Turns a [MixPlan] into sound: stretches each clip, shapes its bands, and adds everything up. */
 class MixRenderer(private val plan: MixPlan, private val sources: List<PcmSource>) {
-    private class Active(val clip: Clip, val start: Long, val end: Long, val stretcher: Stretcher, val keyFrames: DoubleArray) {
+    private class Active(
+        val clip: Clip,
+        val start: Long,
+        val end: Long,
+        val stretcher: Stretcher,
+        val keyFrames: DoubleArray,
+        beatFrames: Double,
+        total: Long,
+    ) {
         val bands = BandSplitter()
         var key = 0
+
+        // "Echo out": the end of the clip is fed into a short repeating delay (three quarters of
+        // a beat, the classic DJ setting) that keeps ringing for a bar after the clip has stopped.
+        val echoes = clip.echoBeats > 0
+        val echoFrom: Long = if (echoes) end - (clip.echoBeats * beatFrames).toLong() else Long.MAX_VALUE
+        val tailEnd: Long = if (echoes) min(total, end + (ECHO_TAIL_BEATS * beatFrames).toLong()) else end
+        val delay = if (echoes) max(1, (0.75 * beatFrames).roundToInt()) else 0
+        val echoL = FloatArray(delay)
+        val echoR = FloatArray(delay)
+        var echoAt = 0
     }
 
     /**
@@ -366,42 +385,65 @@ class MixRenderer(private val plan: MixPlan, private val sources: List<PcmSource
                 val srcKeys = DoubleArray(clip.mapSeconds.size) { clip.mapSeconds[it] * MIX_RATE }
                 val hits = LongArray(clip.hits.size) { (clip.hits[it] * MIX_RATE).roundToLong() }
                 val stretcher = Stretcher(sources[clip.song], outKeys, srcKeys, 2.0.pow(clip.semitones / 12.0), hits)
-                active += Active(clip, start, end, stretcher, DoubleArray(clip.keys.size) { plan.frameOf(clip.keys[it].beat) })
+                active += Active(
+                    clip, start, end, stretcher,
+                    DoubleArray(clip.keys.size) { plan.frameOf(clip.keys[it].beat) },
+                    beatFrames = plan.frameOf(1.0),
+                    total = total,
+                )
             }
 
             val iterator = active.iterator()
             while (iterator.hasNext()) {
                 val a = iterator.next()
                 val from = max(position, a.start)
-                val to = min(position + count, a.end)
+                val to = min(position + count, a.tailEnd)
                 if (to > from) {
                     val n = (to - from).toInt()
                     val offset = (from - position).toInt()
-                    a.stretcher.read(tmpL, tmpR, n)
+                    // The song itself plays up to the clip's end; after that only its echo is left.
+                    val dry = (min(to, a.end) - from).coerceAtLeast(0).toInt()
+                    if (dry > 0) a.stretcher.read(tmpL, tmpR, dry)
                     val keys = a.clip.keys
                     val last = keys.size - 1
                     val gain = a.clip.gain
                     for (i in 0 until n) {
-                        val frame = (from + i).toDouble()
-                        while (a.key < last && frame >= a.keyFrames[a.key + 1]) a.key++
-                        val k0 = keys[a.key]
-                        var gl = k0.low
-                        var gm = k0.mid
-                        var gh = k0.high
-                        if (frame < a.keyFrames[0]) {
-                            // before the first key: keep its values
-                        } else if (a.key < last) {
-                            val k1 = keys[a.key + 1]
-                            val t = ((frame - a.keyFrames[a.key]) / (a.keyFrames[a.key + 1] - a.keyFrames[a.key])).toFloat()
-                            gl += (k1.low - gl) * t
-                            gm += (k1.mid - gm) * t
-                            gh += (k1.high - gh) * t
+                        var l = 0f
+                        var r = 0f
+                        if (i < dry) {
+                            val frame = (from + i).toDouble()
+                            while (a.key < last && frame >= a.keyFrames[a.key + 1]) a.key++
+                            val k0 = keys[a.key]
+                            var gl = k0.low
+                            var gm = k0.mid
+                            var gh = k0.high
+                            if (frame < a.keyFrames[0]) {
+                                // before the first key: keep its values
+                            } else if (a.key < last) {
+                                val k1 = keys[a.key + 1]
+                                val t = ((frame - a.keyFrames[a.key]) / (a.keyFrames[a.key + 1] - a.keyFrames[a.key])).toFloat()
+                                gl += (k1.low - gl) * t
+                                gm += (k1.mid - gm) * t
+                                gh += (k1.high - gh) * t
+                            }
+                            l = a.bands.process(0, tmpL[i], gl, gm, gh) * gain
+                            r = a.bands.process(1, tmpR[i], gl, gm, gh) * gain
                         }
-                        mixL[offset + i] += a.bands.process(0, tmpL[i], gl, gm, gh) * gain
-                        mixR[offset + i] += a.bands.process(1, tmpR[i], gl, gm, gh) * gain
+                        if (a.echoes) {
+                            val wetL = a.echoL[a.echoAt]
+                            val wetR = a.echoR[a.echoAt]
+                            val send = i < dry && from + i >= a.echoFrom
+                            a.echoL[a.echoAt] = (if (send) l else 0f) + wetL * ECHO_FEEDBACK
+                            a.echoR[a.echoAt] = (if (send) r else 0f) + wetR * ECHO_FEEDBACK
+                            a.echoAt = (a.echoAt + 1) % a.delay
+                            l += wetL * ECHO_LEVEL
+                            r += wetR * ECHO_LEVEL
+                        }
+                        mixL[offset + i] += l
+                        mixR[offset + i] += r
                     }
                 }
-                if (a.end <= position + count) iterator.remove()
+                if (a.tailEnd <= position + count) iterator.remove()
             }
 
             for (i in 0 until count) {
@@ -432,6 +474,11 @@ class MixRenderer(private val plan: MixPlan, private val sources: List<PcmSource
         private const val FADE_IN = 220
         private const val MASTER = 1.35f
         private const val KNEE = 0.75f
+
+        /** How long an echo keeps ringing after its clip, how much of each repeat feeds the next, and how loud it is. */
+        private const val ECHO_TAIL_BEATS = 4.0
+        private const val ECHO_FEEDBACK = 0.5f
+        private const val ECHO_LEVEL = 0.7f
     }
 }
 

@@ -96,6 +96,8 @@ data class AutoMashup(
     val sources: List<MediaEntry> = emptyList(),
     val tempo: Float = 0f,
     val createdAt: Long = 0,
+    /** How it was put together, one line per moment ("0:31  Drop: ... takes over"). */
+    val story: List<String> = emptyList(),
 )
 
 @Serializable

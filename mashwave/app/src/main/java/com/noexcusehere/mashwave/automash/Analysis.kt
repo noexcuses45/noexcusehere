@@ -43,6 +43,16 @@ class SongAnalysis(
     val notes: FloatArray,
     /** Times (seconds) of the beats that carry a clear drum hit; the mixer pins these to the grid. */
     val hits: DoubleArray,
+    /**
+     * How much voice or melody is sounding in each beat. Drums come in short bursts; a voice or
+     * an instrument keeps the vocal range filled between the hits - that is what this measures.
+     */
+    val beatSustain: FloatArray = FloatArray(beats.size),
+    /**
+     * "Hook-ness" of each beat, 0 to 1: how much the eight bars it belongs to come back elsewhere
+     * in the song. Choruses repeat; that is how a DJ (and this) finds the part people know.
+     */
+    val beatHook: FloatArray = FloatArray(beats.size),
 ) {
     val keyName: String
         get() = NOTE_NAMES[keyRoot] + if (keyMinor) " minor" else " major"
@@ -272,6 +282,19 @@ object SongAnalyzer {
             snare[j] = peakAround(riseMid, a, 6)
         }
 
+        // Voice / melody presence: the level the vocal range holds between the drum hits
+        // (its lower third within the beat), rather than its peaks.
+        val beatSustain = FloatArray(m)
+        val scratch = FloatArray(512)
+        for (j in 0 until m) {
+            val a = beatIndex[j].roundToInt().coerceIn(0, n - 1)
+            val b = (if (j + 1 < m) beatIndex[j + 1].roundToInt() else a + (60f / bpm * rate).roundToInt()).coerceIn(a + 1, n)
+            val count = min(b - a, scratch.size)
+            for (i in 0 until count) scratch[i] = mid[a + i]
+            java.util.Arrays.sort(scratch, 0, count)
+            beatSustain[j] = scratch[count * 3 / 10]
+        }
+
         // Which notes sound during each beat.
         val beatChroma = Array(m) { FloatArray(12) }
         var frame = 0
@@ -311,7 +334,67 @@ object SongAnalyzer {
             beatStrength = beatStrength,
             notes = noteMix(c.chroma),
             hits = clearHits(beats, kick),
+            beatSustain = beatSustain,
+            beatHook = hookScores(beatChroma, beatFull, phrase),
         )
+    }
+
+    /**
+     * Scores every eight-bar phrase by how closely its notes, bar by bar, are repeated by other
+     * phrases of the song, and gives each beat its phrase's score (0 = unique, 1 = the most
+     * repeated). Loud repeated phrases are choruses; quiet repeated ones are usually verses.
+     */
+    fun hookScores(chroma: Array<FloatArray>, energy: FloatArray, phrase: Int): FloatArray {
+        val m = chroma.size
+        val out = FloatArray(m)
+        val first = phrase % 32
+        val count = (m - first) / 32
+        if (count < 2) return out
+        // One 12-note picture per bar, with the average removed so loudness does not matter.
+        val bars = Array(count) { p ->
+            Array(8) { bar ->
+                val v = FloatArray(12)
+                for (beat in 0 until 4) {
+                    val c = chroma[first + p * 32 + bar * 4 + beat]
+                    for (k in 0 until 12) v[k] += c[k]
+                }
+                val mean = v.average().toFloat()
+                var norm = 0f
+                for (k in 0 until 12) {
+                    v[k] -= mean
+                    norm += v[k] * v[k]
+                }
+                norm = sqrt(norm)
+                if (norm > 0f) for (k in 0 until 12) v[k] /= norm
+                v
+            }
+        }
+        fun similarity(a: Int, b: Int): Float {
+            var total = 0f
+            for (bar in 0 until 8) for (k in 0 until 12) total += bars[a][bar][k] * bars[b][bar][k]
+            return total / 8
+        }
+        val repeat = FloatArray(count) { p ->
+            val others = (0 until count).filter { it != p }.map { similarity(p, it) }.sortedDescending()
+            // The two closest relatives: a phrase heard three times is a hook, twice may be chance.
+            others.take(2).average().toFloat()
+        }
+        val lowest = repeat.min()
+        val highest = repeat.max()
+        val spread = (highest - lowest).coerceAtLeast(1e-6f)
+        val meanEnergy = energy.average().toFloat().coerceAtLeast(1e-12f)
+        for (p in 0 until count) {
+            var loud = 0f
+            for (b in 0 until 32) loud += energy[first + p * 32 + b]
+            loud = (loud / 32 / meanEnergy).coerceIn(0f, 1.5f) / 1.5f
+            // Repetition matters most; loudness separates the chorus from an equally repeated verse.
+            val score = (0.65f * (repeat[p] - lowest) / spread + 0.35f * loud).coerceIn(0f, 1f)
+            for (b in 0 until 32) out[first + p * 32 + b] = score
+        }
+        // The odd beats before the first and after the last whole phrase borrow their neighbour's score.
+        for (j in 0 until first) out[j] = out[first]
+        for (j in first + count * 32 until m) out[j] = out[first + count * 32 - 1]
+        return out
     }
 
     private fun clearHits(beats: DoubleArray, kick: FloatArray): DoubleArray {

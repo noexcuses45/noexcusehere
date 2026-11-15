@@ -25,6 +25,10 @@ import kotlin.math.sin
 import kotlin.random.Random
 
 class AutoMashTest {
+    private companion object {
+        /** The sections of a structured test song that are choruses. */
+        val CHORUSES = setOf(2, 4, 6)
+    }
 
     /**
      * A small pretend song: kick on every beat, snare on beats 2 and 4, hi-hat between the
@@ -78,6 +82,79 @@ class AutoMashTest {
         }
         return stereo
     }
+
+    /**
+     * A pretend song with a shape: eight-bar sections - intro (drums only), verse, chorus,
+     * verse, chorus, bridge, chorus, outro. Every verse and the bridge have their own chords
+     * and a quiet lead; the chorus always has the same chords, is louder and has a strong lead.
+     * [CHORUSES] lists which sections are choruses.
+     */
+    private fun structuredSong(bpm: Double, keyRoot: Int, seed: Int): ShortArray {
+        val beat = 60.0 / bpm
+        val sectionBeats = 32
+        val sections = 8
+        val n = (sections * sectionBeats * beat * MIX_RATE).toInt() + MIX_RATE
+        val out = FloatArray(n)
+        val random = Random(seed)
+        val kickLength = (0.22 * MIX_RATE).toInt()
+        val kick = FloatArray(kickLength) {
+            val t = it.toDouble() / MIX_RATE
+            (sin(2 * PI * (48 + 70 * exp(-t * 28)) * t) * exp(-t * 13)).toFloat()
+        }
+        val snareLength = (0.15 * MIX_RATE).toInt()
+        val hatLength = (0.04 * MIX_RATE).toInt()
+        var b = 0
+        while (b * beat * MIX_RATE < n) {
+            val at = (b * beat * MIX_RATE).roundToInt()
+            for (i in 0 until kickLength) if (at + i < n) out[at + i] += kick[i] * 0.8f
+            if (b % 2 == 1) {
+                for (i in 0 until snareLength) if (at + i < n) {
+                    out[at + i] += (random.nextFloat() - 0.5f) * exp(-i / (0.03f * MIX_RATE)) * 0.7f
+                }
+            }
+            val off = ((b + 0.5) * beat * MIX_RATE).roundToInt()
+            for (i in 0 until hatLength) if (off + i < n) {
+                out[off + i] += (random.nextFloat() - 0.5f) * exp(-i / (0.008f * MIX_RATE)) * 0.3f
+            }
+            b++
+        }
+        // Chord roots (semitones above the key note) for each bar of each kind of section.
+        val chorus = listOf(0, 7, 9, 5, 0, 7, 9, 5)
+        val others = listOf(
+            listOf(9, 9, 5, 5, 2, 2, 7, 7),
+            listOf(5, 2, 9, 7, 5, 2, 0, 0),
+            listOf(2, 5, 7, 2, 9, 0, 5, 7),
+            listOf(7, 0, 2, 9, 7, 5, 2, 2),
+        )
+        val base = 130.81 * 2.0.pow(keyRoot / 12.0)
+        for (i in 0 until n) {
+            val t = i.toDouble() / MIX_RATE
+            val beatNumber = t / beat
+            val section = (beatNumber / sectionBeats).toInt().coerceAtMost(sections - 1)
+            val bar = ((beatNumber % sectionBeats) / 4).toInt().coerceIn(0, 7)
+            val isChorus = section in CHORUSES
+            if (section == 0 || section == sections - 1) continue
+            val root = if (isChorus) chorus[bar] else others[section % others.size][bar]
+            var v = 0.0
+            for (semi in listOf(0, 4, 7)) {
+                val f = base * 2.0.pow((root + semi) / 12.0)
+                v += sin(2 * PI * f * t) + 0.5 * sin(2 * PI * 2 * f * t)
+            }
+            // The "voice": a held note in the vocal range that follows the chord.
+            val lead = sin(2 * PI * base * 4 * 2.0.pow((root + 7) / 12.0) * t)
+            out[i] += (v * (if (isChorus) 0.07 else 0.035) + lead * (if (isChorus) 0.16 else 0.05)).toFloat()
+        }
+        val stereo = ShortArray(n * 2)
+        for (i in 0 until n) {
+            val s = (out[i].coerceIn(-1f, 1f) * 30000).toInt().toShort()
+            stereo[2 * i] = s
+            stereo[2 * i + 1] = s
+        }
+        return stereo
+    }
+
+    /** Which section of a structured song a moment (in seconds) falls in. */
+    private fun sectionAt(seconds: Double, bpm: Double): Int = (seconds / (32 * 60.0 / bpm)).toInt()
 
     private fun analyse(stereo: ShortArray): SongAnalysis {
         val collector = FeatureCollector()
@@ -279,6 +356,119 @@ class AutoMashTest {
             assertEquals(60.0 / view.bpm, perBeat, 0.004)
         }
         assertEquals(Role.TOP.low, 0f)
+    }
+
+    @Test
+    fun findsTheChorusAndWhereTheSingingIs() {
+        val bpm = 120.0
+        val a = analyse(structuredSong(bpm, 0, 11))
+        fun average(values: FloatArray, sections: Set<Int>): Float {
+            var total = 0f
+            var count = 0
+            for (j in a.beats.indices) if (sectionAt(a.beats[j], bpm) in sections) {
+                total += values[j]; count++
+            }
+            return total / count
+        }
+        // The chorus comes back three times: it must stand out as the hook.
+        val hookInChorus = average(a.beatHook, CHORUSES)
+        val hookElsewhere = average(a.beatHook, setOf(1, 3, 5))
+        assertTrue("chorus $hookInChorus vs verses $hookElsewhere", hookInChorus > hookElsewhere + 0.25f)
+        // Singing is strongest in the chorus and absent in the drums-only intro.
+        val voiceInChorus = average(a.beatSustain, CHORUSES)
+        val voiceInIntro = average(a.beatSustain, setOf(0))
+        assertTrue("chorus $voiceInChorus vs intro $voiceInIntro", voiceInChorus > 4 * voiceInIntro)
+    }
+
+    @Test
+    fun lengthFollowsWhatWasAskedFor() {
+        val pool = listOf(
+            analyse(structuredSong(120.0, 0, 1)),
+            analyse(structuredSong(124.0, 5, 2)),
+            analyse(structuredSong(118.0, 9, 3)),
+            analyse(structuredSong(122.0, 2, 4)),
+            analyse(structuredSong(126.0, 7, 5)),
+            analyse(structuredSong(116.0, 4, 6)),
+        )
+        for (count in listOf(2, 3, 6)) {
+            val songs = pool.take(count)
+            for (target in listOf(60, 120, 180, 300, 420)) {
+                val plan = MixPlanner.plan(songs, seed = 3, targetSeconds = target.toFloat())
+                // Within half an eight-bar phrase of what was asked (a phrase is about 16 s).
+                assertEquals("$count songs, $target s asked", target.toDouble(), plan.seconds, 9.0)
+                // Whole bars, and nothing reaches past the end.
+                assertEquals(0.0, plan.totalBeats % 16, 1e-9)
+                assertTrue(plan.clips.all { it.endBeat <= plan.totalBeats + 1e-9 })
+                // Every song is heard.
+                assertEquals((0 until count).toSet(), plan.clips.map { it.song }.toSet())
+                // The story runs intro ... outro, in time order, and ends with the last song at full power.
+                val scenes = plan.scenes
+                assertEquals(com.noexcusehere.mashwave.automash.SceneKind.INTRO, scenes.first().kind)
+                assertEquals(com.noexcusehere.mashwave.automash.SceneKind.OUTRO, scenes.last().kind)
+                assertTrue(scenes.zipWithNext().all { (x, y) -> x.beat <= y.beat })
+                assertTrue("a drop somewhere", scenes.any { it.kind == com.noexcusehere.mashwave.automash.SceneKind.DROP })
+            }
+        }
+        // Left to itself it still lands in a sensible range.
+        assertTrue(MixPlanner.plan(pool.take(2), seed = 3).seconds in 130.0..170.0)
+        // Asked for less time than it takes to hear six songs, it uses the shortest that fits.
+        assertTrue(MixPlanner.plan(pool, seed = 3, targetSeconds = 20f).seconds < 75.0)
+    }
+
+    @Test
+    fun dropsLandOnTheChorus() {
+        val bpms = listOf(120.0, 124.0, 118.0)
+        val songs = bpms.mapIndexed { i, bpm -> analyse(structuredSong(bpm, i * 5, 20 + i)) }
+        val plan = MixPlanner.plan(songs, seed = 7, targetSeconds = 200f)
+        val drops = plan.scenes.filter { it.kind == com.noexcusehere.mashwave.automash.SceneKind.DROP }
+        assertTrue(drops.isNotEmpty())
+        for (drop in drops) {
+            // Four beats into the drop, which section of the song is playing?
+            val at = drop.beat + 4
+            val clip = plan.clips.first { it.song == drop.song && at >= it.startBeat && at < it.endBeat }
+            val i = clip.mapBeats.indexOfFirst { it >= at }
+            val t = (at - clip.mapBeats[i - 1]) / (clip.mapBeats[i] - clip.mapBeats[i - 1])
+            val seconds = clip.mapSeconds[i - 1] * (1 - t) + clip.mapSeconds[i] * t
+            val section = sectionAt(seconds, bpms[drop.song])
+            assertTrue("drop of song ${drop.song} plays section $section", section in CHORUSES)
+            // During the drop the song is alone, with everything turned up.
+            val key = clip.keys.last { it.beat <= at }
+            assertEquals(1f, key.low, 0.01f)
+            assertEquals(1f, key.mid, 0.01f)
+            assertEquals(1, plan.clips.count { at >= it.startBeat && at < it.endBeat && it.keys.last { k -> k.beat <= at }.mid > 0.05f })
+            // The bar before it, the old beat has its bass pulled out and is set to echo away.
+            val before = drop.beat - 2
+            val leaving = plan.clips.first { it.song != drop.song && before >= it.startBeat && before < it.endBeat }
+            assertEquals(0f, leaving.keys.last { it.beat <= before }.low, 0.01f)
+            assertTrue(leaving.echoBeats > 0)
+        }
+    }
+
+    @Test
+    fun echoRingsOnAfterTheBeatStops() {
+        val pcm = listOf(structuredSong(120.0, 0, 31), structuredSong(124.0, 5, 32))
+        val plan = MixPlanner.plan(pcm.map { analyse(it) }, seed = 5, targetSeconds = 120f)
+        val clip = plan.clips.first { it.echoBeats > 0 }
+        val capture = Capture()
+        MixRenderer(plan, pcm.map { ArrayPcmSource(it) }).render(capture, solo = clip.song)
+        fun level(fromBeat: Double, toBeat: Double): Double {
+            val from = plan.frameOf(fromBeat).toInt()
+            val to = plan.frameOf(toBeat).toInt()
+            var sum = 0.0
+            for (i in from until to) {
+                val v = capture.data[2 * i] / 32768.0
+                sum += v * v
+            }
+            return kotlin.math.sqrt(sum / (to - from))
+        }
+        val end = clip.endBeat
+        // That song is not playing after its clip ends (heard alone), yet the echo is there...
+        val ringing = level(end + 0.5, end + 1.5)
+        assertTrue("echo level $ringing", ringing > 0.002)
+        // ...quieter with every repeat...
+        assertTrue(level(end + 2.5, end + 3.5) < ringing)
+        // ...and gone after its bar.
+        assertTrue(level(end + 4.5, end + 6.0) < 0.0005)
     }
 
     @Test
