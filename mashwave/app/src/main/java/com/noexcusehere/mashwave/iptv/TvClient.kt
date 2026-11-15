@@ -22,6 +22,27 @@ object TvClient {
         )
     }
 
+    /**
+     * Signs in at the account's own address or, when that server cannot be reached at all, at the
+     * first of [spares] that can. A server that answers "no" ends the search: the login is wrong
+     * everywhere. Returns the account with the address that worked.
+     */
+    fun signIn(account: TvAccount, spares: List<String>): TvAccount {
+        val servers = (listOf(account.server) + spares.map { Xtream.normalizeServer(it) }).filter { it.isNotEmpty() }.distinct()
+        var first: TvException? = null
+        for (server in servers) {
+            try {
+                return signIn(account.copy(server = server))
+            } catch (e: TvException) {
+                if (!e.network) throw e
+                if (first == null) first = e
+            }
+        }
+        val problem = first ?: throw TvException("Fill in the server address, user name and password.")
+        if (servers.size < 2) throw problem
+        throw TvException(problem.message + " The other ${if (servers.size == 2) "address" else "${servers.size - 1} addresses"} in the message could not be reached either.", problem, network = true)
+    }
+
     /** One section of a login's catalogue: its categories and everything in them. */
     fun catalog(account: TvAccount, section: TvSection, now: Long): TvCatalog {
         val (categoriesAction, itemsAction) = when (section) {

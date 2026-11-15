@@ -474,6 +474,8 @@ fun TvAccountDialog(existing: TvAccount?, onDismiss: () -> Unit) {
     var showPassword by remember { mutableStateOf(false) }
     var busy by remember { mutableStateOf(false) }
     var problem by remember { mutableStateOf<String?>(null) }
+    // Other addresses found in a pasted message; tried if the first one cannot be reached.
+    var spares by remember { mutableStateOf(emptyList<String>()) }
     val ready = if (playlistMode) link.isNotBlank() else server.isNotBlank() && username.isNotBlank() && password.isNotBlank()
 
     fun paste() {
@@ -485,6 +487,7 @@ fun TvAccountDialog(existing: TvAccount?, onDismiss: () -> Unit) {
                 server = login.server
                 username = login.username
                 password = login.password
+                spares = Xtream.serversInText(text).filter { it != login.server }
                 problem = null
             }
             text.trim().startsWith("http", ignoreCase = true) && !text.trim().contains(' ') -> {
@@ -506,7 +509,7 @@ fun TvAccountDialog(existing: TvAccount?, onDismiss: () -> Unit) {
                 } else {
                     TvAccount(id = "", name = name.trim(), type = TvAccount.XTREAM, server = server, username = username, password = password)
                 }
-                app.tv.add(draft, replaces = existing?.id)
+                app.tv.add(draft, replaces = existing?.id, spares = if (playlistMode) emptyList() else spares)
                 onDismiss()
             } catch (e: TvException) {
                 problem = e.message
@@ -614,6 +617,14 @@ fun TvAccountDialog(existing: TvAccount?, onDismiss: () -> Unit) {
                     colors = tvFieldColors(),
                     modifier = Modifier.fillMaxWidth(),
                 )
+                if (!playlistMode && spares.isNotEmpty() && problem == null && !busy) {
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        "The message has " + (if (spares.size == 1) "a second address" else "${spares.size} more addresses") + ". It is tried automatically if the first can't be reached.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = TextMid,
+                    )
+                }
                 problem?.let {
                     Spacer(Modifier.height(10.dp))
                     Text(it, style = MaterialTheme.typography.bodySmall, color = Color(0xFFFF8A8A))

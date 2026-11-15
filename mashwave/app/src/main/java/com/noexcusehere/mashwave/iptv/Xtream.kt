@@ -94,6 +94,14 @@ object Xtream {
         return Login(normalizeServer(server), user, pass)
     }
 
+    /**
+     * Every server address in a pasted message, in the order written. Providers often give a
+     * spare ("DNS: http://one.example  Samsung and LG DNS: http://two.example") for networks
+     * where the first cannot be reached.
+     */
+    fun serversInText(text: String): List<String> =
+        linkPattern.findAll(text).map { normalizeServer(it.value.trimEnd('.', ',', ')', ';')) }.filter { it.isNotEmpty() }.distinct().toList()
+
     private fun query(text: String): String = URLEncoder.encode(text, "UTF-8")
 
     private fun path(text: String): String = URLEncoder.encode(text, "UTF-8").replace("+", "%20")

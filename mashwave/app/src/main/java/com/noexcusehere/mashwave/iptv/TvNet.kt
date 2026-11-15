@@ -71,7 +71,61 @@ object TvNet {
         } catch (e: TvException) {
             throw e
         } catch (e: Exception) {
-            throw TvException(explain(e), e)
+            val trouble = classify(e)
+            if (trouble == Trouble.OTHER) throw TvException(explain(e), e)
+            // Say which server could not be reached and where this network sent the app for it:
+            // "refused" and "blocked on this Wi-Fi" need different fixes.
+            val host = runCatching { URL(url).host }.getOrDefault("")
+            val port = runCatching { URL(url).let { if (it.port > 0) it.port else it.defaultPort } }.getOrDefault(80)
+            val found = if (trouble == Trouble.NO_NAME) emptyList() else lookup(host)
+            throw TvException(describe(trouble, host, port, found, forwarded = hops > 0), e, network = true)
+        }
+    }
+
+    /** The ways a connection can fail before the server says anything. */
+    enum class Trouble { REFUSED, UNREACHABLE, TIMED_OUT, NO_NAME, SECURE, OTHER }
+
+    fun classify(e: Throwable): Trouble {
+        val text = generateSequence(e) { it.cause }.take(4).joinToString(" ") { it.message.orEmpty() }.lowercase()
+        return when {
+            e is UnknownHostException -> Trouble.NO_NAME
+            e is SSLException -> Trouble.SECURE
+            "econnrefused" in text || "connection refused" in text -> Trouble.REFUSED
+            "enetunreach" in text || "ehostunreach" in text || "unreachable" in text || "no route" in text -> Trouble.UNREACHABLE
+            e is SocketTimeoutException || "etimedout" in text || "timed out" in text || "timeout" in text -> Trouble.TIMED_OUT
+            e is ConnectException -> Trouble.REFUSED
+            else -> Trouble.OTHER
+        }
+    }
+
+    /** The addresses this phone's network gives for [host]; empty when it gives none. */
+    fun lookup(host: String): List<String> =
+        runCatching { java.net.InetAddress.getAllByName(host).mapNotNull { it.hostAddress } }.getOrDefault(emptyList())
+
+    /** An answer that leads nowhere - what ad blockers and filtering networks hand out for addresses they block. */
+    fun isDeadEnd(address: String): Boolean =
+        address == "0.0.0.0" || address.startsWith("127.") || address == "::" || address == "::1" || address == "0:0:0:0:0:0:0:0" || address == "0:0:0:0:0:0:0:1"
+
+    /** A connection failure in plain words, with the detail needed to tell "wrong address" from "blocked here". */
+    fun describe(trouble: Trouble, host: String, port: Int, found: List<String>, forwarded: Boolean = false): String {
+        val where = if (forwarded) "$host (where the service forwarded the app)" else host
+        val first = found.firstOrNull().orEmpty()
+        val another = "Try the other DNS your TV provider gave you, or switch between Wi-Fi and mobile data."
+        return when {
+            trouble == Trouble.NO_NAME ->
+                "Can't find $where. Check the spelling and the internet connection. If both are right, this network may be hiding that address. $another"
+            found.isNotEmpty() && found.all { isDeadEnd(it) } ->
+                "This network sends the app to a dead end for $where (it answered \"$first\"). Something on this Wi-Fi or phone is blocking that address: " +
+                    "an ad blocker, a \"Private DNS\" setting, a VPN, or the internet provider. $another"
+            trouble == Trouble.REFUSED ->
+                "$where refused the connection. The address may be out of date, or this network blocks it. $another (Refused by $first, port $port)"
+            trouble == Trouble.UNREACHABLE ->
+                "This network can't get to $where. Check the Wi-Fi, and any VPN on the phone. $another" + if (first.isNotEmpty()) " (No route to $first)" else ""
+            trouble == Trouble.TIMED_OUT ->
+                "$where did not answer. It may be down, or this network blocks it. $another (No answer from $first, port $port)"
+            trouble == Trouble.SECURE ->
+                "The secure connection to $where failed. If the address starts with https://, try http://."
+            else -> "Couldn't reach $where."
         }
     }
 

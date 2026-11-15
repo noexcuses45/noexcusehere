@@ -3,6 +3,9 @@ package com.noexcusehere.mashwave
 import com.noexcusehere.mashwave.cast.Dlna
 import com.noexcusehere.mashwave.cast.MediaServer
 import com.noexcusehere.mashwave.cast.StreamRelay
+import com.noexcusehere.mashwave.iptv.TvAccount
+import com.noexcusehere.mashwave.iptv.TvClient
+import com.noexcusehere.mashwave.iptv.TvException
 import org.junit.After
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
@@ -66,6 +69,11 @@ class TvRelayTest {
                 "#EXTM3U\n#EXT-X-TARGETDURATION:6\n#EXTINF:6.0,\n/hls/2/seg-10.ts\n#EXTINF:6.0,\nseg-11.ts\n".toByteArray(),
             )
             "/hls/2/seg-10.ts" -> Reply(200, mapOf("Content-Type" to "video/mp2t"), ByteArray(376) { 0x47 })
+            "/player_api.php" -> Reply(
+                200,
+                mapOf("Content-Type" to "application/json"),
+                (if ("password=right" in path) """{"user_info":{"auth":1,"status":"Active","exp_date":"1900000000","max_connections":"1"}}""" else """{"user_info":{"auth":0}}""").toByteArray(),
+            )
             "/gone" -> Reply(403)
             else -> Reply(404)
         }
@@ -211,6 +219,36 @@ class TvRelayTest {
         val base = url.substringBeforeLast('/')
         assertEquals(400, open(base + "/x?u=" + StreamRelay.wrap("file:///etc/passwd")).responseCode)
         assertEquals(204, open(url, method = "OPTIONS").responseCode)
+    }
+
+    @Test
+    fun signsInAtTheSpareAddressWhenTheFirstCannotBeReached() {
+        // Nothing listens on the first address; the pretend service is the spare.
+        val dead = ServerSocket(0).use { it.localPort }
+        val account = TvAccount(id = "a", name = "", server = "http://127.0.0.1:$dead", username = "me", password = "right")
+        val signedIn = TvClient.signIn(account, listOf("http://127.0.0.1:$servicePort/"))
+        assertEquals("http://127.0.0.1:$servicePort", signedIn.server)
+        assertEquals("Active", signedIn.status)
+
+        // A reachable server that says "no" is final: the spare is not asked.
+        try {
+            TvClient.signIn(account.copy(server = "http://127.0.0.1:$servicePort", password = "wrong"), listOf("http://127.0.0.1:$dead"))
+            org.junit.Assert.fail("expected a refusal")
+        } catch (e: TvException) {
+            assertFalse(e.network)
+            assertTrue(e.message!!.contains("not accepted"))
+        }
+
+        // Neither reachable: say so, without repeating the login.
+        val other = ServerSocket(0).use { it.localPort }
+        try {
+            TvClient.signIn(account, listOf("http://127.0.0.1:$other"))
+            org.junit.Assert.fail("expected a failure")
+        } catch (e: TvException) {
+            assertTrue(e.network)
+            assertTrue(e.message!!.contains("could not be reached either"))
+            assertFalse(e.message!!.contains("right"))
+        }
     }
 
     @Test

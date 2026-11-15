@@ -99,8 +99,9 @@ class TvRepository(context: Context, private val scope: CoroutineScope) {
     /**
      * Checks a new login (or playlist link) with the service and, if it works, keeps it and
      * switches to it. Throws [TvException] with a plain explanation when it does not.
+     * [spares] are other addresses of the same service, tried when the first cannot be reached.
      */
-    suspend fun add(draft: TvAccount, replaces: String? = null): TvAccount {
+    suspend fun add(draft: TvAccount, replaces: String? = null, spares: List<String> = emptyList()): TvAccount {
         val now = System.currentTimeMillis()
         var account = draft.copy(
             id = replaces ?: UUID.randomUUID().toString().take(8),
@@ -112,12 +113,24 @@ class TvRepository(context: Context, private val scope: CoroutineScope) {
             addedAt = now,
         )
         // A playlist link from a login-based service works better as a login: movies and shows get their own sections.
+        var loginProblem: TvException? = null
         if (!account.isXtream) {
             val login = Xtream.loginFromLink(account.playlistUrl)
             if (login != null) {
                 val asLogin = account.copy(type = TvAccount.XTREAM, server = login.server, username = login.username, password = login.password)
-                val checked = withContext(Dispatchers.IO) { runCatching { TvClient.signIn(asLogin) }.getOrNull() }
+                val checked = withContext(Dispatchers.IO) {
+                    try {
+                        TvClient.signIn(asLogin)
+                    } catch (e: TvException) {
+                        loginProblem = e
+                        null
+                    } catch (e: Exception) {
+                        null
+                    }
+                }
                 if (checked != null) account = checked.copy(playlistUrl = "")
+                // The server cannot be reached: fetching the playlist from it would only fail the same way, slowly.
+                loginProblem?.let { if (it.network) throw it }
             }
         }
         var catalogs: Map<TvSection, TvCatalog>? = null
@@ -125,10 +138,15 @@ class TvRepository(context: Context, private val scope: CoroutineScope) {
             if (account.server.isEmpty() || account.username.isEmpty() || account.password.isEmpty()) {
                 throw TvException("Fill in the server address, user name and password.")
             }
-            if (account.status.isEmpty()) account = withContext(Dispatchers.IO) { attempt { TvClient.signIn(account) } }
+            if (account.status.isEmpty()) account = withContext(Dispatchers.IO) { attempt { TvClient.signIn(account, spares) } }
         } else {
             if (!account.playlistUrl.startsWith("http", ignoreCase = true)) throw TvException("The playlist link should start with http:// or https://")
-            catalogs = withContext(Dispatchers.IO) { attempt { TvClient.playlist(account, now) } }
+            catalogs = try {
+                withContext(Dispatchers.IO) { attempt { TvClient.playlist(account, now) } }
+            } catch (e: TvException) {
+                // "That user name or password was not accepted" says more than a failed download does.
+                throw loginProblem ?: e
+            }
             if (catalogs.values.all { it.items.isEmpty() }) throw TvException("That playlist has nothing in it.")
         }
         if (account.name.isBlank()) account = account.copy(name = hostOf(if (account.isXtream) account.server else account.playlistUrl))

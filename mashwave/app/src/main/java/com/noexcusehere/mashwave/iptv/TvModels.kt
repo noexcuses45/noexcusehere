@@ -161,4 +161,9 @@ val MediaEntry.isTv: Boolean
     get() = tv.isNotEmpty()
 
 /** Something went wrong that the user should be told about in plain words. */
-class TvException(message: String, cause: Throwable? = null) : Exception(message, cause)
+class TvException(
+    message: String,
+    cause: Throwable? = null,
+    /** True when the server could not be reached at all (as opposed to answering "no"). */
+    val network: Boolean = false,
+) : Exception(message, cause)

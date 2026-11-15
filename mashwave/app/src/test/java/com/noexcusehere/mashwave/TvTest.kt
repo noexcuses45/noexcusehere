@@ -5,6 +5,7 @@ import com.noexcusehere.mashwave.iptv.M3u
 import com.noexcusehere.mashwave.iptv.TvAccount
 import com.noexcusehere.mashwave.iptv.TvException
 import com.noexcusehere.mashwave.iptv.TvItem
+import com.noexcusehere.mashwave.iptv.TvNet
 import com.noexcusehere.mashwave.iptv.TvRef
 import com.noexcusehere.mashwave.iptv.TvRegions
 import com.noexcusehere.mashwave.iptv.TvSearch
@@ -72,6 +73,22 @@ class TvTest {
     }
 
     @Test
+    fun findsTheSpareAddressInAMessage() {
+        val message = """
+            tv.example.com
+            http://tv.example.com
+            Username: Abc123xy
+            Password: Zz99aaBB
+            DNS: http://tv.example.com
+            Samsung and LG DNS: http://spare.example.net
+        """.trimIndent()
+        assertEquals(listOf("http://tv.example.com", "http://spare.example.net"), Xtream.serversInText(message))
+        assertEquals("http://tv.example.com", Xtream.loginFromText(message)!!.server)
+        assertEquals(listOf("http://tv.example.com:8080"), Xtream.serversInText("http://tv.example.com:8080/get.php?username=a&password=b&type=m3u_plus"))
+        assertTrue(Xtream.serversInText("no links here").isEmpty())
+    }
+
+    @Test
     fun buildsAddresses() {
         assertEquals("http://tv.example.com:8080/player_api.php?username=me&password=se+cret", Xtream.api(account))
         assertEquals(
@@ -99,6 +116,49 @@ class TvTest {
         assertFalse(expired.ok)
         assertTrue(expired.message.contains("run out"))
         assertFalse(Xtream.session(obj("""{"hello":"world"}""")).ok)
+    }
+
+    @Test
+    fun saysWhyAServerCouldNotBeReached() {
+        val refused = java.net.ConnectException("Failed to connect to tv.example.com/203.0.113.9:80")
+            .apply { initCause(java.net.ConnectException("failed to connect to tv.example.com/203.0.113.9 (port 80) from /192.168.1.20 (port 41234) after 15000ms: isConnected failed: ECONNREFUSED (Connection refused)")) }
+        assertEquals(TvNet.Trouble.REFUSED, TvNet.classify(refused))
+        assertEquals(TvNet.Trouble.UNREACHABLE, TvNet.classify(java.net.ConnectException("connect failed: ENETUNREACH (Network is unreachable)")))
+        assertEquals(TvNet.Trouble.TIMED_OUT, TvNet.classify(java.net.SocketTimeoutException("failed to connect after 15000ms")))
+        assertEquals(TvNet.Trouble.TIMED_OUT, TvNet.classify(java.net.ConnectException("connect failed: ETIMEDOUT (Connection timed out)")))
+        assertEquals(TvNet.Trouble.NO_NAME, TvNet.classify(java.net.UnknownHostException("tv.example.com")))
+        assertEquals(TvNet.Trouble.OTHER, TvNet.classify(java.io.IOException("unexpected end of stream")))
+
+        val plain = TvNet.describe(TvNet.Trouble.REFUSED, "tv.example.com", 80, listOf("203.0.113.9"))
+        assertTrue(plain.startsWith("tv.example.com refused the connection"))
+        assertTrue(plain.contains("Refused by 203.0.113.9, port 80"))
+        assertTrue(plain.contains("other DNS"))
+
+        // A filter on the network answers "0.0.0.0": that is a block, not a wrong address.
+        val blocked = TvNet.describe(TvNet.Trouble.REFUSED, "tv.example.com", 80, listOf("0.0.0.0"))
+        assertTrue(blocked.contains("dead end"))
+        assertTrue(blocked.contains("Private DNS"))
+        assertTrue(TvNet.isDeadEnd("127.0.0.1"))
+        assertTrue(TvNet.isDeadEnd("::1"))
+        assertFalse(TvNet.isDeadEnd("203.0.113.9"))
+
+        assertTrue(TvNet.describe(TvNet.Trouble.TIMED_OUT, "tv.example.com", 8080, listOf("203.0.113.9")).contains("No answer from 203.0.113.9, port 8080"))
+        assertTrue(TvNet.describe(TvNet.Trouble.NO_NAME, "tv.example.com", 80, emptyList()).startsWith("Can't find tv.example.com"))
+        assertTrue(TvNet.describe(TvNet.Trouble.REFUSED, "cdn.example.net", 80, listOf("203.0.113.9"), forwarded = true).contains("where the service forwarded the app"))
+    }
+
+    @Test
+    fun aRealRefusalIsReportedWithTheAddressItCameFrom() {
+        // Nothing listens on this port of this machine, so the connection is refused for real.
+        val free = java.net.ServerSocket(0).use { it.localPort }
+        try {
+            TvNet.open("http://127.0.0.1:$free/player_api.php?username=u&password=p", connectMs = 3000)
+            fail("expected a refusal")
+        } catch (e: TvException) {
+            assertTrue(e.network)
+            assertTrue(e.message!!, e.message!!.contains("127.0.0.1"))
+            assertFalse("the login must not be repeated in the message", e.message!!.contains("password") || e.message!!.contains("username"))
+        }
     }
 
     // ---- lists -----------------------------------------------------------------------------
