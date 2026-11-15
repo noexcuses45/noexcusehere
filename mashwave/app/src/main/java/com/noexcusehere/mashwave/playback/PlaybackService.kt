@@ -17,6 +17,7 @@ import androidx.media3.common.Player
 import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.datasource.HttpDataSource
+import androidx.media3.datasource.ResolvingDataSource
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.session.DefaultMediaNotificationProvider
@@ -215,12 +216,19 @@ class PlaybackService : MediaSessionService() {
         super.onCreate()
         // TV services forward streams from one server to another, sometimes between http and https.
         val web = DefaultHttpDataSource.Factory()
-            .setUserAgent(TvNet.userAgent)
+            .setDefaultRequestProperties(mapOf("User-Agent" to TvNet.userAgent))
             .setAllowCrossProtocolRedirects(true)
             .setConnectTimeoutMs(15_000)
             .setReadTimeoutMs(20_000)
+        // A TV service may only answer under the name it accepted at sign-in; every request for
+        // the stream that is on (lists of pieces and the pieces too) carries that name.
+        val named = ResolvingDataSource.Factory(DefaultDataSource.Factory(this, web)) { spec ->
+            val agent = TvNet.playbackAgent
+            val scheme = spec.uri.scheme.orEmpty()
+            if (agent.isNullOrBlank() || !scheme.startsWith("http")) spec else spec.withAdditionalHeaders(mapOf("User-Agent" to agent))
+        }
         player = ExoPlayer.Builder(this, mashwaveRenderers(this))
-            .setMediaSourceFactory(DefaultMediaSourceFactory(DefaultDataSource.Factory(this, web)))
+            .setMediaSourceFactory(DefaultMediaSourceFactory(named))
             .setAudioAttributes(
                 AudioAttributes.Builder()
                     .setUsage(C.USAGE_MEDIA)
@@ -360,6 +368,7 @@ class PlaybackService : MediaSessionService() {
         }
 
         override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+            TvNet.playbackAgent = mashwave.tv.agentFor(mediaItem?.toEntry())
             // A different channel starts with a clean slate.
             stalls = 0
             retryTimes.clear()
@@ -428,6 +437,8 @@ class PlaybackService : MediaSessionService() {
             mediaItems: MutableList<MediaItem>,
         ): ListenableFuture<MutableList<MediaItem>> {
             userChangedQueue = true
+            // Known before the first byte is asked for: the name this queue's TV service accepts.
+            TvNet.playbackAgent = mashwave.tv.agentFor(mediaItems.firstOrNull()?.toEntry())
             val resolved = mediaItems.map { item ->
                 if (item.localConfiguration != null) {
                     item

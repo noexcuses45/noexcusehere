@@ -6,6 +6,7 @@ import com.noexcusehere.mashwave.cast.StreamRelay
 import com.noexcusehere.mashwave.iptv.TvAccount
 import com.noexcusehere.mashwave.iptv.TvClient
 import com.noexcusehere.mashwave.iptv.TvException
+import com.noexcusehere.mashwave.iptv.TvNet
 import org.junit.After
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
@@ -34,6 +35,7 @@ class TvRelayTest {
     private val workers = Executors.newCachedThreadPool()
     private val server = MediaServer()
     private val movie = ByteArray(200_000) { (it * 31 % 251).toByte() }
+    private val asked = java.util.concurrent.CopyOnWriteArrayList<String>()
     private val gets = AtomicInteger()
     private val heads = AtomicInteger()
     private val servicePort = listener.localPort
@@ -74,6 +76,24 @@ class TvRelayTest {
                 mapOf("Content-Type" to "application/json"),
                 (if ("password=right" in path) """{"user_info":{"auth":1,"status":"Active","exp_date":"1900000000","max_connections":"1"}}""" else """{"user_info":{"auth":0}}""").toByteArray(),
             )
+            // A service that only answers players it recognises: everything else is sent nowhere.
+            "/gated/player_api.php", "/gated/movie.mkv" -> {
+                asked += headers["user-agent"].orEmpty()
+                when {
+                    !headers["user-agent"].orEmpty().startsWith("okhttp") -> Reply(302, mapOf("Location" to "http://0.0.0.0/"))
+                    plain.endsWith(".mkv") -> Reply(200, mapOf("Content-Type" to "application/octet-stream"), movie.copyOfRange(0, 1000))
+                    else -> Reply(200, mapOf("Content-Type" to "application/json"), """{"user_info":{"auth":1,"status":"Active"}}""".toByteArray())
+                }
+            }
+            // The same, but saying "forbidden" instead.
+            "/strict/player_api.php" -> {
+                asked += headers["user-agent"].orEmpty()
+                if (headers["user-agent"].orEmpty().startsWith("okhttp")) {
+                    Reply(200, mapOf("Content-Type" to "application/json"), """{"user_info":{"auth":"1","status":"Active"}}""".toByteArray())
+                } else {
+                    Reply(403)
+                }
+            }
             "/gone" -> Reply(403)
             else -> Reply(404)
         }
@@ -249,6 +269,61 @@ class TvRelayTest {
             assertTrue(e.message!!.contains("could not be reached either"))
             assertFalse(e.message!!.contains("right"))
         }
+    }
+
+    @Test
+    fun getsPastAServiceThatOnlyAnswersPlayersItKnows() {
+        val base = "http://127.0.0.1:$servicePort"
+        val account = TvAccount(id = "a", name = "", server = "$base/gated", username = "me", password = "right")
+
+        // Turned away under its own name, the app tries the standard Android ones and remembers what worked.
+        val signedIn = TvClient.signIn(account, emptyList())
+        assertEquals(TvNet.LIBRARY_AGENT, signedIn.userAgent)
+        assertEquals("Active", signedIn.status)
+        assertTrue("its own name is tried first", asked.first().startsWith("UltimateBeats"))
+
+        // "Forbidden" is handled the same way as being sent nowhere.
+        assertEquals(TvNet.LIBRARY_AGENT, TvClient.signIn(account.copy(server = "$base/strict"), emptyList()).userAgent)
+
+        // A name chosen by hand is used first, and kept when it works.
+        asked.clear()
+        val chosen = TvClient.signIn(account.copy(userAgent = "okhttp/custom"), emptyList())
+        assertEquals("okhttp/custom", chosen.userAgent)
+        assertEquals(listOf("okhttp/custom"), asked.toList())
+
+        // Later requests carry the remembered name; without it the service still says no.
+        try {
+            TvClient.signIn(account)
+            org.junit.Assert.fail("expected to be turned away")
+        } catch (e: TvException) {
+            assertTrue(e.forwarded)
+            assertTrue(e.message!!.contains("turned the app away"))
+        }
+        assertEquals("Active", TvClient.signIn(signedIn).status)
+
+        // A wrong password is still a wrong password, said plainly, with where to look next.
+        try {
+            TvClient.signIn(account.copy(server = base, password = "wrong"), emptyList())
+            org.junit.Assert.fail("expected a refusal")
+        } catch (e: TvException) {
+            assertTrue(e.message!!.startsWith("That user name or password was not accepted."))
+            assertTrue(e.message!!.contains("More"))
+        }
+    }
+
+    @Test
+    fun castingUsesTheNameTheServiceAccepts() {
+        fun publishGated(agent: String?): String {
+            var base = ""
+            val relay = StreamRelay("http://127.0.0.1:$servicePort/gated/movie.mkv", false, "video/x-matroska", agent) { base }
+            val published = server.publish(relay, "video.mkv")
+            base = "http://127.0.0.1:${server.port}" + published.substringBeforeLast('/')
+            return "http://127.0.0.1:${server.port}$published"
+        }
+        val accepted = open(publishGated(TvNet.LIBRARY_AGENT))
+        assertEquals(200, accepted.responseCode)
+        assertEquals(1000, accepted.inputStream.readBytes().size)
+        assertEquals(502, open(publishGated(null)).responseCode)
     }
 
     @Test

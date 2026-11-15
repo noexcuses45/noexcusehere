@@ -145,6 +145,11 @@ class TvTest {
         assertTrue(TvNet.describe(TvNet.Trouble.TIMED_OUT, "tv.example.com", 8080, listOf("203.0.113.9")).contains("No answer from 203.0.113.9, port 8080"))
         assertTrue(TvNet.describe(TvNet.Trouble.NO_NAME, "tv.example.com", 80, emptyList()).startsWith("Can't find tv.example.com"))
         assertTrue(TvNet.describe(TvNet.Trouble.REFUSED, "cdn.example.net", 80, listOf("203.0.113.9"), forwarded = true).contains("where the service forwarded the app"))
+        // Forwarded to nowhere: the service is turning the app away, which is not the network's doing.
+        val turnedAway = TvNet.describe(TvNet.Trouble.REFUSED, "127.0.0.1", 80, listOf("127.0.0.1"), forwarded = true)
+        assertTrue(turnedAway.startsWith("The service turned the app away"))
+        assertFalse(turnedAway.contains("Wi-Fi"))
+        assertEquals(listOf("mine", "UltimateBeats/1.0 (Linux;Android) AndroidXMedia3/1.9.4", TvNet.LIBRARY_AGENT), TvNet.agents(" mine ").filter { it != TvNet.platformAgent })
     }
 
     @Test

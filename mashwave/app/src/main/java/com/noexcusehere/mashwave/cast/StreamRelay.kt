@@ -19,6 +19,8 @@ class StreamRelay(
     private val address: String,
     private val live: Boolean,
     private val mime: String,
+    /** How to introduce the app to the service, when it insists on a particular one. */
+    private val agent: String? = null,
     /** The phone-side address of this relay, e.g. "http://192.168.1.5:40123/m/abc123". */
     private val self: () -> String,
 ) : Responder {
@@ -56,7 +58,7 @@ class StreamRelay(
         if (range != null && !(live && isMain)) request["Range"] = range
 
         val upstream = try {
-            TvNet.open(target, request, connectMs = 12_000, readMs = 30_000, check = false)
+            TvNet.open(target, request, connectMs = 12_000, readMs = 30_000, check = false, agent = agent)
         } catch (e: Exception) {
             return plain(output, 502, "Bad Gateway")
         }

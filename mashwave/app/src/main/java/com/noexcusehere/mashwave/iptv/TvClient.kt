@@ -9,9 +9,14 @@ import java.io.PushbackInputStream
 object TvClient {
     private const val SMALL_ANSWER = 6 * 1024 * 1024
 
+    /** Shown when a service that can be reached still says no, since the usual cause is on its side. */
+    const val OTHER_PLAYER_HINT = "If the same details work in another player on this phone, open \"More\" and choose how the app introduces itself."
+
+    private fun agent(account: TvAccount): String? = account.userAgent.ifBlank { null }
+
     /** Checks the login and returns the account with what the service said about the subscription. */
     fun signIn(account: TvAccount): TvAccount {
-        val root = ask(Xtream.api(account))
+        val root = ask(Xtream.api(account), agent(account))
         val session = Xtream.session(root)
         if (!session.ok) throw TvException(session.message.ifBlank { "The service did not accept this login." })
         return account.copy(
@@ -23,22 +28,39 @@ object TvClient {
     }
 
     /**
-     * Signs in at the account's own address or, when that server cannot be reached at all, at the
-     * first of [spares] that can. A server that answers "no" ends the search: the login is wrong
-     * everywhere. Returns the account with the address that worked.
+     * Signs in, working around the two things that stop a correct login:
+     *
+     * - the address cannot be reached at all: the [spares] (other addresses of the same service)
+     *   are tried in turn;
+     * - the server is there but turns this app away: some services only answer players they
+     *   recognise, so the standard Android introductions are tried as well.
+     *
+     * Returns the account with the address and the introduction that worked.
      */
     fun signIn(account: TvAccount, spares: List<String>): TvAccount {
         val servers = (listOf(account.server) + spares.map { Xtream.normalizeServer(it) }).filter { it.isNotEmpty() }.distinct()
-        var first: TvException? = null
+        var unreachable: TvException? = null
+        var refused: TvException? = null
         for (server in servers) {
-            try {
-                return signIn(account.copy(server = server))
-            } catch (e: TvException) {
-                if (!e.network) throw e
-                if (first == null) first = e
+            for (agent in TvNet.agents(account.userAgent)) {
+                try {
+                    return signIn(account.copy(server = server, userAgent = if (agent == TvNet.userAgent) "" else agent))
+                } catch (e: TvException) {
+                    if (e.network && !e.forwarded) {
+                        // Nothing answers at this address; saying a different name changes nothing.
+                        if (unreachable == null) unreachable = e
+                        break
+                    }
+                    // Keep the most telling "no": a real answer beats being forwarded nowhere.
+                    val kept = refused
+                    if (kept == null || (kept.network && !e.network)) refused = e
+                }
             }
+            // This server was there and said no every time; a spare address of the same service would too.
+            if (refused != null) break
         }
-        val problem = first ?: throw TvException("Fill in the server address, user name and password.")
+        refused?.let { throw TvException(it.message + " " + OTHER_PLAYER_HINT, it, network = it.network, forwarded = it.forwarded) }
+        val problem = unreachable ?: throw TvException("Fill in the server address, user name and password.")
         if (servers.size < 2) throw problem
         throw TvException(problem.message + " The other ${if (servers.size == 2) "address" else "${servers.size - 1} addresses"} in the message could not be reached either.", problem, network = true)
     }
@@ -50,8 +72,8 @@ object TvClient {
             TvSection.MOVIES -> "get_vod_categories" to "get_vod_streams"
             TvSection.SHOWS -> "get_series_categories" to "get_series"
         }
-        val categories = TvNet.open(Xtream.api(account, categoriesAction), readMs = 60_000).use { Xtream.categories(Xtream.elements(clean(it.stream))) }
-        val items = TvNet.open(Xtream.api(account, itemsAction), readMs = 90_000).use { Xtream.items(Xtream.elements(clean(it.stream)), section) }
+        val categories = TvNet.open(Xtream.api(account, categoriesAction), readMs = 60_000, agent = agent(account)).use { Xtream.categories(Xtream.elements(clean(it.stream))) }
+        val items = TvNet.open(Xtream.api(account, itemsAction), readMs = 90_000, agent = agent(account)).use { Xtream.items(Xtream.elements(clean(it.stream)), section) }
         // Channels filed under a category the service forgot to list still need a home.
         val known = categories.mapTo(HashSet()) { it.id }
         val extra = items.asSequence().map { it.category }.filter { it !in known }.distinct()
@@ -61,21 +83,36 @@ object TvClient {
 
     /** Downloads a playlist and sorts it into the three sections. */
     fun playlist(account: TvAccount, now: Long): Map<TvSection, TvCatalog> =
-        TvNet.open(account.playlistUrl, readMs = 90_000).use { response ->
+        TvNet.open(account.playlistUrl, readMs = 90_000, agent = agent(account)).use { response ->
             M3u.catalogs(response.stream.bufferedReader(Charsets.UTF_8), now)
         }
 
+    /** The playlist, fetched with whichever introduction the server accepts; the account is returned to match. */
+    fun playlistHowever(account: TvAccount, now: Long): Pair<TvAccount, Map<TvSection, TvCatalog>> {
+        var first: TvException? = null
+        for (agent in TvNet.agents(account.userAgent)) {
+            val candidate = account.copy(userAgent = if (agent == TvNet.userAgent) "" else agent)
+            try {
+                return candidate to playlist(candidate, now)
+            } catch (e: TvException) {
+                if (first == null) first = e
+                if (e.network && !e.forwarded) break
+            }
+        }
+        throw first ?: TvException("That address did not return a playlist.")
+    }
+
     fun details(account: TvAccount, item: TvItem): TvDetails = when (item.section) {
-        TvSection.SHOWS -> Xtream.series(ask(Xtream.api(account, "get_series_info", "series_id" to item.id)))
-        TvSection.MOVIES -> Xtream.movie(ask(Xtream.api(account, "get_vod_info", "vod_id" to item.id)))
+        TvSection.SHOWS -> Xtream.series(ask(Xtream.api(account, "get_series_info", "series_id" to item.id), agent(account)))
+        TvSection.MOVIES -> Xtream.movie(ask(Xtream.api(account, "get_vod_info", "vod_id" to item.id), agent(account)))
         TvSection.LIVE -> TvDetails()
     }
 
     /** What is on [channelId] now and for the next few programmes. */
     fun guide(account: TvAccount, channelId: String, count: Int = 6): List<TvProgramme> =
-        Xtream.guide(ask(Xtream.api(account, "get_short_epg", "stream_id" to channelId, "limit" to count.toString())))
+        Xtream.guide(ask(Xtream.api(account, "get_short_epg", "stream_id" to channelId, "limit" to count.toString()), agent(account)))
 
-    private fun ask(address: String): JsonObject = TvNet.open(address).use { response ->
+    private fun ask(address: String, agent: String?): JsonObject = TvNet.open(address, agent = agent).use { response ->
         val text = readLimited(clean(response.stream), SMALL_ANSWER).toString(Charsets.UTF_8).trim()
         val element = runCatching { Xtream.json.parseToJsonElement(text) }.getOrNull()
         element as? JsonObject ?: throw TvException(

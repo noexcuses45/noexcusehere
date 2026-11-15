@@ -120,7 +120,7 @@ class TvRepository(context: Context, private val scope: CoroutineScope) {
                 val asLogin = account.copy(type = TvAccount.XTREAM, server = login.server, username = login.username, password = login.password)
                 val checked = withContext(Dispatchers.IO) {
                     try {
-                        TvClient.signIn(asLogin)
+                        TvClient.signIn(asLogin, emptyList())
                     } catch (e: TvException) {
                         loginProblem = e
                         null
@@ -130,7 +130,7 @@ class TvRepository(context: Context, private val scope: CoroutineScope) {
                 }
                 if (checked != null) account = checked.copy(playlistUrl = "")
                 // The server cannot be reached: fetching the playlist from it would only fail the same way, slowly.
-                loginProblem?.let { if (it.network) throw it }
+                loginProblem?.let { if (it.network && !it.forwarded) throw it }
             }
         }
         var catalogs: Map<TvSection, TvCatalog>? = null
@@ -142,7 +142,9 @@ class TvRepository(context: Context, private val scope: CoroutineScope) {
         } else {
             if (!account.playlistUrl.startsWith("http", ignoreCase = true)) throw TvException("The playlist link should start with http:// or https://")
             catalogs = try {
-                withContext(Dispatchers.IO) { attempt { TvClient.playlist(account, now) } }
+                val (accepted, lists) = withContext(Dispatchers.IO) { attempt { TvClient.playlistHowever(account, now) } }
+                account = accepted
+                lists
             } catch (e: TvException) {
                 // "That user name or password was not accepted" says more than a failed download does.
                 throw loginProblem ?: e
@@ -429,6 +431,12 @@ class TvRepository(context: Context, private val scope: CoroutineScope) {
         val to = (at + CAST_WINDOW).coerceAtMost(lineup.lastIndex)
         val entries = (from..to).mapNotNull { entry(lineup[it]) }
         return entries to (at - from)
+    }
+
+    /** How to introduce the app when fetching [entry]'s stream: whatever its service accepted at sign-in. */
+    fun agentFor(entry: MediaEntry?): String? {
+        val ref = entry?.tvRef ?: return null
+        return saved.accounts.firstOrNull { it.id == ref.account }?.userAgent?.ifBlank { null }
     }
 
     /** The channel behind a playing stream, e.g. to star it from the player. */

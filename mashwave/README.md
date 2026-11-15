@@ -41,6 +41,14 @@ old one and keeps playlists, likes and mashups.
 - Sign in with what the provider gives you: **DNS (URL), username and password** (an "Xtream
   Codes" login), or a **playlist link** (M3U). "Paste" reads a whole copied message or the long
   `get.php?username=...` link and fills the boxes in. Several services can be kept and switched
+- If the first address can't be reached, any other address in the pasted message (providers
+  often give a spare) is tried, and a failed sign-in says what happened: which server, and
+  whether it refused, didn't answer, or was blocked on the phone or Wi-Fi
+- Some services only answer players they recognise and turn everything else away. Sign-in
+  first introduces the app under its own name, then under the two standard Android ones, and
+  remembers which was accepted for the lists, the streams and casting. **More** in the sign-in
+  form shows the choice (Automatic, Android, VLC, or a name you type) - ask your provider which
+  players it allows before naming a different one
 - **Live TV, Movies, Shows** as three sections, each with the provider's categories
 - **Countries:** one button per country, worked out from how providers name their categories
   ("UK | Sports", "[US] News", "AU: Entertainment", flags ...), the phone's own country first

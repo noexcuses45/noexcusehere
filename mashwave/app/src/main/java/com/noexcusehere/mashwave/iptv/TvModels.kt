@@ -27,6 +27,11 @@ data class TvAccount(
     val maxConnections: Int = 0,
     /** Stream formats the service allows ("ts", "m3u8"). */
     val formats: List<String> = emptyList(),
+    /**
+     * How the app introduces itself to this service (the "user agent"). Empty means the app's
+     * own name. Some services only answer players they recognise; sign-in finds one that works.
+     */
+    val userAgent: String = "",
 ) {
     val isXtream: Boolean
         get() = type == XTREAM
@@ -166,4 +171,6 @@ class TvException(
     cause: Throwable? = null,
     /** True when the server could not be reached at all (as opposed to answering "no"). */
     val network: Boolean = false,
+    /** True when the failure came after the service forwarded the app somewhere else. */
+    val forwarded: Boolean = false,
 ) : Exception(message, cause)

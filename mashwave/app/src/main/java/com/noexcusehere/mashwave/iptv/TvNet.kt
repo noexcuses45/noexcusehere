@@ -16,6 +16,27 @@ object TvNet {
     @Volatile
     var userAgent: String = "UltimateBeats/1.0 (Linux;Android) AndroidXMedia3/1.9.4"
 
+    /** How Android's own web client introduces itself; plenty of players send exactly this. */
+    @Volatile
+    var platformAgent: String = runCatching { System.getProperty("http.agent") }.getOrNull().orEmpty()
+
+    /** The name of the most widely used Android web library. */
+    const val LIBRARY_AGENT = "okhttp/4.12.0"
+
+    /** The open-source VLC player, which nearly every service accepts. */
+    const val VLC_AGENT = "VLC/3.0.21 LibVLC/3.0.21"
+
+    /** What the player sends for the stream that is on now; null means the app's own name. */
+    @Volatile
+    var playbackAgent: String? = null
+
+    /**
+     * The introductions to try, in order, when a service turns the first one away:
+     * [preferred] if the user chose one, the app's own name, then the two standard Android ones.
+     */
+    fun agents(preferred: String = ""): List<String> =
+        listOf(preferred, userAgent, platformAgent, LIBRARY_AGENT).map { it.trim() }.filter { it.isNotEmpty() }.distinct()
+
     class Response(val connection: HttpURLConnection, val url: String) : Closeable {
         val code: Int
             get() = connection.responseCode
@@ -42,6 +63,7 @@ object TvNet {
         connectMs: Int = 15_000,
         readMs: Int = 30_000,
         check: Boolean = true,
+        agent: String? = null,
     ): Response {
         var url = address
         var hops = 0
@@ -51,7 +73,7 @@ object TvNet {
                 connection.connectTimeout = connectMs
                 connection.readTimeout = readMs
                 connection.instanceFollowRedirects = false
-                connection.setRequestProperty("User-Agent", userAgent)
+                connection.setRequestProperty("User-Agent", agent?.takeIf { it.isNotBlank() } ?: userAgent)
                 connection.setRequestProperty("Accept", "*/*")
                 for ((name, value) in headers) connection.setRequestProperty(name, value)
                 val code = connection.responseCode
@@ -60,6 +82,12 @@ object TvNet {
                     connection.disconnect()
                     if (next.isNullOrBlank() || ++hops > 8) throw TvException("The service kept sending us somewhere else.")
                     url = URL(URL(url), next).toString()
+                    // "Go to nowhere" is how some services turn away a player they do not recognise.
+                    val target = runCatching { URL(url).host }.getOrDefault("")
+                    val asked = runCatching { URL(address).host }.getOrDefault("")
+                    if ((isDeadEnd(target) || target.equals("localhost", ignoreCase = true)) && !target.equals(asked, ignoreCase = true)) {
+                        throw TvException(describe(Trouble.REFUSED, target, 80, listOf(target), forwarded = true), network = true, forwarded = true)
+                    }
                     continue
                 }
                 if (check && code !in 200..299) {
@@ -78,7 +106,7 @@ object TvNet {
             val host = runCatching { URL(url).host }.getOrDefault("")
             val port = runCatching { URL(url).let { if (it.port > 0) it.port else it.defaultPort } }.getOrDefault(80)
             val found = if (trouble == Trouble.NO_NAME) emptyList() else lookup(host)
-            throw TvException(describe(trouble, host, port, found, forwarded = hops > 0), e, network = true)
+            throw TvException(describe(trouble, host, port, found, forwarded = hops > 0), e, network = true, forwarded = hops > 0)
         }
     }
 
@@ -112,6 +140,8 @@ object TvNet {
         val first = found.firstOrNull().orEmpty()
         val another = "Try the other DNS your TV provider gave you, or switch between Wi-Fi and mobile data."
         return when {
+            forwarded && (isDeadEnd(host) || host.equals("localhost", ignoreCase = true) || (found.isNotEmpty() && found.all { isDeadEnd(it) })) ->
+                "The service turned the app away: it forwarded it to a dead end ($host). Some services only answer players they recognise."
             trouble == Trouble.NO_NAME ->
                 "Can't find $where. Check the spelling and the internet connection. If both are right, this network may be hiding that address. $another"
             found.isNotEmpty() && found.all { isDeadEnd(it) } ->

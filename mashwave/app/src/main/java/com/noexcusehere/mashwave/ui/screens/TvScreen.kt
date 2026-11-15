@@ -84,6 +84,7 @@ import com.noexcusehere.mashwave.iptv.TvAccount
 import com.noexcusehere.mashwave.iptv.TvCatalog
 import com.noexcusehere.mashwave.iptv.TvException
 import com.noexcusehere.mashwave.iptv.TvItem
+import com.noexcusehere.mashwave.iptv.TvNet
 import com.noexcusehere.mashwave.iptv.TvRegions
 import com.noexcusehere.mashwave.iptv.TvSection
 import com.noexcusehere.mashwave.iptv.TvState
@@ -476,6 +477,9 @@ fun TvAccountDialog(existing: TvAccount?, onDismiss: () -> Unit) {
     var problem by remember { mutableStateOf<String?>(null) }
     // Other addresses found in a pasted message; tried if the first one cannot be reached.
     var spares by remember { mutableStateOf(emptyList<String>()) }
+    // How the app introduces itself to the service; empty lets sign-in find one that is accepted.
+    var agent by remember { mutableStateOf(existing?.userAgent.orEmpty()) }
+    var more by remember { mutableStateOf(existing?.userAgent?.isNotBlank() == true) }
     val ready = if (playlistMode) link.isNotBlank() else server.isNotBlank() && username.isNotBlank() && password.isNotBlank()
 
     fun paste() {
@@ -505,9 +509,9 @@ fun TvAccountDialog(existing: TvAccount?, onDismiss: () -> Unit) {
         scope.launch {
             try {
                 val draft = if (playlistMode) {
-                    TvAccount(id = "", name = name.trim(), type = TvAccount.PLAYLIST, playlistUrl = link.trim())
+                    TvAccount(id = "", name = name.trim(), type = TvAccount.PLAYLIST, playlistUrl = link.trim(), userAgent = agent.trim())
                 } else {
-                    TvAccount(id = "", name = name.trim(), type = TvAccount.XTREAM, server = server, username = username, password = password)
+                    TvAccount(id = "", name = name.trim(), type = TvAccount.XTREAM, server = server, username = username, password = password, userAgent = agent.trim())
                 }
                 app.tv.add(draft, replaces = existing?.id, spares = if (playlistMode) emptyList() else spares)
                 onDismiss()
@@ -617,6 +621,44 @@ fun TvAccountDialog(existing: TvAccount?, onDismiss: () -> Unit) {
                     colors = tvFieldColors(),
                     modifier = Modifier.fillMaxWidth(),
                 )
+                Text(
+                    if (more) "Less" else "More",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = Pink,
+                    modifier = Modifier
+                        .padding(top = 6.dp)
+                        .clip(RoundedCornerShape(50))
+                        .clickable(enabled = !busy) { more = !more }
+                        .padding(horizontal = 4.dp, vertical = 8.dp),
+                )
+                if (more) {
+                    Text("Introduce the app as", style = MaterialTheme.typography.labelLarge, color = TextHi)
+                    Text(
+                        "Some services only answer players they recognise. Automatic tries the usual ones by itself. " +
+                            "If yours still says no but works in another player, type that player's name below - " +
+                            "ask your provider if you are unsure which players it allows.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = TextMid,
+                        modifier = Modifier.padding(top = 2.dp, bottom = 8.dp),
+                    )
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Chip("Automatic", agent.isBlank(), { agent = "" })
+                        if (TvNet.platformAgent.isNotBlank()) Chip("Android", agent == TvNet.platformAgent, { agent = TvNet.platformAgent })
+                        Chip("VLC", agent == TvNet.VLC_AGENT, { agent = TvNet.VLC_AGENT })
+                    }
+                    Spacer(Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = agent,
+                        onValueChange = { agent = it },
+                        label = { Text("Player name (user agent)") },
+                        placeholder = { Text("Automatic") },
+                        singleLine = true,
+                        enabled = !busy,
+                        keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.None, autoCorrectEnabled = false, imeAction = ImeAction.Done),
+                        colors = tvFieldColors(),
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
                 if (!playlistMode && spares.isNotEmpty() && problem == null && !busy) {
                     Spacer(Modifier.height(8.dp))
                     Text(

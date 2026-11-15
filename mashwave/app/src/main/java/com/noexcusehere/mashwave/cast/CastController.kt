@@ -328,7 +328,7 @@ class CastController(private val context: Context, private val scope: CoroutineS
         val address = context.app.tv.castAddress(entry, chromecast)
         val mime = StreamRelay.mimeFor(address, entry.isLiveTv, link?.accepts.orEmpty())
         var base = ""
-        val relay = StreamRelay(address, entry.isLiveTv, mime) { base }
+        val relay = StreamRelay(address, entry.isLiveTv, mime, context.app.tv.agentFor(entry)) { base }
         val name = when {
             mime == "application/x-mpegURL" -> "stream.m3u8"
             entry.isLiveTv -> "stream.ts"
