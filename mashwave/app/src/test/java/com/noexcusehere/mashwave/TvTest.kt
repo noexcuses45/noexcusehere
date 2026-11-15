@@ -89,6 +89,28 @@ class TvTest {
     }
 
     @Test
+    fun triesTheOtherKindOfConnectionAndTheSpares() {
+        assertEquals("http://tv.example.com", Xtream.otherScheme("https://tv.example.com"))
+        assertEquals("https://tv.example.com", Xtream.otherScheme("http://tv.example.com"))
+        assertEquals("http://tv.example.com/panel", Xtream.otherScheme("https://tv.example.com/panel"))
+        // A port says which kind of connection it is; guessing the other would be wrong.
+        assertNull(Xtream.otherScheme("http://tv.example.com:8080"))
+        assertNull(Xtream.otherScheme("https://tv.example.com:2096"))
+        assertNull(Xtream.otherScheme("rtmp://tv.example.com"))
+
+        // Typed with https by habit, as the provider's message has http: the plain one is tried right after.
+        assertEquals(
+            listOf("https://tv.example.com", "http://tv.example.com", "http://spare.example.net", "https://spare.example.net"),
+            Xtream.candidates("https://tv.example.com/", listOf("http://spare.example.net", "http://tv.example.com")),
+        )
+        assertEquals(listOf("http://tv.example.com:8080"), Xtream.candidates("tv.example.com:8080", emptyList()))
+
+        val secure = TvNet.describe(TvNet.Trouble.REFUSED, "tv.example.com", 443, listOf("203.0.113.9"))
+        assertTrue(secure.contains("https"))
+        assertTrue(secure.contains("http://, without the"))
+    }
+
+    @Test
     fun buildsAddresses() {
         assertEquals("http://tv.example.com:8080/player_api.php?username=me&password=se+cret", Xtream.api(account))
         assertEquals(

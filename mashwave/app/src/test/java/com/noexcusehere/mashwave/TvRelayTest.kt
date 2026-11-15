@@ -266,7 +266,7 @@ class TvRelayTest {
             org.junit.Assert.fail("expected a failure")
         } catch (e: TvException) {
             assertTrue(e.network)
-            assertTrue(e.message!!.contains("could not be reached either"))
+            assertTrue(e.message!!, e.message!!.contains("Also tried http://127.0.0.1:$other"))
             assertFalse(e.message!!.contains("right"))
         }
     }

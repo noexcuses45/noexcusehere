@@ -30,15 +30,15 @@ object TvClient {
     /**
      * Signs in, working around the two things that stop a correct login:
      *
-     * - the address cannot be reached at all: the [spares] (other addresses of the same service)
-     *   are tried in turn;
+     * - the address cannot be reached at all: the same address over the other kind of connection
+     *   (http / https) is tried, then the [spares] (other addresses of the same service);
      * - the server is there but turns this app away: some services only answer players they
      *   recognise, so the standard Android introductions are tried as well.
      *
      * Returns the account with the address and the introduction that worked.
      */
     fun signIn(account: TvAccount, spares: List<String>): TvAccount {
-        val servers = (listOf(account.server) + spares.map { Xtream.normalizeServer(it) }).filter { it.isNotEmpty() }.distinct()
+        val servers = Xtream.candidates(account.server, spares)
         var unreachable: TvException? = null
         var refused: TvException? = null
         for (server in servers) {
@@ -56,13 +56,15 @@ object TvClient {
                     if (kept == null || (kept.network && !e.network)) refused = e
                 }
             }
-            // This server was there and said no every time; a spare address of the same service would too.
+            // This server was there and said no every time; another address of the same service would too.
             if (refused != null) break
         }
         refused?.let { throw TvException(it.message + " " + OTHER_PLAYER_HINT, it, network = it.network, forwarded = it.forwarded) }
         val problem = unreachable ?: throw TvException("Fill in the server address, user name and password.")
-        if (servers.size < 2) throw problem
-        throw TvException(problem.message + " The other ${if (servers.size == 2) "address" else "${servers.size - 1} addresses"} in the message could not be reached either.", problem, network = true)
+        val others = servers.drop(1)
+        if (others.isEmpty()) throw problem
+        // Say what else was tried, so nobody retypes an address the app has already ruled out.
+        throw TvException(problem.message + " Also tried " + others.joinToString(", ") + " - no luck there either.", problem, network = true)
     }
 
     /** One section of a login's catalogue: its categories and everything in them. */

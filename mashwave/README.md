@@ -41,9 +41,11 @@ old one and keeps playlists, likes and mashups.
 - Sign in with what the provider gives you: **DNS (URL), username and password** (an "Xtream
   Codes" login), or a **playlist link** (M3U). "Paste" reads a whole copied message or the long
   `get.php?username=...` link and fills the boxes in. Several services can be kept and switched
-- If the first address can't be reached, any other address in the pasted message (providers
-  often give a spare) is tried, and a failed sign-in says what happened: which server, and
-  whether it refused, didn't answer, or was blocked on the phone or Wi-Fi
+- If the first address can't be reached, the app tries it the other way round (`http://` when
+  `https://` was typed, and the reverse - most services only have `http://`), then any other
+  address in the pasted message (providers often give a spare). A failed sign-in says what
+  happened: which server, and whether it refused, didn't answer, or was blocked on the phone
+  or Wi-Fi
 - Some services only answer players they recognise and turn everything else away. Sign-in
   first introduces the app under its own name, then under the two standard Android ones, and
   remembers which was accepted for the lists, the streams and casting. **More** in the sign-in

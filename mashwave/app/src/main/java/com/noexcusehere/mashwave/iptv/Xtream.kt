@@ -102,6 +102,28 @@ object Xtream {
     fun serversInText(text: String): List<String> =
         linkPattern.findAll(text).map { normalizeServer(it.value.trimEnd('.', ',', ')', ';')) }.filter { it.isNotEmpty() }.distinct().toList()
 
+    /**
+     * The same server address with the other kind of connection: "https://host" for
+     * "http://host" and the reverse. People type "https" out of habit when the service only
+     * has "http". Null when the address names a port, which fixes the kind of connection.
+     */
+    fun otherScheme(server: String): String? {
+        val secure = server.startsWith("https://", ignoreCase = true)
+        val rest = server.substringAfter("://", "")
+        if (rest.isEmpty() || !server.startsWith("http", ignoreCase = true)) return null
+        val host = rest.substringBefore('/')
+        if (':' in host) return null
+        return (if (secure) "http://" else "https://") + rest
+    }
+
+    /**
+     * Every address worth trying for a login, in order: the one given, the same with the other
+     * kind of connection, then each spare the same way.
+     */
+    fun candidates(server: String, spares: List<String>): List<String> =
+        (listOf(server) + spares).map { normalizeServer(it) }.filter { it.isNotEmpty() }
+            .flatMap { listOfNotNull(it, otherScheme(it)) }.distinct()
+
     private fun query(text: String): String = URLEncoder.encode(text, "UTF-8")
 
     private fun path(text: String): String = URLEncoder.encode(text, "UTF-8").replace("+", "%20")

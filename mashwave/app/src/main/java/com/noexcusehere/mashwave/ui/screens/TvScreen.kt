@@ -570,6 +570,7 @@ fun TvAccountDialog(existing: TvAccount?, onDismiss: () -> Unit) {
                         onValueChange = { server = it },
                         label = { Text("DNS (URL)") },
                         placeholder = { Text("http://example.com:8080") },
+                        supportingText = { Text("As your provider wrote it - usually http://, not https://") },
                         singleLine = true,
                         enabled = !busy,
                         keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.None, autoCorrectEnabled = false, keyboardType = KeyboardType.Uri, imeAction = ImeAction.Next),

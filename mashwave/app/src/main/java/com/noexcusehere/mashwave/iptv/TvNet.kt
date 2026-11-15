@@ -147,6 +147,8 @@ object TvNet {
             found.isNotEmpty() && found.all { isDeadEnd(it) } ->
                 "This network sends the app to a dead end for $where (it answered \"$first\"). Something on this Wi-Fi or phone is blocking that address: " +
                     "an ad blocker, a \"Private DNS\" setting, a VPN, or the internet provider. $another"
+            trouble == Trouble.REFUSED && port == 443 ->
+                "$where refused a secure (https) connection. Most TV services use http://, without the \"s\". (Refused by $first, port 443)"
             trouble == Trouble.REFUSED ->
                 "$where refused the connection. The address may be out of date, or this network blocks it. $another (Refused by $first, port $port)"
             trouble == Trouble.UNREACHABLE ->
