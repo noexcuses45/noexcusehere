@@ -17,8 +17,10 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.VolumeUp
 import androidx.compose.material.icons.rounded.Cast
 import androidx.compose.material.icons.rounded.CastConnected
+import androidx.compose.material.icons.rounded.Forward10
 import androidx.compose.material.icons.rounded.Pause
 import androidx.compose.material.icons.rounded.PlayArrow
+import androidx.compose.material.icons.rounded.Replay10
 import androidx.compose.material.icons.rounded.SkipNext
 import androidx.compose.material.icons.rounded.SkipPrevious
 import androidx.compose.material.icons.rounded.Speaker
@@ -255,13 +257,19 @@ private fun Remote(state: CastState) {
             horizontalArrangement = Arrangement.Center,
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            IconButton(onClick = { app.cast.previous() }, modifier = Modifier.size(56.dp)) {
-                Icon(Icons.Rounded.SkipPrevious, contentDescription = "Previous", tint = TextHi, modifier = Modifier.size(38.dp))
+            IconButton(onClick = { app.cast.previous() }, modifier = Modifier.size(52.dp)) {
+                Icon(Icons.Rounded.SkipPrevious, contentDescription = "Previous", tint = TextHi, modifier = Modifier.size(36.dp))
             }
-            Spacer(Modifier.width(18.dp))
+            IconButton(onClick = { app.cast.seekBy(-10_000) }, modifier = Modifier.size(52.dp)) {
+                Icon(Icons.Rounded.Replay10, contentDescription = "Back 10 seconds", tint = TextHi, modifier = Modifier.size(32.dp))
+            }
+            Spacer(Modifier.width(8.dp))
             GradientPlayButton(playing = state.playing, onClick = { app.cast.togglePlay() }, size = 64.dp)
-            Spacer(Modifier.width(18.dp))
-            IconButton(onClick = { app.cast.next() }, modifier = Modifier.size(56.dp), enabled = state.index < state.queue.lastIndex) {
+            Spacer(Modifier.width(8.dp))
+            IconButton(onClick = { app.cast.seekBy(10_000) }, modifier = Modifier.size(52.dp)) {
+                Icon(Icons.Rounded.Forward10, contentDescription = "Forward 10 seconds", tint = TextHi, modifier = Modifier.size(32.dp))
+            }
+            IconButton(onClick = { app.cast.next() }, modifier = Modifier.size(52.dp), enabled = state.index < state.queue.lastIndex) {
                 Icon(
                     Icons.Rounded.SkipNext,
                     contentDescription = "Next",

@@ -39,6 +39,9 @@ data class PlayerUiState(
     val sleepTimerEndsAt: Long = 0,
 )
 
+/** Tells the video screen that a video was carried on from where it was stopped. */
+data class ResumeNotice(val uri: String, val positionMs: Long, val at: Long)
+
 /** One selectable audio or subtitle track inside the current file. */
 data class TrackOption(
     val label: String,
@@ -62,6 +65,9 @@ class PlayerConnection(private val context: Context, private val scope: Coroutin
 
     private val _state = MutableStateFlow(PlayerUiState())
     val state: StateFlow<PlayerUiState> = _state
+
+    /** Set by the player when it picks a video up where it was left. */
+    val resumed = MutableStateFlow<ResumeNotice?>(null)
 
     fun connect() {
         if (future != null) return

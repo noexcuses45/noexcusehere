@@ -56,6 +56,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.noexcusehere.mashwave.app
 import com.noexcusehere.mashwave.data.MediaEntry
 import com.noexcusehere.mashwave.data.MediaSource
+import com.noexcusehere.mashwave.data.ResumeRules
 import com.noexcusehere.mashwave.data.source
 import com.noexcusehere.mashwave.data.formatDuration
 import com.noexcusehere.mashwave.data.toFolders
@@ -84,6 +85,7 @@ fun VideosScreen() {
     val videos by app.library.videos.collectAsStateWithLifecycle()
     val data by app.store.data.collectAsStateWithLifecycle()
     val player by app.player.state.collectAsStateWithLifecycle()
+    val resume by app.store.resume.collectAsStateWithLifecycle()
     val importer = rememberMediaImporter()
     var addMenu by remember { mutableStateOf(false) }
     var creating by remember { mutableStateOf(false) }
@@ -251,6 +253,7 @@ fun VideosScreen() {
                         isCurrent = player.current?.uri == entry.uri,
                         onClick = { ui.play(app.player, shown, index) },
                         onMore = { ui.openMenu(entry) },
+                        watched = ResumeRules.fraction(resume[entry.uri]),
                     )
                 }
             }
@@ -272,14 +275,15 @@ fun VideosScreen() {
     }
 }
 
+/** [watched] is how far through the video was got to last time (0 = not started or finished). */
 @Composable
-fun VideoCard(entry: MediaEntry, isCurrent: Boolean, onClick: () -> Unit, onMore: () -> Unit) {
+fun VideoCard(entry: MediaEntry, isCurrent: Boolean, onClick: () -> Unit, onMore: () -> Unit, watched: Float = 0f) {
     Column(
         Modifier
             .clip(RoundedCornerShape(12.dp))
             .combinedClickable(onClick = onClick, onLongClick = onMore),
     ) {
-        Box {
+        Box(Modifier.clip(RoundedCornerShape(12.dp))) {
             Artwork(
                 entry,
                 Modifier
@@ -298,6 +302,23 @@ fun VideoCard(entry: MediaEntry, isCurrent: Boolean, onClick: () -> Unit, onMore
             ) {
                 Icon(Icons.Rounded.PlayArrow, contentDescription = null, tint = Color.White)
             }
+            if (watched > 0f) {
+                // A thin line along the bottom shows where the video will carry on from.
+                Box(
+                    Modifier
+                        .align(Alignment.BottomStart)
+                        .fillMaxWidth()
+                        .height(4.dp)
+                        .background(Color.White.copy(alpha = 0.3f)),
+                )
+                Box(
+                    Modifier
+                        .align(Alignment.BottomStart)
+                        .fillMaxWidth(watched.coerceIn(0.03f, 1f))
+                        .height(4.dp)
+                        .background(Pink),
+                )
+            }
             if (entry.durationMs > 0) {
                 Text(
                     formatDuration(entry.durationMs),
@@ -305,7 +326,7 @@ fun VideoCard(entry: MediaEntry, isCurrent: Boolean, onClick: () -> Unit, onMore
                     color = Color.White,
                     modifier = Modifier
                         .align(Alignment.BottomEnd)
-                        .padding(6.dp)
+                        .padding(start = 6.dp, end = 6.dp, top = 6.dp, bottom = if (watched > 0f) 9.dp else 6.dp)
                         .clip(RoundedCornerShape(6.dp))
                         .background(Color.Black.copy(alpha = 0.65f))
                         .padding(horizontal = 6.dp, vertical = 2.dp),

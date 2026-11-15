@@ -85,3 +85,53 @@ class SourcesTest {
         assertTrue(again.playlists.single { it.id == "w1" }.video)
     }
 }
+
+class ResumeRulesTest {
+    private val hour = 3_600_000L
+
+    @Test
+    fun aVideoPartWayThroughIsRemembered() {
+        assertTrue(com.noexcusehere.mashwave.data.ResumeRules.worthKeeping(12 * 60_000L, hour))
+        // Barely started: just begin again.
+        assertFalse(com.noexcusehere.mashwave.data.ResumeRules.worthKeeping(4_000, hour))
+        // The last two minutes of an hour (credits) count as finished.
+        assertFalse(com.noexcusehere.mashwave.data.ResumeRules.worthKeeping(hour - 60_000, hour))
+        assertTrue(com.noexcusehere.mashwave.data.ResumeRules.nearEnd(hour - 60_000, hour))
+        assertFalse(com.noexcusehere.mashwave.data.ResumeRules.nearEnd(30 * 60_000L, hour))
+        // Short clips never resume.
+        assertFalse(com.noexcusehere.mashwave.data.ResumeRules.worthKeeping(20_000, 45_000))
+        // A three-minute video: 15 seconds from the end is "finished", 30 seconds is not.
+        assertFalse(com.noexcusehere.mashwave.data.ResumeRules.worthKeeping(170_000, 180_000))
+        assertTrue(com.noexcusehere.mashwave.data.ResumeRules.worthKeeping(150_000, 180_000))
+    }
+
+    @Test
+    fun resumingStartsALittleEarly() {
+        val rules = com.noexcusehere.mashwave.data.ResumeRules
+        assertEquals(0, rules.startFrom(null))
+        assertEquals(718_000, rules.startFrom(com.noexcusehere.mashwave.data.ResumePoint(720_000, hour)))
+        assertEquals(0.2f, rules.fraction(com.noexcusehere.mashwave.data.ResumePoint(720_000, hour)), 0.001f)
+        assertEquals(0f, rules.fraction(null), 0f)
+    }
+
+    @Test
+    fun savingForgettingAndTheLimit() {
+        val rules = com.noexcusehere.mashwave.data.ResumeRules
+        var all = emptyMap<String, com.noexcusehere.mashwave.data.ResumePoint>()
+        all = rules.updated(all, "a", 10 * 60_000L, hour, now = 1)
+        assertEquals(10 * 60_000L, all.getValue("a").positionMs)
+        // Moving on replaces the place.
+        all = rules.updated(all, "a", 20 * 60_000L, hour, now = 2)
+        assertEquals(20 * 60_000L, all.getValue("a").positionMs)
+        // Reaching the end forgets it.
+        all = rules.updated(all, "a", hour - 5_000, hour, now = 3)
+        assertFalse("a" in all)
+        // Nothing to forget: the very same map comes back, so nothing is rewritten.
+        assertTrue(rules.updated(all, "zzz", 1_000, hour, now = 4) === all)
+        // Only the newest places are kept.
+        for (i in 0 until rules.MAX_KEPT + 20) all = rules.updated(all, "v$i", 5 * 60_000L, hour, now = 100L + i)
+        assertEquals(rules.MAX_KEPT, all.size)
+        assertFalse("v0" in all)
+        assertTrue("v${rules.MAX_KEPT + 19}" in all)
+    }
+}

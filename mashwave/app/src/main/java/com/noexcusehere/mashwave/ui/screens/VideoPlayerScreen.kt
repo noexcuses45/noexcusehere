@@ -13,6 +13,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -34,6 +35,7 @@ import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.automirrored.rounded.VolumeUp
 import androidx.compose.material.icons.rounded.AspectRatio
 import androidx.compose.material.icons.rounded.BrightnessMedium
+import androidx.compose.material.icons.rounded.FastForward
 import androidx.compose.material.icons.rounded.Forward10
 import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material.icons.rounded.LockOpen
@@ -54,6 +56,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -76,6 +79,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.media3.ui.AspectRatioFrameLayout
 import com.noexcusehere.mashwave.app
 import com.noexcusehere.mashwave.data.formatDuration
+import com.noexcusehere.mashwave.playback.ResumeNotice
 import com.noexcusehere.mashwave.ui.LocalUi
 import com.noexcusehere.mashwave.ui.SpeedSheet
 import com.noexcusehere.mashwave.ui.TracksSheet
@@ -97,7 +101,8 @@ private fun Context.findActivity(): Activity? {
 
 /**
  * Full-screen video with VLC-style gestures: tap to show controls, double-tap either side to
- * skip 10 seconds, drag up/down on the left for brightness and on the right for volume.
+ * skip 10 seconds, hold to fast-forward, slide sideways to move through the video, drag up/down
+ * on the left for brightness and on the right for volume.
  */
 @Composable
 fun VideoPlayerScreen() {
@@ -121,6 +126,23 @@ fun VideoPlayerScreen() {
     var rotationChosen by remember { mutableStateOf(false) }
     var dragging by remember { mutableStateOf(false) }
     var dragValue by remember { mutableStateOf(0f) }
+    // Holding a finger down plays at double speed until it is lifted.
+    var boosting by remember { mutableStateOf(false) }
+    var speedBefore by remember { mutableFloatStateOf(1f) }
+    // While a finger slides sideways: the place it would jump to, and where it started from.
+    var scrub by remember { mutableStateOf<Pair<Long, Long>?>(null) }
+    // "Carried on from 12:34", shown for a few seconds after a video resumes.
+    val resumed by app.player.resumed.collectAsStateWithLifecycle()
+    var resumeNote by remember { mutableStateOf<ResumeNotice?>(null) }
+    LaunchedEffect(resumed) {
+        val notice = resumed
+        // Recent only: reopening the player ten minutes later must not announce it again.
+        if (notice != null && System.currentTimeMillis() - notice.at < 15_000) {
+            resumeNote = notice
+            delay(8000)
+            resumeNote = null
+        }
+    }
 
     fun close() {
         ui.videoFullscreen = false
@@ -205,6 +227,20 @@ fun VideoPlayerScreen() {
                 .fillMaxSize()
                 .pointerInput(locked) {
                     detectTapGestures(
+                        onPress = {
+                            tryAwaitRelease()
+                            if (boosting) {
+                                boosting = false
+                                app.player.setSpeed(speedBefore)
+                            }
+                        },
+                        onLongPress = {
+                            if (!locked && latest.isPlaying) {
+                                speedBefore = latest.speed
+                                boosting = true
+                                app.player.setSpeed(maxOf(2f, speedBefore * 2f).coerceAtMost(4f))
+                            }
+                        },
                         onTap = {
                             controls = !controls
                             touchTick++
@@ -218,6 +254,42 @@ fun VideoPlayerScreen() {
                                     app.player.seekBy(10_000)
                                     showHint(Icons.Rounded.Forward10, "+10 s")
                                 }
+                            }
+                        },
+                    )
+                }
+                .pointerInput(locked) {
+                    // Slide a finger sideways to move back or forward through the video.
+                    if (locked) return@pointerInput
+                    var start = 0L
+                    var length = 0L
+                    var total = 0f
+                    var active = false
+                    detectHorizontalDragGestures(
+                        onDragStart = { offset ->
+                            // Leave the screen edges to the system's own "back" swipe.
+                            val edge = 40.dp.toPx()
+                            length = app.player.durationMs
+                            active = length > 0 && offset.x > edge && offset.x < size.width - edge
+                            start = app.player.positionMs
+                            total = 0f
+                        },
+                        onDragEnd = {
+                            if (active) scrub?.let { app.player.seekTo(it.first) }
+                            scrub = null
+                            active = false
+                        },
+                        onDragCancel = {
+                            scrub = null
+                            active = false
+                        },
+                        onHorizontalDrag = { input, delta ->
+                            if (active) {
+                                input.consume()
+                                total += delta
+                                // One sweep across the screen covers a fifth of the video (1 to 10 minutes).
+                                val span = (length / 5).coerceIn(60_000L, 600_000L).coerceAtMost(length)
+                                scrub = (start + (total / size.width * span).toLong()).coerceIn(0, length) to start
                             }
                         },
                     )
@@ -286,6 +358,74 @@ fun VideoPlayerScreen() {
                 Icon(icon, contentDescription = null, tint = Color.White, modifier = Modifier.size(20.dp))
                 Spacer(Modifier.width(8.dp))
                 Text(text, style = MaterialTheme.typography.titleSmall, color = Color.White)
+            }
+        }
+
+        // ---- fast-forward and seek feedback ----
+        if (boosting) {
+            Row(
+                Modifier
+                    .align(Alignment.TopCenter)
+                    .padding(top = 72.dp)
+                    .clip(RoundedCornerShape(50))
+                    .background(Color.Black.copy(alpha = 0.65f))
+                    .padding(horizontal = 16.dp, vertical = 9.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(Icons.Rounded.FastForward, contentDescription = null, tint = Color.White, modifier = Modifier.size(20.dp))
+                Spacer(Modifier.width(8.dp))
+                Text("Fast forward - let go to play normally", style = MaterialTheme.typography.titleSmall, color = Color.White)
+            }
+        }
+        scrub?.let { (target, from) ->
+            val moved = target - from
+            Column(
+                Modifier
+                    .align(Alignment.Center)
+                    .clip(RoundedCornerShape(16.dp))
+                    .background(Color.Black.copy(alpha = 0.7f))
+                    .padding(horizontal = 22.dp, vertical = 12.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                Text(
+                    (if (moved < 0) "−" else "+") + formatDuration(kotlin.math.abs(moved)),
+                    style = MaterialTheme.typography.headlineSmall,
+                    color = Color.White,
+                )
+                Text(
+                    formatDuration(target) + "  /  " + formatDuration(duration),
+                    style = MaterialTheme.typography.labelLarge,
+                    color = Color.White.copy(alpha = 0.8f),
+                )
+            }
+        }
+        resumeNote?.let { note ->
+            if (note.uri == state.current?.uri && !locked) {
+                Row(
+                    Modifier
+                        .align(Alignment.BottomCenter)
+                        .padding(bottom = 76.dp)
+                        .clip(RoundedCornerShape(50))
+                        .background(Color.Black.copy(alpha = 0.72f))
+                        .padding(start = 16.dp, end = 6.dp, top = 4.dp, bottom = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text("Carried on from ${formatDuration(note.positionMs)}", style = MaterialTheme.typography.titleSmall, color = Color.White)
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        "Start over",
+                        style = MaterialTheme.typography.labelLarge,
+                        color = Pink,
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(50))
+                            .clickable {
+                                app.store.clearResume(note.uri)
+                                app.player.seekTo(0)
+                                resumeNote = null
+                            }
+                            .padding(horizontal = 12.dp, vertical = 8.dp),
+                    )
+                }
             }
         }
 

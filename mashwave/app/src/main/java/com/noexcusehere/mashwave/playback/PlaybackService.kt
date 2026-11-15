@@ -20,6 +20,7 @@ import com.google.common.util.concurrent.ListenableFuture
 import com.noexcusehere.mashwave.MainActivity
 import com.noexcusehere.mashwave.MashwaveApp
 import com.noexcusehere.mashwave.R
+import com.noexcusehere.mashwave.data.ResumeRules
 import com.noexcusehere.mashwave.data.SavedQueue
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -43,8 +44,40 @@ class PlaybackService : MediaSessionService() {
     private val positionTicker = object : Runnable {
         override fun run() {
             savePosition()
+            rememberSpot()
             if (player.isPlaying) handler.postDelayed(this, 10_000)
         }
+    }
+
+    // ---- carrying on a video where it was stopped ------------------------------------------
+
+    /** The video whose length we last saw, so its place can still be saved after the player moved on. */
+    private var lengthOf: String? = null
+    private var lengthMs = 0L
+
+    private fun showsVideo(item: MediaItem): Boolean =
+        item.toEntry().isVideo || player.currentTracks.groups.any { it.type == C.TRACK_TYPE_VIDEO }
+
+    /** Saves how far into the current video we are. Songs and live streams are left alone. */
+    private fun rememberSpot() {
+        val item = player.currentMediaItem ?: return
+        val duration = player.duration
+        if (duration == C.TIME_UNSET || duration <= 0 || player.isCurrentMediaItemLive || !showsVideo(item)) return
+        lengthOf = item.mediaId
+        lengthMs = duration
+        mashwave.store.saveResume(item.mediaId, player.currentPosition, duration)
+    }
+
+    /** Jumps a freshly started video to the place it was stopped at last time. */
+    private fun resumeIfKnown(item: MediaItem?) {
+        item ?: return
+        if (!item.toEntry().isVideo || player.currentPosition > 1500) return
+        val point = mashwave.store.resumePoint(item.mediaId) ?: return
+        val start = ResumeRules.startFrom(point)
+        if (start <= 0) return
+        player.seekTo(start)
+        // Lets the video screen say "carried on from 12:34" and offer to start over.
+        mashwave.player.resumed.value = ResumeNotice(item.mediaId, start, System.currentTimeMillis())
     }
 
     private val saveQueueTask = Runnable {
@@ -95,6 +128,7 @@ class PlaybackService : MediaSessionService() {
 
     override fun onTaskRemoved(rootIntent: Intent?) {
         savePosition()
+        rememberSpot()
         val idle = !player.playWhenReady || player.mediaItemCount == 0 ||
             player.playbackState == Player.STATE_ENDED || player.playbackState == Player.STATE_IDLE
         if (idle) stopSelf()
@@ -103,6 +137,7 @@ class PlaybackService : MediaSessionService() {
     override fun onDestroy() {
         handler.removeCallbacksAndMessages(null)
         savePosition()
+        rememberSpot()
         AudioFx.release()
         session?.release()
         session = null
@@ -150,12 +185,36 @@ class PlaybackService : MediaSessionService() {
                 handler.postDelayed(positionTicker, 10_000)
             } else {
                 savePosition()
+                // Paused or stopped: this is the moment people expect their place to be kept.
+                if (player.playbackState != Player.STATE_ENDED) rememberSpot()
             }
+        }
+
+        override fun onPositionDiscontinuity(oldPosition: Player.PositionInfo, newPosition: Player.PositionInfo, reason: Int) {
+            val left = oldPosition.mediaItem ?: return
+            if (oldPosition.mediaItemIndex == newPosition.mediaItemIndex && left.mediaId == newPosition.mediaItem?.mediaId &&
+                reason != Player.DISCONTINUITY_REASON_AUTO_TRANSITION
+            ) {
+                return
+            }
+            // The player has left a video: it either ran to its end, or the viewer moved on.
+            if (reason == Player.DISCONTINUITY_REASON_AUTO_TRANSITION) {
+                mashwave.store.clearResume(left.mediaId)
+            } else if (left.toEntry().isVideo) {
+                val length = if (lengthOf == left.mediaId) lengthMs else left.toEntry().durationMs
+                if (length > 0) mashwave.store.saveResume(left.mediaId, oldPosition.positionMs, length)
+            }
+        }
+
+        override fun onPlaybackStateChanged(playbackState: Int) {
+            // Watched to the very end: next time it starts from the beginning.
+            if (playbackState == Player.STATE_ENDED) player.currentMediaItem?.let { mashwave.store.clearResume(it.mediaId) }
         }
 
         override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
             if (player.isPlaying) recordCurrent()
             savePosition()
+            if (reason != Player.MEDIA_ITEM_TRANSITION_REASON_REPEAT) resumeIfKnown(mediaItem)
         }
 
         override fun onTimelineChanged(timeline: androidx.media3.common.Timeline, reason: Int) {

@@ -8,6 +8,7 @@ import android.webkit.MimeTypeMap
 import com.noexcusehere.mashwave.KeepAliveService
 import com.noexcusehere.mashwave.app
 import com.noexcusehere.mashwave.data.MediaEntry
+import com.noexcusehere.mashwave.data.ResumeRules
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -87,6 +88,7 @@ class CastController(private val context: Context, private val scope: CoroutineS
     private var quietUntil = 0L
     private var sawPlaying = false
     private var misses = 0
+    private var polls = 0
 
     val isConnected: Boolean
         get() = _state.value.device != null
@@ -201,6 +203,8 @@ class CastController(private val context: Context, private val scope: CoroutineS
     }
 
     fun disconnect() {
+        // Keep the place of whatever was on, so it can carry on later on the phone or the TV.
+        _state.value.let { if (it.playing || it.positionMs > 0) rememberSpot(it.positionMs, it.durationMs) }
         val current = link
         pollJob?.cancel()
         pollJob = null
@@ -231,8 +235,37 @@ class CastController(private val context: Context, private val scope: CoroutineS
     fun play(entries: List<MediaEntry>, index: Int, startMs: Long = 0) {
         if (entries.isEmpty() || link == null) return
         val at = index.coerceIn(0, entries.lastIndex)
-        _state.update { it.copy(queue = entries, index = at, positionMs = startMs, durationMs = entries[at].durationMs, loading = true, playing = false, problem = null) }
-        load(entries[at], startMs)
+        val from = startFor(entries[at], startMs)
+        _state.update { it.copy(queue = entries, index = at, positionMs = from, durationMs = entries[at].durationMs, loading = true, playing = false, problem = null) }
+        load(entries[at], from)
+    }
+
+    /** A video carries on where it was stopped (on the phone or on the TV) unless told otherwise. */
+    private fun startFor(entry: MediaEntry, requestedMs: Long): Long = when {
+        requestedMs > 0 -> requestedMs
+        entry.isVideo -> ResumeRules.startFrom(context.app.store.resumePoint(entry.uri))
+        else -> 0
+    }
+
+    /** Jumps back or forward, e.g. by ten seconds. */
+    fun seekBy(deltaMs: Long) {
+        val s = _state.value
+        if (s.entry == null) return
+        var target = (s.positionMs + deltaMs).coerceAtLeast(0)
+        if (s.durationMs > 0) target = target.coerceAtMost((s.durationMs - 1000).coerceAtLeast(0))
+        seekTo(target)
+    }
+
+    /** Keeps a video's place while it plays on the TV, so it can be picked up later anywhere. */
+    private fun rememberSpot(positionMs: Long, durationMs: Long) {
+        val entry = _state.value.entry ?: return
+        if (!entry.isVideo || entry.isStream && durationMs <= 0) return
+        val store = context.app.store
+        if (ResumeRules.worthKeeping(positionMs, durationMs)) {
+            store.saveResume(entry.uri, positionMs, durationMs)
+        } else if (ResumeRules.nearEnd(positionMs, durationMs)) {
+            store.clearResume(entry.uri)
+        }
     }
 
     private fun load(entry: MediaEntry, startMs: Long) {
@@ -330,8 +363,9 @@ class CastController(private val context: Context, private val scope: CoroutineS
     fun skipTo(index: Int) {
         val s = _state.value
         if (index !in s.queue.indices) return
-        _state.update { it.copy(index = index, positionMs = 0, durationMs = s.queue[index].durationMs, loading = true, playing = false, problem = null) }
-        load(s.queue[index], 0)
+        val from = startFor(s.queue[index], 0)
+        _state.update { it.copy(index = index, positionMs = from, durationMs = s.queue[index].durationMs, loading = true, playing = false, problem = null) }
+        load(s.queue[index], from)
     }
 
     fun setVolume(level: Float) {
@@ -379,6 +413,14 @@ class CastController(private val context: Context, private val scope: CoroutineS
                 _state.update { it.copy(playing = false, loading = false, positionMs = 0) }
             }
             return
+        }
+        // Save the place every few seconds while playing, and at once when paused.
+        val wasPlaying = _state.value.playing
+        polls++
+        if (!quiet && status.durationMs > 0 &&
+            ((status.state == RemoteState.PLAYING && polls % 5 == 0) || (status.state == RemoteState.PAUSED && wasPlaying))
+        ) {
+            rememberSpot(status.positionMs, status.durationMs)
         }
         _state.update {
             it.copy(

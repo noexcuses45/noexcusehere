@@ -24,8 +24,14 @@ old one and keeps playlists, likes and mashups.
   Downloads, Google Drive ...) or by folder
 - **Watch lists**: playlists for videos. Make one from the Videos tab or a video's menu
   ("Add to watch list"), then play it through, reorder it, rename it
-- Full-screen player: double-tap either side to skip 10 s, swipe up/down on the left for
-  brightness and on the right for volume, fit / zoom / stretch, rotate, lock controls
+- Full-screen player: double-tap either side to skip 10 s (or use the -10 / +10 buttons),
+  **hold a finger down to fast-forward** at double speed, **slide sideways to move through the
+  video**, swipe up/down on the left for brightness and on the right for volume, fit / zoom /
+  stretch, rotate, lock controls
+- **Carries on where you stopped:** each video remembers its place (the Videos tab shows how
+  far you got with a line under the thumbnail). Reopening it continues from there, with a
+  "Start over" button for a few seconds. Videos under a minute, and ones watched to the end,
+  start from the beginning. The place is shared between the phone and the TV
 - Audio-track and subtitle selection, playback speed
 - Keeps playing as audio when you leave the video
 
@@ -78,7 +84,8 @@ reverse and freeze-frame.
 - **Fire TV Stick:** it has no built-in receiver, so install a free receiver app on it (for
   example AirScreen); the stick then shows up in the list
 - While connected, anything you start in the app plays on the TV, the queue moves on by
-  itself, and the phone is the remote (play / pause, seek, next / previous, TV volume)
+  itself, and the phone is the remote (play / pause, back / forward 10 s, seek, next /
+  previous, TV volume). Videos carry on from where they were stopped
 - The TV fetches the file from the phone over your Wi-Fi; phone and TV must be on the same
   network. The TV has to be able to play the file's format itself - the phone does not convert
 - The manual two-deck mashup is mixed live on the phone and cannot be cast; saved Auto

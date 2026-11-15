@@ -8,6 +8,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.serialization.builtins.MapSerializer
+import kotlinx.serialization.builtins.serializer
 import kotlinx.serialization.json.Json
 import java.io.File
 import java.util.UUID
@@ -25,8 +27,11 @@ val AppJson = Json {
 class UserStore(context: Context, private val scope: CoroutineScope) {
     private val file = File(context.filesDir, "mashwave-user.json")
     private val queueFile = File(context.filesDir, "mashwave-queue.json")
+    private val resumeFile = File(context.filesDir, "mashwave-resume.json")
+    private val resumeSerializer = MapSerializer(String.serializer(), ResumePoint.serializer())
     private val writes = Channel<UserData>(Channel.CONFLATED)
     private val queueWrites = Channel<SavedQueue>(Channel.CONFLATED)
+    private val resumeWrites = Channel<Map<String, ResumePoint>>(Channel.CONFLATED)
 
     private val _data = MutableStateFlow(load())
     val data: StateFlow<UserData> = _data
@@ -41,6 +46,44 @@ class UserStore(context: Context, private val scope: CoroutineScope) {
             for (snapshot in queueWrites) {
                 runCatching { writeAtomic(queueFile, AppJson.encodeToString(SavedQueue.serializer(), snapshot)) }
             }
+        }
+        scope.launch(Dispatchers.IO) {
+            for (snapshot in resumeWrites) {
+                runCatching { writeAtomic(resumeFile, AppJson.encodeToString(resumeSerializer, snapshot)) }
+            }
+        }
+    }
+
+    // ---- where each video was stopped --------------------------------------------------
+    // Kept in a file of its own: it is rewritten every few seconds while a video plays, and
+    // there is no reason to rewrite every playlist along with it.
+
+    private val _resume = MutableStateFlow(
+        runCatching {
+            if (resumeFile.exists()) AppJson.decodeFromString(resumeSerializer, resumeFile.readText()) else emptyMap()
+        }.getOrElse { emptyMap() },
+    )
+
+    /** Video address to the place it was stopped at. */
+    val resume: StateFlow<Map<String, ResumePoint>> = _resume
+
+    fun resumePoint(uri: String): ResumePoint? = _resume.value[uri]
+
+    /** Remembers the place, or forgets it when the video was barely started or is nearly over. */
+    fun saveResume(uri: String, positionMs: Long, durationMs: Long) {
+        val before = _resume.value
+        val after = ResumeRules.updated(before, uri, positionMs, durationMs, System.currentTimeMillis())
+        if (after !== before) {
+            _resume.value = after
+            resumeWrites.trySend(after)
+        }
+    }
+
+    fun clearResume(uri: String) {
+        val before = _resume.value
+        if (uri in before) {
+            _resume.value = before - uri
+            resumeWrites.trySend(_resume.value)
         }
     }
 
