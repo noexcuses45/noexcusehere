@@ -24,12 +24,17 @@ data class MediaEntry(
     val height: Int = 0,
     /** A still picture. Photos only ever appear in the video editor's picker, never in the players. */
     val isImage: Boolean = false,
+    /** Web address of a picture for it (a channel's logo, a movie's poster). */
+    val art: String = "",
+    /** Set for streams from the TV tab: says whether it is a live channel, and which one. */
+    val tv: String = "",
 ) {
     val isStream: Boolean
         get() = uri.startsWith("http://") || uri.startsWith("https://") || uri.startsWith("rtsp://")
 
     val subtitle: String
         get() = when {
+            tv.isNotEmpty() && artist.isNotBlank() -> artist
             isStream -> "Network stream"
             isVideo -> "Video"
             artist.isNotBlank() -> artist
@@ -40,15 +45,15 @@ data class MediaEntry(
 
     /** Album-art address understood by the system media controls (lock screen, notification). */
     val artworkUri: Uri?
-        get() = if (!isVideo && albumId > 0) {
-            Uri.parse("content://media/external/audio/albumart/$albumId")
-        } else {
-            null
+        get() = when {
+            art.startsWith("http") -> Uri.parse(art)
+            !isVideo && albumId > 0 -> Uri.parse("content://media/external/audio/albumart/$albumId")
+            else -> null
         }
 
     /** Songs from one album share artwork, so they share a cache slot. */
     val artKey: String
-        get() = if (!isVideo && albumId > 0) "album:$albumId" else uri
+        get() = if (art.isNotEmpty()) art else if (!isVideo && albumId > 0) "album:$albumId" else uri
 
     val folderName: String
         get() = folder.trimEnd('/').substringAfterLast('/').ifBlank { "Internal storage" }

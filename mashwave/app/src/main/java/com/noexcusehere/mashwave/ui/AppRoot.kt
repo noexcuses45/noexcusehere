@@ -32,6 +32,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.QueueMusic
 import androidx.compose.material.icons.rounded.GraphicEq
 import androidx.compose.material.icons.rounded.Home
+import androidx.compose.material.icons.rounded.LiveTv
 import androidx.compose.material.icons.rounded.LibraryMusic
 import androidx.compose.material.icons.rounded.MovieCreation
 import androidx.compose.material.icons.rounded.Pause
@@ -65,6 +66,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavType
@@ -74,6 +76,7 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.noexcusehere.mashwave.app
+import com.noexcusehere.mashwave.iptv.isLiveTv
 import com.noexcusehere.mashwave.playback.PlayerUiState
 import com.noexcusehere.mashwave.ui.components.Artwork
 import com.noexcusehere.mashwave.ui.components.ArtworkLoader
@@ -88,6 +91,10 @@ import com.noexcusehere.mashwave.ui.screens.MashupScreen
 import com.noexcusehere.mashwave.ui.screens.NowPlayingScreen
 import com.noexcusehere.mashwave.ui.screens.PlaylistsScreen
 import com.noexcusehere.mashwave.ui.screens.SearchScreen
+import com.noexcusehere.mashwave.ui.screens.TvDetailScreen
+import com.noexcusehere.mashwave.ui.screens.TvListScreen
+import com.noexcusehere.mashwave.ui.screens.TvScreen
+import com.noexcusehere.mashwave.ui.screens.TvSearchScreen
 import com.noexcusehere.mashwave.ui.screens.VideoPlayerScreen
 import com.noexcusehere.mashwave.ui.screens.VideosScreen
 import com.noexcusehere.mashwave.ui.screens.WelcomeScreen
@@ -106,6 +113,7 @@ private val tabs = listOf(
     Tab(Routes.HOME, "Home", Icons.Rounded.Home),
     Tab(Routes.LIBRARY, "Library", Icons.Rounded.LibraryMusic),
     Tab(Routes.VIDEOS, "Videos", Icons.Rounded.VideoLibrary),
+    Tab(Routes.TV, "TV", Icons.Rounded.LiveTv),
     Tab(Routes.MASHUP, "Mashup", Icons.Rounded.GraphicEq),
     Tab(Routes.EDITOR, "Edit", Icons.Rounded.MovieCreation),
     Tab(Routes.PLAYLISTS, "Playlists", Icons.AutoMirrored.Rounded.QueueMusic),
@@ -152,7 +160,9 @@ fun AppRoot(ui: UiState) {
     ui.castRoute = { entries, index ->
         if (app.cast.isConnected) {
             app.player.pause()
-            app.cast.play(entries, index)
+            // A channel goes to the TV together with its neighbours, so the remote can change channel.
+            val around = entries.singleOrNull()?.let { app.tv.lineupAround(it) }
+            if (around != null) app.cast.play(around.first, around.second) else app.cast.play(entries, index)
             true
         } else {
             false
@@ -219,6 +229,21 @@ fun AppRoot(ui: UiState) {
                             composable(Routes.HOME) { HomeScreen() }
                             composable(Routes.LIBRARY) { LibraryScreen() }
                             composable(Routes.VIDEOS) { VideosScreen() }
+                            composable(Routes.TV) { TvScreen() }
+                            composable(Routes.TV_SEARCH) { TvSearchScreen() }
+                            composable(Routes.TV_DETAIL) { TvDetailScreen() }
+                            composable(
+                                Routes.TV_LIST,
+                                arguments = listOf(
+                                    navArgument("section") { type = NavType.StringType },
+                                    navArgument("category") { type = NavType.StringType },
+                                ),
+                            ) { entry ->
+                                TvListScreen(
+                                    sectionName = entry.arguments?.getString("section") ?: "LIVE",
+                                    category = entry.arguments?.getString("category")?.takeIf { it != "-" }.orEmpty(),
+                                )
+                            }
                             composable(Routes.MASHUP) { MashupScreen() }
                             composable(Routes.PLAYLISTS) { PlaylistsScreen() }
                             composable(Routes.EDITOR) { EditorHomeScreen() }
@@ -255,7 +280,8 @@ fun AppRoot(ui: UiState) {
                             state = player,
                             onOpen = { if (player.hasVideo) ui.videoFullscreen = true else ui.nowPlayingOpen = true },
                             onToggle = { app.player.togglePlay() },
-                            onNext = { app.player.next() },
+                            // On a live channel "next" means the next channel.
+                            onNext = { if (player.current?.isLiveTv != true || !app.tv.zap(app.player, 1)) app.player.next() },
                         )
                     }
                     BottomBar(
@@ -347,14 +373,16 @@ private fun BottomBar(current: String?, onSelect: (String) -> Unit) {
                     tab.icon,
                     contentDescription = null,
                     tint = if (isSelected) Pink else TextLow,
-                    modifier = Modifier.size(25.dp),
+                    modifier = Modifier.size(24.dp),
                 )
                 Spacer(Modifier.height(3.dp))
                 Text(
                     tab.label,
-                    style = MaterialTheme.typography.labelSmall,
+                    // Seven tabs share the width; slightly tighter lettering keeps "Playlists" whole on narrow phones.
+                    style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.5.sp, letterSpacing = 0.1.sp),
                     color = if (isSelected) TextHi else TextLow,
                     maxLines = 1,
+                    softWrap = false,
                 )
             }
         }

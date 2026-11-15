@@ -8,6 +8,8 @@ import android.webkit.MimeTypeMap
 import com.noexcusehere.mashwave.KeepAliveService
 import com.noexcusehere.mashwave.app
 import com.noexcusehere.mashwave.data.MediaEntry
+import com.noexcusehere.mashwave.iptv.isLiveTv
+import com.noexcusehere.mashwave.iptv.isTv
 import com.noexcusehere.mashwave.data.ResumeRules
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -68,6 +70,10 @@ interface CastLink {
     /** Null when the device did not answer. */
     suspend fun status(): RemoteStatus?
     fun close()
+
+    /** The kinds of file the device says it plays (MIME types); empty when it does not say. */
+    val accepts: Set<String>
+        get() = emptySet()
 }
 
 /** Finds TVs, connects to one, and keeps a queue playing on it. */
@@ -89,6 +95,8 @@ class CastController(private val context: Context, private val scope: CoroutineS
     private var sawPlaying = false
     private var misses = 0
     private var polls = 0
+    private var liveRetries = 0
+    private var lastLiveRetry = 0L
 
     val isConnected: Boolean
         get() = _state.value.device != null
@@ -173,7 +181,8 @@ class CastController(private val context: Context, private val scope: CoroutineS
                     CastKind.DLNA -> renderers[device.id]?.let { renderer ->
                         // Make sure the TV really answers before calling it connected.
                         withContext(Dispatchers.IO) { Dlna.transportState(renderer) }
-                        DlnaLink(renderer)
+                        val accepts = withContext(Dispatchers.IO) { runCatching { Dlna.sinkTypes(renderer) }.getOrDefault(emptySet()) }
+                        DlnaLink(renderer, accepts)
                     }
                     CastKind.CHROMECAST -> chromecast?.connect(device.id)
                 }
@@ -197,7 +206,13 @@ class CastController(private val context: Context, private val scope: CoroutineS
             if (now.current != null && now.queue.isNotEmpty()) {
                 val position = local.positionMs
                 local.pause()
-                play(now.queue, now.index, if (now.current.isStream) 0 else position)
+                // A live channel moves over with the channels around it, so the remote can change channel.
+                val around = if (now.current.isLiveTv) context.app.tv.lineupAround(now.current) else null
+                when {
+                    around != null -> play(around.first, around.second)
+                    now.current.isLiveTv || (now.current.isStream && !now.current.isTv) -> play(now.queue, now.index)
+                    else -> play(now.queue, now.index, position)
+                }
             }
         }
     }
@@ -277,7 +292,7 @@ class CastController(private val context: Context, private val scope: CoroutineS
             try {
                 val (url, mime, art) = withContext(Dispatchers.IO) { addressFor(entry) }
                 withContext(Dispatchers.IO) { target.load(url, entry, mime, art, startMs) }
-                context.app.store.recordPlay(entry)
+                if (!entry.isTv) context.app.store.recordPlay(entry)
             } catch (e: Exception) {
                 if (!isActive) return@launch
                 Log.w(TAG, "Casting ${entry.title} failed", e)
@@ -290,6 +305,7 @@ class CastController(private val context: Context, private val scope: CoroutineS
 
     /** Where the TV can fetch [entry] from: the stream's own address, or this phone. */
     private fun addressFor(entry: MediaEntry): Triple<String, String, String?> {
+        if (entry.isTv) return relayFor(entry)
         val mime = mimeOf(entry)
         if (entry.isStream) return Triple(entry.uri, mime, null)
         val host = MediaServer.localAddress()?.hostAddress ?: throw IllegalStateException("The phone is not on Wi-Fi")
@@ -299,6 +315,28 @@ class CastController(private val context: Context, private val scope: CoroutineS
         val extension = MimeTypeMap.getSingleton().getExtensionFromMimeType(mime) ?: if (entry.isVideo) "mp4" else "mp3"
         val path = server.publish(source, entry.title.take(40) + "." + extension)
         return Triple("http://$host:$port$path", mime, null)
+    }
+
+    /**
+     * A channel, movie or episode from the TV tab reaches the TV through this phone: the TV is
+     * given an address here, and the phone fetches the real stream (whose address holds the login).
+     */
+    private fun relayFor(entry: MediaEntry): Triple<String, String, String?> {
+        val host = MediaServer.localAddress()?.hostAddress ?: throw IllegalStateException("The phone is not on Wi-Fi")
+        val port = server.start()
+        val chromecast = _state.value.device?.kind == CastKind.CHROMECAST
+        val address = context.app.tv.castAddress(entry, chromecast)
+        val mime = StreamRelay.mimeFor(address, entry.isLiveTv, link?.accepts.orEmpty())
+        var base = ""
+        val relay = StreamRelay(address, entry.isLiveTv, mime) { base }
+        val name = when {
+            mime == "application/x-mpegURL" -> "stream.m3u8"
+            entry.isLiveTv -> "stream.ts"
+            else -> "video." + (address.substringBefore('?').substringAfterLast('/').substringAfterLast('.', "mp4").take(5).ifBlank { "mp4" })
+        }
+        val path = server.publish(relay, name)
+        base = "http://$host:$port" + path.substringBeforeLast('/')
+        return Triple("http://$host:$port$path", mime, entry.art.takeIf { it.startsWith("http") })
     }
 
     /** What kind of file this is, as the TV needs to be told. */
@@ -357,7 +395,12 @@ class CastController(private val context: Context, private val scope: CoroutineS
 
     fun previous() {
         val s = _state.value
-        if (s.positionMs > 4000 || s.index == 0) seekTo(0) else skipTo(s.index - 1)
+        when {
+            // A live channel has no beginning to go back to: "previous" is the previous channel.
+            s.entry?.isLiveTv == true -> if (s.index > 0) skipTo(s.index - 1)
+            s.positionMs > 4000 || s.index == 0 -> seekTo(0)
+            else -> skipTo(s.index - 1)
+        }
     }
 
     fun skipTo(index: Int) {
@@ -407,6 +450,18 @@ class CastController(private val context: Context, private val scope: CoroutineS
         if (ended && _state.value.queue.isNotEmpty()) {
             sawPlaying = false
             val s = _state.value
+            if (s.entry?.isLiveTv == true) {
+                // A channel that stops has dropped out; moving to the next channel would be wrong.
+                val now = System.currentTimeMillis()
+                if (now - lastLiveRetry > 30_000) liveRetries = 0
+                lastLiveRetry = now
+                if (liveRetries++ < 2) {
+                    skipTo(s.index)
+                } else {
+                    _state.update { it.copy(playing = false, loading = false, problem = "“${s.entry?.title}” stopped. Tap play to try again, or pick another channel.") }
+                }
+                return
+            }
             if (s.index < s.queue.lastIndex) {
                 skipTo(s.index + 1)
             } else {
@@ -463,10 +518,11 @@ class CastController(private val context: Context, private val scope: CoroutineS
 }
 
 /** A smart TV or other device controlled the standard home-network way. */
-class DlnaLink(private val device: DlnaRenderer) : CastLink {
+class DlnaLink(private val device: DlnaRenderer, override val accepts: Set<String> = emptySet()) : CastLink {
     override suspend fun load(url: String, entry: MediaEntry, mime: String, artUrl: String?, startMs: Long) {
         runCatching { Dlna.stop(device) }
-        val metadata = Dlna.metadata(url, entry.title, entry.artist, mime, entry.isVideo, entry.durationMs, artUrl)
+        val features = if (entry.isLiveTv) MediaServer.DLNA_LIVE_FEATURES else MediaServer.DLNA_FEATURES
+        val metadata = Dlna.metadata(url, entry.title, entry.artist, mime, entry.isVideo, entry.durationMs, artUrl, features)
         try {
             Dlna.setUri(device, url, metadata)
         } catch (e: DlnaException) {

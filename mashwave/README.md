@@ -35,6 +35,29 @@ old one and keeps playlists, likes and mashups.
 - Audio-track and subtitle selection, playback speed
 - Keeps playing as audio when you leave the video
 
+**TV** (TV tab, between Videos and Mashup)
+- Plays **your own TV service** - the kind TiviMate or IPTV Smarters play. The app has no
+  channels of its own; without a subscription from a provider the tab is empty
+- Sign in with what the provider gives you: **DNS (URL), username and password** (an "Xtream
+  Codes" login), or a **playlist link** (M3U). "Paste" reads a whole copied message or the long
+  `get.php?username=...` link and fills the boxes in. Several services can be kept and switched
+- **Live TV, Movies, Shows** as three sections, each with the provider's categories
+- **Countries:** one button per country, worked out from how providers name their categories
+  ("UK | Sports", "[US] News", "AU: Entertainment", flags ...), the phone's own country first
+- **Search** across every channel, movie and show at once; each list also has its own filter
+  box and can be sorted (provider's order, A to Z, newest first)
+- **Favourites** (the star) and **Recently watched** sit at the top of each section
+- Live channels: next / previous channel with the arrows or by sliding sideways, a channel list
+  inside the player, and - when the provider has a guide - what is on now and next
+- A dropped channel reconnects by itself; it never skips to a different channel on an error
+- Movies and episodes use the normal video player: carry on where you stopped, -10 / +10,
+  hold to fast-forward, audio and subtitle tracks. A show remembers which episode you were on
+- **Casting** works here too. The stream passes through the phone on its way to the TV, so the
+  TV never sees the login, and the remote's arrows change channel. See the notes under
+  "Play on a TV"
+- Channel lists are kept on the phone (the tab opens at once) and refreshed when older than
+  half a day, or from the settings button
+
 **Auto Mashup** (Mashup tab → Auto)
 - Pick 2 to 6 songs, choose how long it should be (Auto, or 1 to 7 minutes) and press
   **Create mashup**; the app does the rest and saves one new track into `Music/Ultimate Beats`,
@@ -101,6 +124,12 @@ reverse and freeze-frame.
   network. The TV has to be able to play the file's format itself - the phone does not convert
 - The manual two-deck mashup is mixed live on the phone and cannot be cast; saved Auto
   Mashups are ordinary songs and can
+- **TV-tab streams** (channels, movies, episodes) go from the service to the phone and on to
+  the TV, so the phone has to stay on the Wi-Fi while they play. Smart TVs get the live channel
+  as the broadcast stream it is. A Chromecast cannot play that form, so for a login-based
+  service the app asks for the channel as a list of short pieces (HLS) instead - this only
+  works when the service offers channels that way. Movies in MKV with surround sound play on
+  most TVs but not on every Chromecast
 
 **Google Drive, Google Photos and other apps**
 - Library has an "add from Google Drive or files" button, Videos has "From Google Photos" and
@@ -193,20 +222,31 @@ app/src/main/java/com/noexcusehere/mashwave/
   editor/CompositionFactory.kt          turns a project into what the video engine plays / saves
   editor/EditorSession.kt               the open project (undo / redo) and the live preview
   editor/ExportManager.kt               saving the finished MP4 into the phone's library
+  iptv/Xtream.kt, M3u.kt                reading a TV service's answers and playlist files
+  iptv/TvClient.kt, TvNet.kt            asking the service; following forwarded addresses
+  iptv/TvRepository.kt, TvStore.kt      services, lists kept on the phone, favourites, what plays
+  iptv/TvRegions.kt, TvSearch.kt        country buttons and search
   cast/MediaServer.kt                   the small web server a TV fetches files from
+  cast/StreamRelay.kt, Hls.kt           passes a TV-tab stream through the phone to the TV
   cast/Dlna.kt                          finding and controlling smart TVs (UPnP / DLNA)
   cast/Chromecast.kt                    Chromecast through Google Play services
   cast/CastController.kt                the queue that plays on the TV
   KeepAliveService.kt                   keeps a save or a cast session alive in the background
   ui/                                   Compose screens, sheets, theme and components
 app/src/test/                           unit tests (tempo and beat detection, the auto-mixer, saved data,
-                                        editing rules, the media server, TV control)
+                                        editing rules, the media server, TV control, TV-service
+                                        answers and playlists, country detection, the pass-through)
 ```
 
 User data (playlists, likes, history, mashups, video projects, sound settings) is stored as
 JSON in the app's private storage. The app itself sends nothing to the internet; the network is
-only used for streams you open yourself and, while casting, to talk to the TV on your own Wi-Fi
-(the TV fetches the song or video straight from the phone).
+only used for streams you open yourself, for the TV service you signed in to, and, while
+casting, to talk to the TV on your own Wi-Fi (the TV fetches the song or video straight from
+the phone).
+
+TV logins are kept in a folder of the app's private storage that Android leaves out of cloud
+backups. They are sent to that TV service only - the same requests any IPTV player makes:
+its list of channels, movies and shows, the guide, pictures and the streams themselves.
 
 One exception to know about: Chromecast support uses Google's own Cast library. It is only
 switched on when you open the cast list, and like every app that can cast it may then report

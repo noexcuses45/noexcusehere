@@ -27,6 +27,8 @@ data class DlnaRenderer(
     val transportUrl: String,
     /** Where volume commands go, when the device offers them. */
     val renderingUrl: String?,
+    /** Where the device says which kinds of file it plays, when it offers that. */
+    val connectionUrl: String? = null,
 )
 
 data class DlnaPosition(val positionMs: Long, val durationMs: Long, val uri: String)
@@ -36,6 +38,7 @@ class DlnaException(message: String, val code: Int = 0) : Exception(message)
 object Dlna {
     const val AV_TRANSPORT = "urn:schemas-upnp-org:service:AVTransport:1"
     const val RENDERING_CONTROL = "urn:schemas-upnp-org:service:RenderingControl:1"
+    const val CONNECTION_MANAGER = "urn:schemas-upnp-org:service:ConnectionManager:1"
     private const val MEDIA_RENDERER = "urn:schemas-upnp-org:device:MediaRenderer:1"
 
     // ---- finding devices -------------------------------------------------------------------
@@ -100,6 +103,7 @@ object Dlna {
         val services = doc.getElementsByTagNameNS("*", "service")
         var transport: String? = null
         var rendering: String? = null
+        var connection: String? = null
         var owner: Element? = null
         for (i in 0 until services.length) {
             val service = services.item(i) as? Element ?: continue
@@ -111,6 +115,8 @@ object Dlna {
                 owner = service.parentNode?.parentNode as? Element
             } else if (type.startsWith("urn:schemas-upnp-org:service:RenderingControl:") && rendering == null) {
                 rendering = resolve(base, control)
+            } else if (type.startsWith("urn:schemas-upnp-org:service:ConnectionManager:") && connection == null) {
+                connection = resolve(base, control)
             }
         }
         if (transport == null) return null
@@ -125,6 +131,7 @@ object Dlna {
             model = field("modelName"),
             transportUrl = transport,
             renderingUrl = rendering,
+            connectionUrl = connection,
         )
     }
 
@@ -183,8 +190,30 @@ object Dlna {
         )
     }
 
+    /** The kinds of file (MIME types) the device says it can play; empty when it does not say. */
+    fun sinkTypes(device: DlnaRenderer): Set<String> {
+        val url = device.connectionUrl ?: return emptySet()
+        val sink = call(url, CONNECTION_MANAGER, "GetProtocolInfo")["Sink"].orEmpty()
+        return parseSinkTypes(sink)
+    }
+
+    /** "http-get:*:video/mp4:*,http-get:*:audio/mpeg:DLNA.ORG_PN=MP3" -> the types in the third place. */
+    fun parseSinkTypes(sink: String): Set<String> = sink.split(',').mapNotNull { entry ->
+        val parts = entry.trim().split(':')
+        if (parts.size >= 3 && parts[0].equals("http-get", ignoreCase = true)) parts[2].trim().lowercase().takeIf { '/' in it } else null
+    }.toSet()
+
     /** The "label" a TV reads to learn what it is about to play. */
-    fun metadata(url: String, title: String, artist: String, mime: String, isVideo: Boolean, durationMs: Long, artUrl: String?): String {
+    fun metadata(
+        url: String,
+        title: String,
+        artist: String,
+        mime: String,
+        isVideo: Boolean,
+        durationMs: Long,
+        artUrl: String?,
+        features: String = MediaServer.DLNA_FEATURES,
+    ): String {
         val kind = if (isVideo) "object.item.videoItem" else "object.item.audioItem.musicTrack"
         val duration = if (durationMs > 0) " duration=\"${formatTime(durationMs)}\"" else ""
         return buildString {
@@ -198,7 +227,7 @@ object Dlna {
             }
             if (artUrl != null) append("<upnp:albumArtURI>").append(escape(artUrl)).append("</upnp:albumArtURI>")
             append("<upnp:class>").append(kind).append("</upnp:class>")
-            append("<res protocolInfo=\"http-get:*:").append(escape(mime)).append(':').append(MediaServer.DLNA_FEATURES).append('"')
+            append("<res protocolInfo=\"http-get:*:").append(escape(mime)).append(':').append(features).append('"')
             append(duration).append('>').append(escape(url)).append("</res>")
             append("</item></DIDL-Lite>")
         }

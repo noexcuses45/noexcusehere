@@ -137,6 +137,7 @@ object ArtworkLoader {
     }
 
     private fun decode(context: Context, entry: MediaEntry, size: Int): Bitmap? {
+        // Channels and movies from the TV tab bring a picture address of their own; [Artwork] shows those itself.
         if (entry.isStream) return null
         val uri = Uri.parse(entry.uri)
         val resolver = context.contentResolver
@@ -218,6 +219,19 @@ fun Artwork(
     shape: Shape = RoundedCornerShape(8.dp),
     large: Boolean = false,
 ) {
+    if (entry != null && entry.art.isNotEmpty()) {
+        // A channel logo is shown whole; a poster or episode still fills the tile.
+        WebPicture(
+            entry.art,
+            modifier,
+            shape,
+            size = if (large) RemoteImages.WIDE else RemoteImages.LOGO,
+            crop = !entry.tv.startsWith("L"),
+            seed = entry.title,
+            inset = 4.dp,
+        )
+        return
+    }
     val context = LocalContext.current
     val generation = ArtworkLoader.generation.intValue
     // Keyed on the entry so a new track never shows the previous track's picture.

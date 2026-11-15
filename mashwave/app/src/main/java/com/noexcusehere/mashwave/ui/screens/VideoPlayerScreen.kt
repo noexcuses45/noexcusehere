@@ -26,6 +26,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.shape.CircleShape
@@ -36,6 +37,7 @@ import androidx.compose.material.icons.automirrored.rounded.VolumeUp
 import androidx.compose.material.icons.rounded.AspectRatio
 import androidx.compose.material.icons.rounded.BrightnessMedium
 import androidx.compose.material.icons.rounded.FastForward
+import androidx.compose.material.icons.rounded.FormatListBulleted
 import androidx.compose.material.icons.rounded.Forward10
 import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material.icons.rounded.LockOpen
@@ -46,6 +48,8 @@ import androidx.compose.material.icons.rounded.ScreenRotation
 import androidx.compose.material.icons.rounded.SkipNext
 import androidx.compose.material.icons.rounded.SkipPrevious
 import androidx.compose.material.icons.rounded.Speed
+import androidx.compose.material.icons.rounded.Star
+import androidx.compose.material.icons.rounded.StarBorder
 import androidx.compose.material.icons.rounded.Subtitles
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
@@ -78,11 +82,14 @@ import androidx.core.view.WindowInsetsControllerCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.media3.ui.AspectRatioFrameLayout
 import com.noexcusehere.mashwave.app
+import com.noexcusehere.mashwave.data.MediaEntry
 import com.noexcusehere.mashwave.data.formatDuration
 import com.noexcusehere.mashwave.playback.ResumeNotice
 import com.noexcusehere.mashwave.ui.LocalUi
 import com.noexcusehere.mashwave.ui.SpeedSheet
 import com.noexcusehere.mashwave.ui.TracksSheet
+import com.noexcusehere.mashwave.iptv.TvProgramme
+import com.noexcusehere.mashwave.iptv.isLiveTv
 import com.noexcusehere.mashwave.ui.components.MwSlider
 import com.noexcusehere.mashwave.ui.rememberPlaybackPosition
 import com.noexcusehere.mashwave.ui.theme.BrandGradient
@@ -132,6 +139,20 @@ fun VideoPlayerScreen() {
     // While a finger slides sideways: the place it would jump to, and where it started from.
     var scrub by remember { mutableStateOf<Pair<Long, Long>?>(null) }
     // "Carried on from 12:34", shown for a few seconds after a video resumes.
+    // A live channel has no beginning or end: no seeking, and "next" means the next channel.
+    val live = state.current?.isLiveTv == true
+    val tv by app.tv.state.collectAsStateWithLifecycle()
+    var guide by remember { mutableStateOf<List<TvProgramme>>(emptyList()) }
+    LaunchedEffect(state.current?.uri, live) {
+        guide = emptyList()
+        val channel = state.current
+        if (live && channel != null) {
+            while (true) {
+                guide = app.tv.guide(channel)
+                delay(60_000)
+            }
+        }
+    }
     val resumed by app.player.resumed.collectAsStateWithLifecycle()
     var resumeNote by remember { mutableStateOf<ResumeNotice?>(null) }
     LaunchedEffect(resumed) {
@@ -192,6 +213,11 @@ fun VideoPlayerScreen() {
             controls = false
         }
     }
+    // Stopped (paused from a headset, or a channel that failed): bring the controls back, so the
+    // way out - play again, another channel, back - is on screen instead of a bare picture.
+    LaunchedEffect(state.isPlaying, state.isBuffering) {
+        if (!state.isPlaying && !state.isBuffering && state.current != null) controls = true
+    }
     LaunchedEffect(hintTick) {
         if (hint != null) {
             delay(900)
@@ -235,7 +261,7 @@ fun VideoPlayerScreen() {
                             }
                         },
                         onLongPress = {
-                            if (!locked && latest.isPlaying) {
+                            if (!locked && latest.isPlaying && latest.current?.isLiveTv != true) {
                                 speedBefore = latest.speed
                                 boosting = true
                                 app.player.setSpeed(maxOf(2f, speedBefore * 2f).coerceAtMost(4f))
@@ -246,7 +272,7 @@ fun VideoPlayerScreen() {
                             touchTick++
                         },
                         onDoubleTap = { offset ->
-                            if (!locked) {
+                            if (!locked && latest.current?.isLiveTv != true) {
                                 if (offset.x < size.width / 2f) {
                                     app.player.seekBy(-10_000)
                                     showHint(Icons.Rounded.Replay10, "-10 s")
@@ -265,25 +291,42 @@ fun VideoPlayerScreen() {
                     var length = 0L
                     var total = 0f
                     var active = false
+                    // On a live channel the same slide changes channel instead.
+                    var zapping = false
                     detectHorizontalDragGestures(
                         onDragStart = { offset ->
                             // Leave the screen edges to the system's own "back" swipe.
                             val edge = 40.dp.toPx()
+                            val inside = offset.x > edge && offset.x < size.width - edge
+                            val onLive = latest.current?.isLiveTv == true
                             length = app.player.durationMs
-                            active = length > 0 && offset.x > edge && offset.x < size.width - edge
+                            active = !onLive && length > 0 && inside
+                            zapping = onLive && inside && app.tv.canStep
                             start = app.player.positionMs
                             total = 0f
                         },
                         onDragEnd = {
                             if (active) scrub?.let { app.player.seekTo(it.first) }
+                            if (zapping && kotlin.math.abs(total) > 72.dp.toPx()) {
+                                val forward = total < 0
+                                if (app.tv.zap(app.player, if (forward) 1 else -1)) {
+                                    showHint(if (forward) Icons.Rounded.SkipNext else Icons.Rounded.SkipPrevious, if (forward) "Next channel" else "Previous channel")
+                                }
+                            }
                             scrub = null
                             active = false
+                            zapping = false
                         },
                         onDragCancel = {
                             scrub = null
                             active = false
+                            zapping = false
                         },
                         onHorizontalDrag = { input, delta ->
+                            if (zapping) {
+                                input.consume()
+                                total += delta
+                            }
                             if (active) {
                                 input.consume()
                                 total += delta
@@ -472,8 +515,10 @@ fun VideoPlayerScreen() {
                         IconButton(onClick = { sheet = "tracks" }) {
                             Icon(Icons.Rounded.Subtitles, contentDescription = "Audio and subtitles", tint = Color.White)
                         }
-                        IconButton(onClick = { sheet = "speed" }) {
-                            Icon(Icons.Rounded.Speed, contentDescription = "Playback speed", tint = Color.White)
+                        if (!live) {
+                            IconButton(onClick = { sheet = "speed" }) {
+                                Icon(Icons.Rounded.Speed, contentDescription = "Playback speed", tint = Color.White)
+                            }
                         }
                         IconButton(onClick = {
                             resizeMode = when (resizeMode) {
@@ -519,15 +564,24 @@ fun VideoPlayerScreen() {
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(18.dp),
                     ) {
-                        if (state.queue.size > 1) {
-                            RoundControl(Icons.Rounded.SkipPrevious, "Previous") {
-                                app.player.previous()
+                        if (live) {
+                            if (app.tv.canStep) {
+                                RoundControl(Icons.Rounded.SkipPrevious, "Previous channel") {
+                                    app.tv.zap(app.player, -1)
+                                    touchTick++
+                                }
+                            }
+                        } else {
+                            if (state.queue.size > 1) {
+                                RoundControl(Icons.Rounded.SkipPrevious, "Previous") {
+                                    app.player.previous()
+                                    touchTick++
+                                }
+                            }
+                            RoundControl(Icons.Rounded.Replay10, "Back 10 seconds") {
+                                app.player.seekBy(-10_000)
                                 touchTick++
                             }
-                        }
-                        RoundControl(Icons.Rounded.Replay10, "Back 10 seconds") {
-                            app.player.seekBy(-10_000)
-                            touchTick++
                         }
                         Box(
                             Modifier
@@ -547,20 +601,40 @@ fun VideoPlayerScreen() {
                                 modifier = Modifier.size(42.dp),
                             )
                         }
-                        RoundControl(Icons.Rounded.Forward10, "Forward 10 seconds") {
-                            app.player.seekBy(10_000)
-                            touchTick++
-                        }
-                        if (state.queue.size > 1) {
-                            RoundControl(Icons.Rounded.SkipNext, "Next") {
-                                app.player.next()
+                        if (live) {
+                            if (app.tv.canStep) {
+                                RoundControl(Icons.Rounded.SkipNext, "Next channel") {
+                                    app.tv.zap(app.player, 1)
+                                    touchTick++
+                                }
+                            }
+                        } else {
+                            RoundControl(Icons.Rounded.Forward10, "Forward 10 seconds") {
+                                app.player.seekBy(10_000)
                                 touchTick++
+                            }
+                            if (state.queue.size > 1) {
+                                RoundControl(Icons.Rounded.SkipNext, "Next") {
+                                    app.player.next()
+                                    touchTick++
+                                }
                             }
                         }
                     }
 
-                    // bottom seek bar
-                    Row(
+                    // bottom: what is on (live channels) or the seek bar (everything else)
+                    val channel = state.current
+                    if (live && channel != null) {
+                        val item = remember(channel.uri, tv.recents) { app.tv.itemOf(channel) }
+                        LiveBar(
+                            entry = channel,
+                            guide = guide,
+                            favourite = item != null && tv.isFavourite(item),
+                            onStar = item?.let { found -> { app.tv.toggleFavourite(found); touchTick++ } },
+                            onChannels = if (app.tv.canStep) ({ sheet = "channels" }) else null,
+                            modifier = Modifier.align(Alignment.BottomCenter),
+                        )
+                    } else Row(
                         Modifier
                             .align(Alignment.BottomCenter)
                             .fillMaxWidth()
@@ -600,6 +674,135 @@ fun VideoPlayerScreen() {
     when (sheet) {
         "tracks" -> TracksSheet { sheet = "" }
         "speed" -> SpeedSheet { sheet = "" }
+        "channels" -> ChannelsSheet(state.current) { sheet = "" }
+    }
+}
+
+/** What a live channel shows instead of a seek bar: the channel, and what is on now and next. */
+@Composable
+private fun LiveBar(
+    entry: MediaEntry,
+    guide: List<TvProgramme>,
+    favourite: Boolean,
+    onStar: (() -> Unit)?,
+    onChannels: (() -> Unit)?,
+    modifier: Modifier = Modifier,
+) {
+    val now = System.currentTimeMillis()
+    val current = guide.firstOrNull { it.startMs <= now && it.endMs > now }
+    val next = guide.firstOrNull { it.startMs > now }
+    val clock = remember { java.text.DateFormat.getTimeInstance(java.text.DateFormat.SHORT) }
+    Row(
+        modifier
+            .fillMaxWidth()
+            .padding(start = 16.dp, end = 6.dp, top = 10.dp, bottom = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        com.noexcusehere.mashwave.ui.components.WebPicture(
+            entry.art,
+            Modifier.size(width = 76.dp, height = 52.dp),
+            RoundedCornerShape(10.dp),
+            seed = entry.title,
+        )
+        Spacer(Modifier.width(12.dp))
+        Column(Modifier.weight(1f)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    "LIVE",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = Color.White,
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(5.dp))
+                        .background(Color(0xFFE11D48))
+                        .padding(horizontal = 6.dp, vertical = 2.dp),
+                )
+                Spacer(Modifier.width(8.dp))
+                Text(entry.title, style = MaterialTheme.typography.titleMedium, color = Color.White, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+            if (current != null) {
+                Text(
+                    current.title + "  ·  " + clock.format(java.util.Date(current.startMs)) + " – " + clock.format(java.util.Date(current.endMs)),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = Color.White.copy(alpha = 0.9f),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(top = 3.dp),
+                )
+                Box(
+                    Modifier
+                        .padding(top = 4.dp)
+                        .fillMaxWidth()
+                        .height(3.dp)
+                        .clip(RoundedCornerShape(50))
+                        .background(Color.White.copy(alpha = 0.25f)),
+                ) {
+                    Box(Modifier.fillMaxWidth(current.progress(now)).height(3.dp).background(BrandGradient))
+                }
+            }
+            if (next != null) {
+                Text(
+                    "Next: " + next.title + " at " + clock.format(java.util.Date(next.startMs)),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = Color.White.copy(alpha = 0.7f),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(top = 3.dp),
+                )
+            }
+            if (current == null && next == null) {
+                Text(entry.subtitle, style = MaterialTheme.typography.bodySmall, color = Color.White.copy(alpha = 0.7f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+        }
+        if (onStar != null) {
+            IconButton(onClick = onStar) {
+                Icon(
+                    if (favourite) Icons.Rounded.Star else Icons.Rounded.StarBorder,
+                    contentDescription = if (favourite) "Remove from favourites" else "Add to favourites",
+                    tint = if (favourite) Color(0xFFFFB648) else Color.White,
+                )
+            }
+        }
+        if (onChannels != null) {
+            IconButton(onClick = onChannels) {
+                Icon(Icons.Rounded.FormatListBulleted, contentDescription = "Channel list", tint = Color.White)
+            }
+        }
+    }
+}
+
+/** The list the current channel came from, to jump straight to another one. */
+@Composable
+private fun ChannelsSheet(current: MediaEntry?, onDismiss: () -> Unit) {
+    val app = LocalContext.current.app
+    val tv by app.tv.state.collectAsStateWithLifecycle()
+    val channels = remember { app.tv.channels }
+    val playingId = current?.let { app.tv.itemOf(it)?.id }
+    val at = channels.indexOfFirst { it.id == playingId }
+    val listState = androidx.compose.foundation.lazy.rememberLazyListState(initialFirstVisibleItemIndex = (at - 2).coerceAtLeast(0))
+    com.noexcusehere.mashwave.ui.MwSheet(onDismiss) {
+        Text(
+            "Channels",
+            style = MaterialTheme.typography.titleLarge,
+            color = Color.White,
+            modifier = Modifier.padding(horizontal = 20.dp, vertical = 6.dp),
+        )
+        androidx.compose.foundation.lazy.LazyColumn(state = listState, modifier = Modifier.fillMaxWidth().height(420.dp)) {
+            items(channels.size, key = { channels[it].id }) { index ->
+                val item = channels[index]
+                ChannelRow(
+                    item = item,
+                    number = index + 1,
+                    playing = item.id == playingId,
+                    animate = true,
+                    favourite = tv.isFavourite(item),
+                    onStar = { app.tv.toggleFavourite(item) },
+                    onClick = {
+                        app.tv.tune(channels, index)?.let { app.player.play(listOf(it)) }
+                        onDismiss()
+                    },
+                )
+            }
+        }
     }
 }
 

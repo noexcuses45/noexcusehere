@@ -71,12 +71,18 @@ object Routes {
     const val HOME = "home"
     const val LIBRARY = "library"
     const val VIDEOS = "videos"
+    const val TV = "tv"
+    const val TV_LIST = "tv/list/{section}/{category}"
+    const val TV_DETAIL = "tv/detail"
+    const val TV_SEARCH = "tv/search"
     const val MASHUP = "mashup"
     const val PLAYLISTS = "playlists"
     const val EDITOR = "editor"
     const val SEARCH = "search"
     const val EQUALIZER = "equalizer"
     const val COLLECTION = "collection/{type}/{key}"
+
+    fun tvList(section: com.noexcusehere.mashwave.iptv.TvSection, category: String) = "tv/list/${section.name}/${Uri.encode(category.ifEmpty { "-" })}"
 
     fun collection(type: String, key: String = "-") = "collection/$type/${Uri.encode(key.ifEmpty { "-" })}"
 }

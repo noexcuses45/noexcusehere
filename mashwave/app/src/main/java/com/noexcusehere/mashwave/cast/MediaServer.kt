@@ -26,6 +26,12 @@ interface ServedSource {
     fun open(offset: Long): InputStream
 }
 
+/** Something that answers a request by itself, such as a stream passed through from the internet. */
+interface Responder {
+    /** [rest] is the part of the path after the published address; [query] whatever follows the "?". */
+    fun respond(method: String, rest: String, query: String, headers: Map<String, String>, output: OutputStream)
+}
+
 /**
  * A very small web server that lets a TV on the same Wi-Fi fetch the songs and videos being cast.
  * Only files that were explicitly published are reachable, each behind an unguessable address,
@@ -34,7 +40,7 @@ interface ServedSource {
 class MediaServer {
     private var server: ServerSocket? = null
     private var workers: ExecutorService? = null
-    private val published = ConcurrentHashMap<String, ServedSource>()
+    private val published = ConcurrentHashMap<String, Any>()
     private val random = SecureRandom()
 
     val port: Int
@@ -73,7 +79,12 @@ class MediaServer {
     }
 
     /** Makes [source] fetchable and returns its path (starting with "/"). [name] only makes the address readable. */
-    fun publish(source: ServedSource, name: String): String {
+    fun publish(source: ServedSource, name: String): String = publishAny(source, name)
+
+    /** The same for something that answers requests itself. */
+    fun publish(responder: Responder, name: String): String = publishAny(responder, name)
+
+    private fun publishAny(source: Any, name: String): String {
         val bytes = ByteArray(12)
         random.nextBytes(bytes)
         val token = bytes.joinToString("") { "%02x".format(it) }
@@ -96,16 +107,34 @@ class MediaServer {
             if (parts.size < 2) return respond(output, 400, "Bad Request")
             val method = parts[0].uppercase(Locale.ROOT)
             val path = parts[1].substringBefore('?')
+            val query = parts[1].substringAfter('?', "")
             val headers = HashMap<String, String>()
             for (line in lines.drop(1)) {
                 val at = line.indexOf(':')
                 if (at > 0) headers[line.substring(0, at).trim().lowercase(Locale.ROOT)] = line.substring(at + 1).trim()
             }
+            if (method == "OPTIONS") {
+                // A Chromecast asks permission before fetching pieces of a stream.
+                output.write(
+                    ("HTTP/1.1 204 No Content\r\nAccess-Control-Allow-Origin: *\r\nAccess-Control-Allow-Methods: GET, HEAD, OPTIONS\r\n" +
+                        "Access-Control-Allow-Headers: Range, Content-Type\r\nAccess-Control-Max-Age: 600\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")
+                        .toByteArray(Charsets.ISO_8859_1),
+                )
+                output.flush()
+                return
+            }
             if (method != "GET" && method != "HEAD") return respond(output, 405, "Method Not Allowed")
             val segments = path.trim('/').split('/')
             val source = if (segments.size >= 2 && segments[0] == "m") published[segments[1]] else null
-            if (source == null) return respond(output, 404, "Not Found")
-            serve(output, source, headers["range"], method == "HEAD")
+            when (source) {
+                is ServedSource -> serve(output, source, headers["range"], method == "HEAD")
+                is Responder -> {
+                    // Streams can pause for a while between pieces; give the TV's side time too.
+                    client.soTimeout = 60_000
+                    source.respond(method, segments.drop(2).joinToString("/"), query, headers, output)
+                }
+                else -> respond(output, 404, "Not Found")
+            }
         } catch (e: Exception) {
             // The TV hung up (it does this whenever it seeks or stops) - nothing to do.
         } finally {
@@ -190,6 +219,9 @@ class MediaServer {
     companion object {
         /** "You may seek by position in the file; it is the original, streamed in the background". */
         const val DLNA_FEATURES = "DLNA.ORG_OP=01;DLNA.ORG_CI=0;DLNA.ORG_FLAGS=01700000000000000000000000000000"
+
+        /** The same for a live channel: "there is no seeking, it just keeps coming". */
+        const val DLNA_LIVE_FEATURES = "DLNA.ORG_OP=00;DLNA.ORG_CI=0;DLNA.ORG_FLAGS=01700000000000000000000000000000"
 
         /** Understands "bytes=a-b", "bytes=a-" and "bytes=-n". Returns first and last byte, or null if impossible. */
         fun parseRange(header: String, total: Long): Pair<Long, Long>? {

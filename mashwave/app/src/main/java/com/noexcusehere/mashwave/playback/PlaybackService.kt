@@ -6,12 +6,19 @@ import android.content.Intent
 import android.net.Uri
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
+import android.util.Log
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
+import androidx.media3.common.MimeTypes
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
+import androidx.media3.datasource.DefaultDataSource
+import androidx.media3.datasource.DefaultHttpDataSource
+import androidx.media3.datasource.HttpDataSource
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.session.DefaultMediaNotificationProvider
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
@@ -22,6 +29,9 @@ import com.noexcusehere.mashwave.MashwaveApp
 import com.noexcusehere.mashwave.R
 import com.noexcusehere.mashwave.data.ResumeRules
 import com.noexcusehere.mashwave.data.SavedQueue
+import com.noexcusehere.mashwave.iptv.TvNet
+import com.noexcusehere.mashwave.iptv.isLiveTv
+import com.noexcusehere.mashwave.iptv.isTv
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -40,6 +50,12 @@ class PlaybackService : MediaSessionService() {
 
     private val mashwave: MashwaveApp
         get() = application as MashwaveApp
+
+    private companion object {
+        /** How long a live channel may sit "loading" before it is redialled. */
+        const val STALL_AFTER_MS = 25_000L
+        const val TAG = "UltimateBeats"
+    }
 
     private val positionTicker = object : Runnable {
         override fun run() {
@@ -82,13 +98,129 @@ class PlaybackService : MediaSessionService() {
 
     private val saveQueueTask = Runnable {
         val items = (0 until player.mediaItemCount).map { player.getMediaItemAt(it).toEntry() }
-        mashwave.store.saveQueue(SavedQueue(items = items))
-        savePosition()
+        // TV streams are not kept: reopening the app must not quietly reconnect to the TV service.
+        if (items.none { it.isTv }) {
+            mashwave.store.saveQueue(SavedQueue(items = items))
+            savePosition()
+        }
+    }
+
+    // ---- keeping TV streams going ---------------------------------------------------------
+
+    /** When each recent reconnection was tried, so a dead channel is given up on instead of retried for ever. */
+    private val retryTimes = ArrayDeque<Long>()
+
+    /** Streams already retried as a "list of short pieces", which some addresses are without saying so. */
+    private val triedAsList = HashSet<String>()
+
+    private fun mayRetry(): Boolean {
+        val now = System.currentTimeMillis()
+        while (retryTimes.isNotEmpty() && now - retryTimes.first() > 60_000) retryTimes.removeFirst()
+        if (retryTimes.size >= 6) return false
+        retryTimes.addLast(now)
+        return true
+    }
+
+    private val reconnect: Runnable = Runnable {
+        val item = player.currentMediaItem ?: return@Runnable
+        val live = item.toEntry().isLiveTv
+        if (!item.toEntry().isTv || !player.playWhenReady) return@Runnable
+        if (live) {
+            // Hang up completely (line and decoders), then rejoin at "now".
+            player.stop()
+            player.seekToDefaultPosition()
+        }
+        // A movie carries on from where it stopped.
+        player.prepare()
+        handler.removeCallbacks(stallCheck)
+        if (live) watchForStall()
+    }
+
+    /** How many times in a row a channel was redialled for loading endlessly, without ever getting going. */
+    private var stalls = 0
+
+    /** How much of the stream had arrived at the last look, and since when nothing more has. */
+    private var stallBuffered = 0L
+    private var stallSince = 0L
+
+    private fun watchForStall() {
+        handler.removeCallbacks(stallCheck)
+        stallBuffered = player.bufferedPosition
+        stallSince = SystemClock.elapsedRealtime()
+        handler.postDelayed(stallCheck, 5_000)
+    }
+
+    /**
+     * A live channel can hang without failing: the line stays open but nothing playable arrives.
+     * While it is "loading", look every few seconds; if nothing new has arrived for a good while,
+     * hang up and dial again. A slow connection that is still delivering is left alone.
+     */
+    private val stallCheck: Runnable = Runnable {
+        val item = player.currentMediaItem ?: return@Runnable
+        if (!item.toEntry().isLiveTv || !player.playWhenReady || player.playbackState != Player.STATE_BUFFERING) return@Runnable
+        val now = SystemClock.elapsedRealtime()
+        val buffered = player.bufferedPosition
+        if (buffered > stallBuffered + 300) {
+            stallBuffered = buffered
+            stallSince = now
+        }
+        if (now - stallSince < STALL_AFTER_MS) {
+            handler.postDelayed(stallCheck, 5_000)
+        } else if (stalls++ < 3) {
+            Log.i(TAG, "TV: nothing arriving, redialling (${stalls})")
+            reconnect.run()
+        } else {
+            stalls = 0
+            player.pause()
+            mashwave.say("\"${item.toEntry().title}\" isn't sending a picture right now. Try again in a moment, or another channel.")
+        }
+    }
+
+    /** Handles a TV stream that failed. Returns the message to show, or null when it is being retried. */
+    private fun tvProblem(item: MediaItem, error: PlaybackException): String? {
+        val entry = item.toEntry()
+        val unknownKind = error.errorCode == PlaybackException.ERROR_CODE_PARSING_CONTAINER_UNSUPPORTED ||
+            error.errorCode == PlaybackException.ERROR_CODE_PARSING_CONTAINER_MALFORMED
+        if (unknownKind && triedAsList.add(item.mediaId) && item.localConfiguration?.mimeType != MimeTypes.APPLICATION_M3U8) {
+            val index = player.currentMediaItemIndex
+            player.replaceMediaItem(index, item.buildUpon().setMimeType(MimeTypes.APPLICATION_M3U8).build())
+            player.prepare()
+            return null
+        }
+        val status = (error.cause as? HttpDataSource.InvalidResponseCodeException)?.responseCode ?: 0
+        val refused = status == 401 || status == 403 || status == 404 || status == 451
+        val network = error.errorCode in PlaybackException.ERROR_CODE_IO_UNSPECIFIED..PlaybackException.ERROR_CODE_IO_READ_POSITION_OUT_OF_RANGE ||
+            error.errorCode == PlaybackException.ERROR_CODE_BEHIND_LIVE_WINDOW
+        if (player.playWhenReady && network && !refused && mayRetry()) {
+            Log.i(TAG, "TV: stream failed (${error.errorCodeName}), trying again")
+            handler.removeCallbacks(reconnect)
+            handler.postDelayed(reconnect, 1200L * retryTimes.size)
+            return null
+        }
+        val why = when {
+            status == 401 || status == 403 -> "the service refused. The subscription may have run out, or it is being watched on another device"
+            status == 404 -> if (entry.isLiveTv) "the channel is off air right now" else "the service no longer has it"
+            status in 500..599 -> "the service is having trouble (error $status)"
+            error.errorCode == PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED ||
+                error.errorCode == PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_TIMEOUT -> "no connection"
+            error.errorCode == PlaybackException.ERROR_CODE_DECODING_FORMAT_UNSUPPORTED ||
+                error.errorCode == PlaybackException.ERROR_CODE_DECODER_INIT_FAILED ||
+                unknownKind -> "this phone can't play its format"
+            else -> "the stream stopped"
+        }
+        return "Can't play \"${entry.title}\" - $why"
     }
 
     override fun onCreate() {
         super.onCreate()
+        // TV services forward streams from one server to another, sometimes between http and https.
+        val web = DefaultHttpDataSource.Factory()
+            .setUserAgent(TvNet.userAgent)
+            .setAllowCrossProtocolRedirects(true)
+            .setConnectTimeoutMs(15_000)
+            .setReadTimeoutMs(20_000)
         player = ExoPlayer.Builder(this, mashwaveRenderers(this))
+            .setMediaSourceFactory(DefaultMediaSourceFactory(DefaultDataSource.Factory(this, web)))
             .setAudioAttributes(
                 AudioAttributes.Builder()
                     .setUsage(C.USAGE_MEDIA)
@@ -151,7 +283,7 @@ class PlaybackService : MediaSessionService() {
     private fun prefs() = getSharedPreferences("mashwave-playback", Context.MODE_PRIVATE)
 
     private fun savePosition() {
-        if (player.mediaItemCount == 0) return
+        if (player.mediaItemCount == 0 || player.currentMediaItem?.toEntry()?.isTv == true) return
         prefs().edit()
             .putInt("index", player.currentMediaItemIndex)
             .putLong("position", player.currentPosition.coerceAtLeast(0))
@@ -207,11 +339,30 @@ class PlaybackService : MediaSessionService() {
         }
 
         override fun onPlaybackStateChanged(playbackState: Int) {
+            handler.removeCallbacks(stallCheck)
+            if (playbackState == Player.STATE_READY) stalls = 0
+            if (playbackState == Player.STATE_BUFFERING && player.currentMediaItem?.toEntry()?.isLiveTv == true) watchForStall()
+            if (playbackState != Player.STATE_ENDED) return
+            val item = player.currentMediaItem ?: return
+            if (item.toEntry().isLiveTv) {
+                // A live channel never "finishes": the service dropped the line, so dial again.
+                if (player.playWhenReady && mayRetry()) {
+                    Log.i(TAG, "TV: the channel's line closed, redialling")
+                    handler.removeCallbacks(reconnect)
+                    handler.postDelayed(reconnect, 800L * retryTimes.size)
+                } else if (player.playWhenReady) {
+                    mashwave.say("\"${item.toEntry().title}\" keeps dropping out. Try again in a moment, or another channel.")
+                }
+                return
+            }
             // Watched to the very end: next time it starts from the beginning.
-            if (playbackState == Player.STATE_ENDED) player.currentMediaItem?.let { mashwave.store.clearResume(it.mediaId) }
+            mashwave.store.clearResume(item.mediaId)
         }
 
         override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+            // A different channel starts with a clean slate.
+            stalls = 0
+            retryTimes.clear()
             if (player.isPlaying) recordCurrent()
             savePosition()
             if (reason != Player.MEDIA_ITEM_TRANSITION_REASON_REPEAT) resumeIfKnown(mediaItem)
@@ -229,6 +380,12 @@ class PlaybackService : MediaSessionService() {
         }
 
         override fun onPlayerError(error: PlaybackException) {
+            val failed = player.currentMediaItem
+            if (failed != null && failed.toEntry().isTv) {
+                // Never hop to another channel or episode because one failed.
+                tvProblem(failed, error)?.let { mashwave.say(it) }
+                return
+            }
             val title = player.currentMediaItem?.mediaMetadata?.title ?: "this file"
             val why = when (error.errorCode) {
                 PlaybackException.ERROR_CODE_IO_FILE_NOT_FOUND -> "file not found"
@@ -256,7 +413,8 @@ class PlaybackService : MediaSessionService() {
         val item = player.currentMediaItem ?: return
         if (item.mediaId == lastRecordedId) return
         lastRecordedId = item.mediaId
-        mashwave.store.recordPlay(item.toEntry())
+        // The TV tab keeps its own "recently watched"; channels don't belong among recently played songs.
+        if (!item.toEntry().isTv) mashwave.store.recordPlay(item.toEntry())
     }
 
     /**

@@ -157,7 +157,7 @@ private class ChromecastLink(
             if (artUrl != null) addImage(WebImage(Uri.parse(artUrl)))
         }
         val info = MediaInfo.Builder(url)
-            .setStreamType(MediaInfo.STREAM_TYPE_BUFFERED)
+            .setStreamType(if (entry.tv.startsWith("L")) MediaInfo.STREAM_TYPE_LIVE else MediaInfo.STREAM_TYPE_BUFFERED)
             .setContentType(mime)
             .setMetadata(metadata)
             .build()

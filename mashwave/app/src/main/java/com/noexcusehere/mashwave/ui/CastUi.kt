@@ -244,12 +244,16 @@ private fun Remote(state: CastState) {
                 )
             }
         }
-        SeekBar(
-            positionMs = state.positionMs,
-            durationMs = state.durationMs,
-            onSeek = { app.cast.seekTo(it) },
-            modifier = Modifier.padding(horizontal = 14.dp),
-        )
+        // A live channel cannot be wound back or forward; its arrows change channel instead.
+        val live = entry.tv.startsWith("L")
+        if (!live) {
+            SeekBar(
+                positionMs = state.positionMs,
+                durationMs = state.durationMs,
+                onSeek = { app.cast.seekTo(it) },
+                modifier = Modifier.padding(horizontal = 14.dp),
+            )
+        }
         Row(
             Modifier
                 .fillMaxWidth()
@@ -258,16 +262,20 @@ private fun Remote(state: CastState) {
             verticalAlignment = Alignment.CenterVertically,
         ) {
             IconButton(onClick = { app.cast.previous() }, modifier = Modifier.size(52.dp)) {
-                Icon(Icons.Rounded.SkipPrevious, contentDescription = "Previous", tint = TextHi, modifier = Modifier.size(36.dp))
+                Icon(Icons.Rounded.SkipPrevious, contentDescription = if (live) "Previous channel" else "Previous", tint = TextHi, modifier = Modifier.size(36.dp))
             }
-            IconButton(onClick = { app.cast.seekBy(-10_000) }, modifier = Modifier.size(52.dp)) {
-                Icon(Icons.Rounded.Replay10, contentDescription = "Back 10 seconds", tint = TextHi, modifier = Modifier.size(32.dp))
+            if (!live) {
+                IconButton(onClick = { app.cast.seekBy(-10_000) }, modifier = Modifier.size(52.dp)) {
+                    Icon(Icons.Rounded.Replay10, contentDescription = "Back 10 seconds", tint = TextHi, modifier = Modifier.size(32.dp))
+                }
             }
             Spacer(Modifier.width(8.dp))
             GradientPlayButton(playing = state.playing, onClick = { app.cast.togglePlay() }, size = 64.dp)
             Spacer(Modifier.width(8.dp))
-            IconButton(onClick = { app.cast.seekBy(10_000) }, modifier = Modifier.size(52.dp)) {
-                Icon(Icons.Rounded.Forward10, contentDescription = "Forward 10 seconds", tint = TextHi, modifier = Modifier.size(32.dp))
+            if (!live) {
+                IconButton(onClick = { app.cast.seekBy(10_000) }, modifier = Modifier.size(52.dp)) {
+                    Icon(Icons.Rounded.Forward10, contentDescription = "Forward 10 seconds", tint = TextHi, modifier = Modifier.size(32.dp))
+                }
             }
             IconButton(onClick = { app.cast.next() }, modifier = Modifier.size(52.dp), enabled = state.index < state.queue.lastIndex) {
                 Icon(
