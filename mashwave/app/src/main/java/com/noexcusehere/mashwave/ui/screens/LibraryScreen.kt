@@ -27,6 +27,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.Sort
+import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Folder
 import androidx.compose.material.icons.rounded.LibraryMusic
 import androidx.compose.material.icons.rounded.CloudDownload
@@ -88,6 +89,9 @@ fun sortSongs(songs: List<MediaEntry>, sort: String): List<MediaEntry> = when (s
     else -> songs
 }
 
+/** Where "Playlists" sits in the row of buttons under the title. */
+private const val PLAYLISTS = 4
+
 @Composable
 fun LibraryScreen() {
     val app = LocalContext.current.app
@@ -99,14 +103,15 @@ fun LibraryScreen() {
     var tab by rememberSaveable { mutableStateOf(0) }
     var sortOpen by remember { mutableStateOf(false) }
     val importer = rememberMediaImporter()
-    val tabs = listOf("Songs", "Albums", "Artists", "Folders")
+    val tabs = listOf("Songs", "Albums", "Artists", "Folders", "Playlists")
+    var creatingPlaylist by remember { mutableStateOf(false) }
 
     Column(
         Modifier
             .fillMaxSize()
             .statusBarsPadding(),
     ) {
-        ScreenHeader("Library") {
+        ScreenHeader("Music library") {
             HeaderIcon(Icons.Rounded.CloudDownload, "Add music from Google Drive or files", { importer.fromFiles(ImportKind.MUSIC) })
             HeaderIcon(Icons.Rounded.Search, "Search", { nav.navigate(Routes.SEARCH) })
             if (tab == 0) {
@@ -125,6 +130,9 @@ fun LibraryScreen() {
                     }
                 }
             }
+            if (tab == PLAYLISTS) {
+                HeaderIcon(Icons.Rounded.Add, "New playlist", { creatingPlaylist = true })
+            }
             HeaderIcon(Icons.Rounded.Shuffle, "Shuffle all songs", {
                 if (songs.isEmpty()) app.say("No songs found yet") else app.player.shuffleAll(songs)
             }, tint = Pink)
@@ -137,6 +145,12 @@ fun LibraryScreen() {
             itemsIndexed(tabs) { index, label ->
                 Chip(label, selected = tab == index, onClick = { tab = index })
             }
+        }
+
+        if (tab == PLAYLISTS) {
+            // Playlists are shown even when no songs were found on the phone.
+            PlaylistsList(creating = creatingPlaylist, onCreating = { creatingPlaylist = it }, watchLists = false)
+            return@Column
         }
 
         if (songs.isEmpty()) {

@@ -16,7 +16,8 @@ and TV sign-ins. Mashups and exported videos made before the latest rename stay 
 ## What it does
 
 **Music**
-- Finds every song on the phone: Songs, Albums, Artists and Folders, with sorting and search
+- The **Music** tab is the music library. It finds every song on the phone and shows Songs,
+  Albums, Artists, Folders and Playlists, with sorting and search
 - Background playback with lock-screen, notification, headset and Bluetooth controls
 - Queue (play next / add to queue / remove), shuffle, repeat, speed 0.5×–2×, sleep timer
 - Playlists you create, rename, reorder and delete; Liked, Recently played, Most played
@@ -181,7 +182,7 @@ eye and eyebrow tools) and sky / backdrop / clothes swaps.
   most TVs but not on every Chromecast
 
 **Google Drive, Google Photos and other apps**
-- Library has an "add from Google Drive or files" button, Videos has "From Google Photos" and
+- The music library has an "add from Google Drive or files" button, Videos has "From Google Photos" and
   "From Google Drive or files" under **+**. They open Android's own pickers; whatever you
   choose is kept in the library (marked with where it came from) until you remove it
 - In the file picker, open the side menu to switch to Google Drive, then long-press to select

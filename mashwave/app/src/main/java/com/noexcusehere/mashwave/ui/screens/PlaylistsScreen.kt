@@ -63,14 +63,7 @@ import com.noexcusehere.mashwave.ui.theme.Violet
 
 @Composable
 fun PlaylistsScreen() {
-    val app = LocalContext.current.app
-    val ui = LocalUi.current
-    val nav = LocalNav.current
-    val data by app.store.data.collectAsStateWithLifecycle()
     var creating by remember { mutableStateOf(false) }
-    var renaming by remember { mutableStateOf<Playlist?>(null) }
-    var deleting by remember { mutableStateOf<Playlist?>(null) }
-
     Column(
         Modifier
             .fillMaxSize()
@@ -79,75 +72,92 @@ fun PlaylistsScreen() {
         ScreenHeader("Playlists") {
             HeaderIcon(Icons.Rounded.Add, "New playlist", { creating = true }, tint = Pink)
         }
-        LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 24.dp)) {
-            item {
-                Row(
+        PlaylistsList(creating = creating, onCreating = { creating = it }, watchLists = true)
+    }
+}
+
+/**
+ * The playlists themselves, with renaming and deleting. Shown on the Playlists tab and under
+ * "Playlists" in the music library. [creating] opens the "new playlist" box; the screen around
+ * the list owns the button for it. [watchLists] adds the video watch lists underneath.
+ */
+@Composable
+fun PlaylistsList(creating: Boolean, onCreating: (Boolean) -> Unit, watchLists: Boolean) {
+    val app = LocalContext.current.app
+    val ui = LocalUi.current
+    val nav = LocalNav.current
+    val data by app.store.data.collectAsStateWithLifecycle()
+    var renaming by remember { mutableStateOf<Playlist?>(null) }
+    var deleting by remember { mutableStateOf<Playlist?>(null) }
+
+    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 24.dp)) {
+        item {
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .combinedClickable(onClick = { nav.navigate(Routes.collection("liked")) })
+                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Box(
                     Modifier
-                        .fillMaxWidth()
-                        .combinedClickable(onClick = { nav.navigate(Routes.collection("liked")) })
-                        .padding(horizontal = 16.dp, vertical = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
+                        .size(60.dp)
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(Brush.linearGradient(listOf(Violet, Pink))),
+                    contentAlignment = Alignment.Center,
                 ) {
-                    Box(
-                        Modifier
-                            .size(60.dp)
-                            .clip(RoundedCornerShape(10.dp))
-                            .background(Brush.linearGradient(listOf(Violet, Pink))),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Icon(Icons.Rounded.Favorite, contentDescription = null, tint = Color.White)
-                    }
-                    Spacer(Modifier.width(14.dp))
-                    Column {
-                        Text("Liked", style = MaterialTheme.typography.titleMedium, color = TextHi)
-                        Text(countLabel(data.favorites), style = MaterialTheme.typography.bodySmall, color = TextMid)
-                    }
+                    Icon(Icons.Rounded.Favorite, contentDescription = null, tint = Color.White)
+                }
+                Spacer(Modifier.width(14.dp))
+                Column {
+                    Text("Liked", style = MaterialTheme.typography.titleMedium, color = TextHi)
+                    Text(countLabel(data.favorites), style = MaterialTheme.typography.bodySmall, color = TextMid)
                 }
             }
-            items(data.playlists.filter { !it.video }, key = { it.id }) { playlist ->
+        }
+        items(data.playlists.filter { !it.video }, key = { it.id }) { playlist ->
+            PlaylistRow(
+                playlist = playlist,
+                onClick = { nav.navigate(Routes.collection("playlist", playlist.id)) },
+                onPlay = {
+                    if (playlist.items.isEmpty()) app.say("This playlist is empty") else ui.play(app.player, playlist.items, 0)
+                },
+                onRename = { renaming = playlist },
+                onDelete = { deleting = playlist },
+            )
+        }
+        // Watch lists live in the Videos tab; the Playlists tab lists them too so nothing is hidden.
+        val videoLists = if (watchLists) data.playlists.filter { it.video } else emptyList()
+        if (videoLists.isNotEmpty()) {
+            item {
+                Text(
+                    "Watch lists",
+                    style = MaterialTheme.typography.titleLarge,
+                    color = TextHi,
+                    modifier = Modifier.padding(start = 16.dp, top = 18.dp, bottom = 4.dp),
+                )
+            }
+            items(videoLists, key = { it.id }) { playlist ->
                 PlaylistRow(
                     playlist = playlist,
                     onClick = { nav.navigate(Routes.collection("playlist", playlist.id)) },
                     onPlay = {
-                        if (playlist.items.isEmpty()) app.say("This playlist is empty") else ui.play(app.player, playlist.items, 0)
+                        if (playlist.items.isEmpty()) app.say("This watch list is empty") else ui.play(app.player, playlist.items, 0)
                     },
                     onRename = { renaming = playlist },
                     onDelete = { deleting = playlist },
                 )
             }
-            // Watch lists live in the Videos tab; they are listed here too so nothing is hidden.
-            val watchLists = data.playlists.filter { it.video }
-            if (watchLists.isNotEmpty()) {
-                item {
-                    Text(
-                        "Watch lists",
-                        style = MaterialTheme.typography.titleLarge,
-                        color = TextHi,
-                        modifier = Modifier.padding(start = 16.dp, top = 18.dp, bottom = 4.dp),
-                    )
-                }
-                items(watchLists, key = { it.id }) { playlist ->
-                    PlaylistRow(
-                        playlist = playlist,
-                        onClick = { nav.navigate(Routes.collection("playlist", playlist.id)) },
-                        onPlay = {
-                            if (playlist.items.isEmpty()) app.say("This watch list is empty") else ui.play(app.player, playlist.items, 0)
-                        },
-                        onRename = { renaming = playlist },
-                        onDelete = { deleting = playlist },
-                    )
-                }
-            }
-            if (data.playlists.none { !it.video }) {
-                item {
-                    EmptyState(
-                        icon = Icons.AutoMirrored.Rounded.QueueMusic,
-                        title = "Make your first playlist",
-                        message = "Group songs and videos any way you like - workout, road trip, chill.",
-                        action = "New playlist",
-                        onAction = { creating = true },
-                    )
-                }
+        }
+        if (data.playlists.none { !it.video }) {
+            item {
+                EmptyState(
+                    icon = Icons.AutoMirrored.Rounded.QueueMusic,
+                    title = "Make your first playlist",
+                    message = "Group songs and videos any way you like - workout, road trip, chill.",
+                    action = "New playlist",
+                    onAction = { onCreating(true) },
+                )
             }
         }
     }
@@ -157,10 +167,10 @@ fun PlaylistsScreen() {
             title = "New playlist",
             label = "Playlist name",
             confirm = "Create",
-            onDismiss = { creating = false },
+            onDismiss = { onCreating(false) },
             onConfirm = { name ->
                 val playlist = app.store.createPlaylist(name)
-                creating = false
+                onCreating(false)
                 nav.navigate(Routes.collection("playlist", playlist.id))
             },
         )

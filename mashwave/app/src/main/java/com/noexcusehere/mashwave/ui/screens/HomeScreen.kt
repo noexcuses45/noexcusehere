@@ -221,7 +221,7 @@ fun HomeScreen() {
 
         if (recentlyAdded.isNotEmpty()) {
             item {
-                SectionTitle("Recently added", action = "Library", onAction = { nav.openTab(Routes.LIBRARY) })
+                SectionTitle("Recently added", action = "Music library", onAction = { nav.openTab(Routes.LIBRARY) })
                 MediaCardRow(recentlyAdded) { index -> ui.play(app.player, recentlyAdded, index) }
             }
         }

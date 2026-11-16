@@ -113,7 +113,7 @@ private data class Tab(val route: String, val label: String, val icon: ImageVect
 
 private val tabs = listOf(
     Tab(Routes.HOME, "Home", Icons.Rounded.Home),
-    Tab(Routes.LIBRARY, "Library", Icons.Rounded.LibraryMusic),
+    Tab(Routes.LIBRARY, "Music", Icons.Rounded.LibraryMusic),
     Tab(Routes.VIDEOS, "Videos", Icons.Rounded.VideoLibrary),
     Tab(Routes.TV, "TV", Icons.Rounded.LiveTv),
     Tab(Routes.MASHUP, "Mashup", Icons.Rounded.GraphicEq),
