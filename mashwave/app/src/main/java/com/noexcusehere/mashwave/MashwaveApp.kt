@@ -10,12 +10,14 @@ import com.noexcusehere.mashwave.editor.EditorStore
 import com.noexcusehere.mashwave.editor.ExportManager
 import com.noexcusehere.mashwave.iptv.Multiview
 import com.noexcusehere.mashwave.iptv.TvRepository
+import com.noexcusehere.mashwave.photo.PhotoFiles
 import com.noexcusehere.mashwave.playback.MashupEngine
 import com.noexcusehere.mashwave.playback.PlayerConnection
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.launch
 
 /** The name people see: on the home screen, inside the app, and on the folders it saves into. */
 const val APP_NAME = "Ultimate Media Manager"
@@ -56,6 +58,8 @@ class MashwaveApp : Application() {
         mashup = MashupEngine(this, scope)
         autoMashup = AutoMashupMaker(this, scope)
         editorStore = EditorStore(this, scope)
+        // Edited photos nobody uses any more are cleared out in the background.
+        scope.launch(Dispatchers.IO) { runCatching { PhotoFiles.sweep(this@MashwaveApp, editorStore.projects.value) } }
         exporter = ExportManager(this, scope)
         cast = CastController(this, scope)
         tv = TvRepository(this, scope)

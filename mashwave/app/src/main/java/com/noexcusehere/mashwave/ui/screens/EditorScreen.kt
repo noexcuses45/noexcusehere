@@ -44,6 +44,7 @@ import androidx.compose.material.icons.rounded.Flip
 import androidx.compose.material.icons.rounded.MovieCreation
 import androidx.compose.material.icons.rounded.MusicNote
 import androidx.compose.material.icons.rounded.Pause
+import androidx.compose.material.icons.rounded.PhotoFilter
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Speed
 import androidx.compose.material.icons.rounded.TextFields
@@ -124,7 +125,10 @@ fun EditorScreen(projectId: String, onClose: () -> Unit) {
     var editingText by remember { mutableStateOf<EditText?>(null) }
     var renaming by remember { mutableStateOf(false) }
     var lastSeekAt by remember { mutableLongStateOf(0L) }
+    // The photo being worked on in the photo editor, which covers this screen while it is open.
+    var photoClipId by remember { mutableStateOf<String?>(null) }
     val exporting = export.running || export.savedUri != null || export.error != null
+    val covered = exporting || photoClipId != null
 
     DisposableEffect(projectId) { onDispose { preview.release() } }
     LifecycleResumeEffect(projectId) { onPauseOrDispose { preview.pause() } }
@@ -134,9 +138,10 @@ fun EditorScreen(projectId: String, onClose: () -> Unit) {
     }
 
     // Rebuild the preview shortly after each edit; while a video is being saved the preview
-    // lets go of the phone's video decoders so the export can use them.
-    LaunchedEffect(session.revision, exporting) {
-        if (exporting) {
+    // lets go of the phone's video decoders so the export can use them. It also rests while
+    // the photo editor is open on top.
+    LaunchedEffect(session.revision, covered) {
+        if (covered) {
             preview.release()
         } else {
             delay(120)
@@ -189,6 +194,9 @@ fun EditorScreen(projectId: String, onClose: () -> Unit) {
             panel = Panel.TEXT
         },
         Tool("Emoji", Icons.Rounded.EmojiEmotions) { panel = Panel.EMOJI },
+        Tool("Photo", Icons.Rounded.PhotoFilter) {
+            if (clip?.isImage == true) photoClipId = clip.id else app.say("Move the white line onto a photo to edit it")
+        },
         Tool("Split", Icons.Rounded.VerticalSplit) {
             val next = EditorOps.splitAt(session.project, session.positionMs, EditorStore.newId())
             if (next == null) app.say("Move the white line further into the clip to split it") else session.change(next)
@@ -299,7 +307,7 @@ fun EditorScreen(projectId: String, onClose: () -> Unit) {
                     Spacer(Modifier.height(16.dp))
                     PillButton("Add clips", onClick = { panel = Panel.ADD }, icon = Icons.Rounded.Add, filled = true)
                 }
-            } else if (!exporting) {
+            } else if (!covered) {
                 // Fit the picture's shape inside the space available.
                 val aspect = project.aspect.coerceIn(0.3f, 3.4f)
                 val boxAspect = maxWidth.value / maxHeight.value.coerceAtLeast(1f)
@@ -332,6 +340,20 @@ fun EditorScreen(projectId: String, onClose: () -> Unit) {
                             .clip(RoundedCornerShape(12.dp))
                             .background(Color.Black.copy(alpha = 0.7f))
                             .padding(14.dp),
+                    )
+                }
+                // On a photo, the way into the photo editor sits right on the picture.
+                if (clip?.isImage == true && !preview.isPlaying) {
+                    PillButton(
+                        "Edit photo",
+                        onClick = {
+                            preview.pause()
+                            photoClipId = clip.id
+                        },
+                        icon = Icons.Rounded.PhotoFilter,
+                        modifier = Modifier
+                            .align(Alignment.BottomCenter)
+                            .padding(bottom = 12.dp),
                     )
                 }
             }
@@ -492,6 +514,36 @@ fun EditorScreen(projectId: String, onClose: () -> Unit) {
                 renaming = false
             },
         )
+    }
+
+    photoClipId?.let { id ->
+        val target = project.clips.firstOrNull { it.id == id && it.isImage }
+        if (target == null) {
+            LaunchedEffect(id) { photoClipId = null }
+        } else {
+            PhotoEditorScreen(
+                clip = target,
+                onClose = { photoClipId = null },
+                onSaved = { saved ->
+                    // The timeline now shows the edited copy. Turning and mirroring are already
+                    // part of that copy, so they are not applied a second time.
+                    panelClipId = id
+                    changeClip(
+                        EditorOps.updateClip(session.project, id) {
+                            it.copy(
+                                uri = saved.uri,
+                                width = saved.width,
+                                height = saved.height,
+                                rotation = 0,
+                                mirrored = false,
+                                original = it.original.ifEmpty { it.uri },
+                            )
+                        },
+                    )
+                    photoClipId = null
+                },
+            )
+        }
     }
 
     if (exporting) {

@@ -27,6 +27,11 @@ data class EditClip(
     val saturation: Float = 0f,
     val width: Int = 0,
     val height: Int = 0,
+    /**
+     * For a photo changed in the photo editor: where the photo first came from. [uri] then points
+     * at the edited copy in the app's own storage.
+     */
+    val original: String = "",
 ) {
     /** How long this clip lasts in the finished video. */
     val durationMs: Long

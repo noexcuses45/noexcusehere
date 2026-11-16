@@ -138,6 +138,24 @@ different tempos have to be stretched a lot to meet, and that can be heard.
 Not in the editor: transitions, stickers / GIFs, picture-in-picture, cut-out, auto captions,
 reverse and freeze-frame.
 
+**Photo editor** (inside the video editor: put the white line on a photo and tap **Edit photo**)
+- **Crop** with free or fixed shapes (square, 4:5, 9:16, 16:9 ...), quarter turns, mirror and flip
+- **Auto** tidy-up in one tap; **Adjust** brightness, contrast, colour, warmth, highlights,
+  shadows, sharpen, fade and vignette; twelve **Looks** with a strength slider
+- Paint-on brushes: **Smooth** skin (edges stay crisp), **Whiten**, **Details**, **Lighten** -
+  each with brush size, strength and a rub-out
+- **Heal** removes a spot by rebuilding it from the skin around it; **Reshape** nudges shapes
+  with a finger; **Blur** softens everything outside a movable sharp circle; **Draw** freehand
+- Two fingers zoom and move the picture, one finger works the tool; hold the compare button to
+  see the photo as it was; every tool is kept with the tick or dropped with the cross, and
+  there is undo / redo
+- **Done** puts the edited photo back on the timeline. It is saved as a copy in the app's own
+  storage - the photo in the gallery is never changed - and "Start over" brings the first
+  version back
+
+Not in the photo editor: tools that need face-recognition models (hairstyles, make-up, beards,
+eye and eyebrow tools) and sky / backdrop / clothes swaps.
+
 **Play on a TV** (cast button on Home, Videos and both players)
 - **Chromecast / Google TV / "Chromecast built-in" TVs**, through Google Play services
 - **Smart TVs and speakers that support DLNA / UPnP** (most Samsung, LG, Sony, Hisense ...)
@@ -253,6 +271,10 @@ app/src/main/java/com/noexcusehere/mashwave/
   editor/CompositionFactory.kt          turns a project into what the video engine plays / saves
   editor/EditorSession.kt               the open project (undo / redo) and the live preview
   editor/ExportManager.kt               saving the finished MP4 into the phone's library
+  photo/PhotoOps.kt                     the picture maths: adjust, looks, blur, smooth, heal, crop, reshape
+  photo/PhotoTools.kt                   one class per photo tool (what it shows, what a finger does)
+  photo/PhotoSession.kt                 the open photo: undo steps, reading it upright, saving the copy
+  ui/screens/PhotoEditorScreen.kt       the photo editor's screen
   iptv/Xtream.kt, M3u.kt                reading a TV service's answers and playlist files
   iptv/TvClient.kt, TvNet.kt            asking the service; following forwarded addresses
   iptv/TvRepository.kt, TvStore.kt      services, lists kept on the phone, favourites, what plays
