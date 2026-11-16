@@ -20,6 +20,8 @@ data class TvSaved(
     val section: TvSection = TvSection.LIVE,
     /** Name of the [LiveCushion] chosen for live channels. */
     val cushion: String = LiveCushion.SMOOTHER.name,
+    /** The channels last shown side by side in the multiview, per service. */
+    val multiview: Map<String, List<TvItem>> = emptyMap(),
 )
 
 /**

@@ -33,6 +33,7 @@ import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.ContentPaste
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Edit
+import androidx.compose.material.icons.rounded.GridView
 import androidx.compose.material.icons.rounded.History
 import androidx.compose.material.icons.rounded.LiveTv
 import androidx.compose.material.icons.rounded.Movie
@@ -164,7 +165,11 @@ fun TvScreen() {
     ) {
         ScreenHeader("TV") {
             if (account != null) {
-                CastButton()
+                CastButton(com.noexcusehere.mashwave.cast.CastWhat.VIDEO)
+                HeaderIcon(Icons.Rounded.GridView, "Multiview: watch up to four channels at once", {
+                    app.multiview.begin(null)
+                    ui.multiviewOpen = true
+                })
                 HeaderIcon(Icons.Rounded.Search, "Search channels, movies and shows", { nav.navigate(Routes.TV_SEARCH) })
                 HeaderIcon(Icons.Rounded.Settings, "Your TV services", { sheet = "services" })
             }

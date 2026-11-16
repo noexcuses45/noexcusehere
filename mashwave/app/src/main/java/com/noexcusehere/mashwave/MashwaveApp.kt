@@ -8,6 +8,7 @@ import com.noexcusehere.mashwave.data.LibraryRepository
 import com.noexcusehere.mashwave.data.UserStore
 import com.noexcusehere.mashwave.editor.EditorStore
 import com.noexcusehere.mashwave.editor.ExportManager
+import com.noexcusehere.mashwave.iptv.Multiview
 import com.noexcusehere.mashwave.iptv.TvRepository
 import com.noexcusehere.mashwave.playback.MashupEngine
 import com.noexcusehere.mashwave.playback.PlayerConnection
@@ -41,6 +42,8 @@ class MashwaveApp : Application() {
         private set
     lateinit var tv: TvRepository
         private set
+    lateinit var multiview: Multiview
+        private set
 
     /** Short messages for the user ("Added to playlist", "Can't play this file" ...). */
     val messages = MutableSharedFlow<String>(extraBufferCapacity = 16)
@@ -56,6 +59,7 @@ class MashwaveApp : Application() {
         exporter = ExportManager(this, scope)
         cast = CastController(this, scope)
         tv = TvRepository(this, scope)
+        multiview = Multiview(this)
     }
 
     fun say(message: String) {

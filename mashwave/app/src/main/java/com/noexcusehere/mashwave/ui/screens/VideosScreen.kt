@@ -109,7 +109,7 @@ fun VideosScreen() {
             .statusBarsPadding(),
     ) {
         ScreenHeader("Videos") {
-            com.noexcusehere.mashwave.ui.CastButton()
+            com.noexcusehere.mashwave.ui.CastButton(com.noexcusehere.mashwave.cast.CastWhat.VIDEO)
             HeaderIcon(Icons.Rounded.Link, "Open network stream", { ui.streamDialogOpen = true })
             Box {
                 HeaderIcon(Icons.Rounded.Add, "Add videos", { addMenu = true }, tint = Pink)

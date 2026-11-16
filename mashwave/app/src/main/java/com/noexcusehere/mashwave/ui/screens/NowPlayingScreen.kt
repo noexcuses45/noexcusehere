@@ -179,7 +179,7 @@ fun NowPlayingScreen() {
                         )
                     }
                 }
-                com.noexcusehere.mashwave.ui.CastButton()
+                com.noexcusehere.mashwave.ui.CastButton(com.noexcusehere.mashwave.cast.CastWhat.MUSIC)
                 IconButton(onClick = { ui.openMenu(entry) }) {
                     Icon(Icons.Rounded.MoreVert, contentDescription = "More options", tint = TextHi)
                 }

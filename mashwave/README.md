@@ -66,6 +66,14 @@ and TV sign-ins. Mashups and exported videos made before the latest rename stay 
 - A dropped channel reconnects by itself; it never skips to a different channel on an error
 - Movies and episodes use the normal video player: carry on where you stopped, -10 / +10,
   hold to fast-forward, audio and subtitle tracks. A show remembers which episode you were on
+- **Multiview** (the grid button on the TV tab, or in the live player): up to four live
+  channels on screen at once - one fills the screen, two sit side by side, three or four make
+  a grid. Tap a picture to hear it, double-tap to make it big, and use the buttons on each
+  picture to change or remove its channel. The channels are remembered for next time. Every
+  picture is a stream of its own, so the service has to allow that many at once; a picture the
+  service turns away says so. To see all four on a TV, **Show on TV** opens the phone's screen
+  mirroring (Smart View / Cast screen): a TV can only be sent one stream by the app, but it
+  can mirror the phone showing four
 - **Casting** works here too. The stream passes through the phone on its way to the TV, so the
   TV never sees the login, and the remote's arrows change channel. See the notes under
   "Play on a TV"
@@ -135,7 +143,12 @@ reverse and freeze-frame.
 - **Smart TVs and speakers that support DLNA / UPnP** (most Samsung, LG, Sony, Hisense ...)
 - **Fire TV Stick:** it has no built-in receiver, so install a free receiver app on it (for
   example AirScreen); the stick then shows up in the list
-- While connected, anything you start in the app plays on the TV, the queue moves on by
+- **Music and video are cast separately.** The cast button in the Videos and TV sections sends
+  videos and TV to the TV; the one on the music screens sends music. So a show can run on the
+  TV while music keeps playing on the phone or a Bluetooth speaker. The cast sheet has a
+  switch for each ("Videos and TV", "Music") and the button only lights up in the sections
+  whose kind is going to the TV
+- While connected, what you start of a switched-on kind plays on the TV, the queue moves on by
   itself, and the phone is the remote (play / pause, back / forward 10 s, seek, next /
   previous, TV volume). Videos carry on from where they were stopped
 - The TV fetches the file from the phone over your Wi-Fi; phone and TV must be on the same

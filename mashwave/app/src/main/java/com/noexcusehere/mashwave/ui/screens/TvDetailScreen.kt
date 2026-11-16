@@ -308,7 +308,7 @@ fun TvDetailScreen() {
                 Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = "Back", tint = Color.White)
             }
             Spacer(Modifier.weight(1f))
-            CastButton(tint = Color.White)
+            CastButton(com.noexcusehere.mashwave.cast.CastWhat.VIDEO, tint = Color.White)
         }
     }
 }

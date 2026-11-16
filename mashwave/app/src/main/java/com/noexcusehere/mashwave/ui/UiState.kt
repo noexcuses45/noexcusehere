@@ -25,8 +25,17 @@ class UiState {
     var queueOpen by mutableStateOf(false)
     var streamDialogOpen by mutableStateOf(false)
 
-    /** The "play on a TV" sheet. */
+    /** The multiview: up to four TV channels side by side, covering the whole screen. */
+    var multiviewOpen by mutableStateOf(false)
+
+    /** The "play on a TV" sheet, and which kind of media the button that opened it was for. */
     var castOpen by mutableStateOf(false)
+    var castWhat by mutableStateOf(com.noexcusehere.mashwave.cast.CastWhat.VIDEO)
+
+    fun openCast(what: com.noexcusehere.mashwave.cast.CastWhat) {
+        castWhat = what
+        castOpen = true
+    }
 
     /** Id of the video project open in the editor, which covers the whole screen. */
     var editingProjectId by mutableStateOf<String?>(null)

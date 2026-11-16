@@ -137,7 +137,7 @@ fun TvListScreen(sectionName: String, category: String) {
             }
         } else {
             ScreenHeader(title, onBack = { nav.popBackStack() }) {
-                CastButton()
+                CastButton(com.noexcusehere.mashwave.cast.CastWhat.VIDEO)
                 HeaderIcon(Icons.Rounded.Search, "Find in this list", { filtering = true })
                 if (category != TV_RECENT) {
                     HeaderIcon(Icons.AutoMirrored.Rounded.Sort, "Change order: ${sortNames[sort]}", {
@@ -295,13 +295,16 @@ fun PosterCard(item: TvItem, favourite: Boolean, onLongClick: () -> Unit, onClic
 
 /** A search field that takes the place of the page title. */
 @Composable
-fun TvSearchBox(value: String, onChange: (String) -> Unit, hint: String, onClose: () -> Unit) {
+fun TvSearchBox(value: String, onChange: (String) -> Unit, hint: String, autoFocus: Boolean = true, onClose: () -> Unit) {
     val focus = remember { FocusRequester() }
     val keyboard = LocalSoftwareKeyboardController.current
     LaunchedEffect(Unit) {
-        delay(120)
-        runCatching { focus.requestFocus() }
-        keyboard?.show()
+        // Where the list underneath matters more than typing, the keyboard waits to be asked for.
+        if (autoFocus) {
+            delay(120)
+            runCatching { focus.requestFocus() }
+            keyboard?.show()
+        }
     }
     Row(Modifier.fillMaxWidth().padding(start = 4.dp, end = 12.dp, top = 6.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
         IconButton(onClick = {

@@ -38,6 +38,7 @@ import androidx.compose.material.icons.rounded.AspectRatio
 import androidx.compose.material.icons.rounded.BrightnessMedium
 import androidx.compose.material.icons.rounded.FastForward
 import androidx.compose.material.icons.rounded.FormatListBulleted
+import androidx.compose.material.icons.rounded.GridView
 import androidx.compose.material.icons.rounded.Forward10
 import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material.icons.rounded.LockOpen
@@ -97,7 +98,7 @@ import com.noexcusehere.mashwave.ui.theme.Pink
 import kotlinx.coroutines.delay
 import kotlin.math.roundToInt
 
-private fun Context.findActivity(): Activity? {
+internal fun Context.findActivity(): Activity? {
     var c: Context? = this
     while (c is ContextWrapper) {
         if (c is Activity) return c
@@ -511,9 +512,19 @@ fun VideoPlayerScreen() {
                             overflow = TextOverflow.Ellipsis,
                             modifier = Modifier.weight(1f),
                         )
-                        com.noexcusehere.mashwave.ui.CastButton(tint = Color.White)
+                        com.noexcusehere.mashwave.ui.CastButton(com.noexcusehere.mashwave.cast.CastWhat.VIDEO, tint = Color.White)
                         IconButton(onClick = { sheet = "tracks" }) {
                             Icon(Icons.Rounded.Subtitles, contentDescription = "Audio and subtitles", tint = Color.White)
+                        }
+                        if (live) {
+                            IconButton(onClick = {
+                                // The channel that is on becomes the first of up to four pictures.
+                                app.multiview.begin(app.tv.itemOf(state.current))
+                                close()
+                                ui.multiviewOpen = true
+                            }) {
+                                Icon(Icons.Rounded.GridView, contentDescription = "Multiview: watch up to four channels at once", tint = Color.White)
+                            }
                         }
                         if (!live) {
                             IconButton(onClick = { sheet = "speed" }) {

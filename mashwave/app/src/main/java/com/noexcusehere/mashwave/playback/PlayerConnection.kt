@@ -183,6 +183,11 @@ class PlayerConnection(private val context: Context, private val scope: Coroutin
         controller?.pause()
     }
 
+    /** Stops and lets go of the stream (a paused channel still holds its line to the service open). */
+    fun stop() {
+        controller?.stop()
+    }
+
     fun next() = withController { c -> if (c.hasNextMediaItem()) c.seekToNextMediaItem() }
 
     fun previous() = withController { c -> c.seekToPrevious() }

@@ -76,6 +76,7 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.noexcusehere.mashwave.app
+import com.noexcusehere.mashwave.cast.CastWhat
 import com.noexcusehere.mashwave.iptv.isLiveTv
 import com.noexcusehere.mashwave.playback.PlayerUiState
 import com.noexcusehere.mashwave.ui.components.Artwork
@@ -93,6 +94,7 @@ import com.noexcusehere.mashwave.ui.screens.PlaylistsScreen
 import com.noexcusehere.mashwave.ui.screens.SearchScreen
 import com.noexcusehere.mashwave.ui.screens.TvDetailScreen
 import com.noexcusehere.mashwave.ui.screens.TvListScreen
+import com.noexcusehere.mashwave.ui.screens.TvMultiviewScreen
 import com.noexcusehere.mashwave.ui.screens.TvScreen
 import com.noexcusehere.mashwave.ui.screens.TvSearchScreen
 import com.noexcusehere.mashwave.ui.screens.VideoPlayerScreen
@@ -158,8 +160,11 @@ fun AppRoot(ui: UiState) {
 
     // While a TV is connected, whatever the user starts plays there instead of on the phone.
     ui.castRoute = { entries, index ->
-        if (app.cast.isConnected) {
-            app.player.pause()
+        if (app.cast.takes(entries[index])) {
+            // Only the kind that is moving to the TV stops on the phone: music carries on under a
+            // show that is cast, and a video on the phone carries on when a song is cast.
+            val onPhone = app.player.state.value.current
+            if (onPhone != null && onPhone.isVideo == entries[index].isVideo) app.player.pause()
             // A channel goes to the TV together with its neighbours, so the remote can change channel.
             val around = entries.singleOrNull()?.let { app.tv.lineupAround(it) }
             if (around != null) app.cast.play(around.first, around.second) else app.cast.play(entries, index)
@@ -168,10 +173,11 @@ fun AppRoot(ui: UiState) {
             false
         }
     }
-    LaunchedEffect(cast.device?.id) {
+    // What has moved to the TV no longer needs its player on the phone; the other kind keeps its own.
+    LaunchedEffect(cast.device?.id, cast.sendVideo, cast.sendMusic) {
         if (cast.device != null) {
-            ui.videoFullscreen = false
-            ui.nowPlayingOpen = false
+            if (cast.sendVideo) ui.videoFullscreen = false
+            if (cast.sendMusic) ui.nowPlayingOpen = false
         }
     }
 
@@ -268,7 +274,7 @@ fun AppRoot(ui: UiState) {
                         enter = expandVertically() + fadeIn(),
                         exit = shrinkVertically() + fadeOut(),
                     ) {
-                        CastBar(cast, onOpen = { ui.castOpen = true })
+                        CastBar(cast, onOpen = { ui.openCast(if (cast.entry?.isVideo == false) CastWhat.MUSIC else CastWhat.VIDEO) })
                     }
                     AnimatedVisibility(
                         // While a TV is connected its bar replaces the mini player, unless the phone itself is playing.
@@ -300,6 +306,9 @@ fun AppRoot(ui: UiState) {
 
                 if (ui.videoFullscreen) {
                     VideoPlayerScreen()
+                }
+                if (ui.multiviewOpen) {
+                    TvMultiviewScreen()
                 }
 
                 ui.menuEntry?.let { entry ->
@@ -335,7 +344,7 @@ fun AppRoot(ui: UiState) {
                 }
 
                 if (ui.castOpen) {
-                    CastSheet { ui.castOpen = false }
+                    CastSheet(ui.castWhat) { ui.castOpen = false }
                 }
             }
         }

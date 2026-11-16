@@ -499,6 +499,17 @@ class TvTest {
     }
 
     @Test
+    fun multiviewLaysPicturesOutSensibly() {
+        val grid = com.noexcusehere.mashwave.iptv.Multiview.Companion::grid
+        assertEquals(1 to 1, grid(0))
+        assertEquals(1 to 1, grid(1))
+        assertEquals(1 to 2, grid(2))
+        assertEquals(2 to 2, grid(3))
+        assertEquals(2 to 2, grid(4))
+        assertEquals(4, com.noexcusehere.mashwave.iptv.Multiview.MAX)
+    }
+
+    @Test
     fun streamNotesSurviveARoundTrip() {
         val ref = TvRef(TvRef.EPISODE, "acct", "9001", "77")
         assertEquals(ref, TvRef.parse(ref.encode()))

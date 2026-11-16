@@ -202,6 +202,7 @@ class TvRepository(context: Context, private val scope: CoroutineScope) {
                 active = if (s.active == id) left.firstOrNull()?.id.orEmpty() else s.active,
                 favourites = s.favourites - id,
                 recents = s.recents - id,
+                multiview = s.multiview - id,
             )
         }
         _state.update { it.copy(shelves = emptyMap()) }
@@ -327,6 +328,15 @@ class TvRepository(context: Context, private val scope: CoroutineScope) {
     fun setCushion(cushion: LiveCushion) {
         TvNet.cushion = cushion
         edit { it.copy(cushion = cushion.name) }
+    }
+
+    /** The channels last shown in the multiview for the service in use. */
+    fun multiviewItems(): List<TvItem> = active()?.let { saved.multiview[it.id] }.orEmpty()
+
+    fun rememberMultiview(items: List<TvItem>) {
+        val account = active() ?: return
+        if (saved.multiview[account.id].orEmpty() == items) return
+        edit { it.copy(multiview = it.multiview + (account.id to items)) }
     }
 
     fun clearRecents() {

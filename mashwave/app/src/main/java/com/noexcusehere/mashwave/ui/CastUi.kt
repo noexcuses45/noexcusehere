@@ -29,6 +29,8 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -49,6 +51,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.noexcusehere.mashwave.app
 import com.noexcusehere.mashwave.cast.CastKind
 import com.noexcusehere.mashwave.cast.CastState
+import com.noexcusehere.mashwave.cast.CastWhat
 import com.noexcusehere.mashwave.ui.components.Artwork
 import com.noexcusehere.mashwave.ui.components.GradientPlayButton
 import com.noexcusehere.mashwave.ui.components.MwSlider
@@ -62,23 +65,29 @@ import com.noexcusehere.mashwave.ui.theme.TextHi
 import com.noexcusehere.mashwave.ui.theme.TextLow
 import com.noexcusehere.mashwave.ui.theme.TextMid
 
-/** The cast button used in headers and players; lights up while connected to a TV. */
+/**
+ * The cast button used in headers and players. [what] says which kind of media this place plays:
+ * the button lights up only while that kind is going to a TV, so the music screens stay unlit
+ * while a show is being cast.
+ */
 @Composable
-fun CastButton(tint: Color = TextHi) {
+fun CastButton(what: CastWhat, tint: Color = TextHi) {
     val ui = LocalUi.current
     val state by LocalContext.current.app.cast.state.collectAsStateWithLifecycle()
-    IconButton(onClick = { ui.castOpen = true }) {
+    val sending = state.device != null && state.sends(what)
+    val kind = if (what == CastWhat.MUSIC) "music" else "videos and TV"
+    IconButton(onClick = { ui.openCast(what) }) {
         Icon(
-            if (state.device != null) Icons.Rounded.CastConnected else Icons.Rounded.Cast,
-            contentDescription = if (state.device != null) "Playing on ${state.device?.name}" else "Play on a TV",
-            tint = if (state.device != null) Cyan else tint,
+            if (sending) Icons.Rounded.CastConnected else Icons.Rounded.Cast,
+            contentDescription = if (sending) "Playing $kind on ${state.device?.name}" else "Play $kind on a TV",
+            tint = if (sending) Cyan else tint,
         )
     }
 }
 
 /** Pick a TV, or control what is playing on the one that is connected. */
 @Composable
-fun CastSheet(onDismiss: () -> Unit) {
+fun CastSheet(what: CastWhat, onDismiss: () -> Unit) {
     val app = LocalContext.current.app
     val state by app.cast.state.collectAsStateWithLifecycle()
     var helpOpen by remember { mutableStateOf(false) }
@@ -94,6 +103,7 @@ fun CastSheet(onDismiss: () -> Unit) {
     MwSheet(onDismiss) {
         if (connected) {
             Remote(state)
+            Sending(state, what)
         } else {
             Row(
                 Modifier
@@ -102,8 +112,16 @@ fun CastSheet(onDismiss: () -> Unit) {
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Column(Modifier.weight(1f)) {
-                    Text("Play on a TV", style = MaterialTheme.typography.titleLarge, color = TextHi)
-                    Text("TVs and speakers on your Wi-Fi", style = MaterialTheme.typography.bodySmall, color = TextMid)
+                    Text(if (what == CastWhat.MUSIC) "Play music on a TV" else "Play videos and TV on a TV", style = MaterialTheme.typography.titleLarge, color = TextHi)
+                    Text(
+                        if (what == CastWhat.MUSIC) {
+                            "Songs will play on the TV or speaker you pick. Videos and TV stay where they are."
+                        } else {
+                            "Videos and TV will play on the TV you pick. Music keeps playing on this phone or Bluetooth."
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = TextMid,
+                    )
                 }
                 if (state.scanning) CircularProgressIndicator(Modifier.size(22.dp), color = Pink, strokeWidth = 2.5.dp)
             }
@@ -115,7 +133,7 @@ fun CastSheet(onDismiss: () -> Unit) {
                 Row(
                     Modifier
                         .fillMaxWidth()
-                        .clickable(enabled = state.connecting == null) { app.cast.connect(device) }
+                        .clickable(enabled = state.connecting == null) { app.cast.connect(device, what) }
                         .padding(horizontal = 22.dp, vertical = 13.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
@@ -180,6 +198,44 @@ fun CastSheet(onDismiss: () -> Unit) {
     }
 }
 
+/** The two switches for what goes to the connected TV, with the one this sheet was opened for first. */
+@Composable
+private fun Sending(state: CastState, opened: CastWhat) {
+    val app = LocalContext.current.app
+    val name = state.device?.name ?: "the TV"
+    Text("What plays on $name", style = MaterialTheme.typography.titleMedium, color = TextHi, modifier = Modifier.padding(start = 22.dp, end = 22.dp, top = 12.dp))
+    val order = if (opened == CastWhat.MUSIC) listOf(CastWhat.MUSIC, CastWhat.VIDEO) else listOf(CastWhat.VIDEO, CastWhat.MUSIC)
+    order.forEach { what ->
+        val on = state.sends(what)
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .clickable { app.cast.setSending(what, !on) }
+                .padding(start = 22.dp, end = 16.dp, top = 4.dp, bottom = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(Modifier.weight(1f)) {
+                Text(if (what == CastWhat.MUSIC) "Music" else "Videos and TV", style = MaterialTheme.typography.titleSmall, color = TextHi)
+                Text(
+                    when {
+                        on -> "Plays on $name"
+                        what == CastWhat.MUSIC -> "Stays on this phone or Bluetooth"
+                        else -> "Stays on this phone"
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = TextMid,
+                )
+            }
+            Switch(
+                checked = on,
+                onCheckedChange = { app.cast.setSending(what, it) },
+                colors = SwitchDefaults.colors(checkedThumbColor = Color.White, checkedTrackColor = Pink, uncheckedTrackColor = Surface2, uncheckedThumbColor = TextMid),
+            )
+        }
+    }
+    Spacer(Modifier.height(6.dp))
+}
+
 @Composable
 private fun Note(text: String) {
     Text(
@@ -225,7 +281,11 @@ private fun Remote(state: CastState) {
     state.problem?.let { Note(it) }
     if (entry == null) {
         Text(
-            "Connected. Pick any song or video in the app and it plays on the TV.",
+            when {
+                state.sendVideo && state.sendMusic -> "Connected. Anything you start in the app plays on the TV."
+                state.sendMusic -> "Connected. Songs you start play on the TV. Videos and TV stay on this phone."
+                else -> "Connected. Videos and TV you start play on the TV. Music stays on this phone or Bluetooth."
+            },
             style = MaterialTheme.typography.bodyMedium,
             color = TextMid,
             modifier = Modifier.padding(horizontal = 22.dp, vertical = 18.dp),

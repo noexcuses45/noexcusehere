@@ -28,6 +28,12 @@ import java.util.concurrent.ConcurrentHashMap
 
 enum class CastKind { DLNA, CHROMECAST }
 
+/**
+ * The two things that can be sent to a TV, switched on separately: a show can run on the TV
+ * while music keeps playing on the phone or a Bluetooth speaker.
+ */
+enum class CastWhat { MUSIC, VIDEO }
+
 /** A TV or speaker the user can send music and videos to. */
 data class CastDevice(val id: String, val name: String, val detail: String, val kind: CastKind)
 
@@ -49,7 +55,13 @@ data class CastState(
     val problem: String? = null,
     /** False when the phone is not on Wi-Fi, so no TV can be reached. */
     val onNetwork: Boolean = true,
+    /** Videos and TV channels the user starts go to the TV. */
+    val sendVideo: Boolean = false,
+    /** Songs the user starts go to the TV. */
+    val sendMusic: Boolean = false,
 ) {
+    fun sends(what: CastWhat): Boolean = if (what == CastWhat.VIDEO) sendVideo else sendMusic
+
     val entry: MediaEntry?
         get() = queue.getOrNull(index)
 }
@@ -171,8 +183,56 @@ class CastController(private val context: Context, private val scope: CoroutineS
 
     // ---- connecting ------------------------------------------------------------------------
 
-    /** Connects and, if something is playing on the phone, moves it to the TV. */
-    fun connect(device: CastDevice) {
+    /** True when [entry] should play on the TV instead of the phone: connected, and that kind is switched on. */
+    fun takes(entry: MediaEntry): Boolean = isConnected && _state.value.sends(kindOf(entry))
+
+    private fun kindOf(entry: MediaEntry): CastWhat = if (entry.isVideo) CastWhat.VIDEO else CastWhat.MUSIC
+
+    /** Moves what the phone is playing over to the TV, if it is of a kind the TV is taking. */
+    private fun carryOver() {
+        val local = context.app.player
+        val now = local.state.value
+        val current = now.current ?: return
+        if (now.queue.isEmpty() || !takes(current)) return
+        val position = local.positionMs
+        local.pause()
+        // A live channel moves over with the channels around it, so the remote can change channel.
+        val around = if (current.isLiveTv) context.app.tv.lineupAround(current) else null
+        when {
+            around != null -> play(around.first, around.second)
+            current.isLiveTv || (current.isStream && !current.isTv) -> play(now.queue, now.index)
+            else -> play(now.queue, now.index, position)
+        }
+    }
+
+    /**
+     * Switches one kind of media on or off for the connected TV. Switching on moves what the
+     * phone is playing of that kind; switching off stops it on the TV. With both off there is
+     * nothing left to cast, so the TV is let go.
+     */
+    fun setSending(what: CastWhat, on: Boolean) {
+        val before = _state.value
+        if (before.device == null || before.sends(what) == on) return
+        val after = if (what == CastWhat.VIDEO) before.copy(sendVideo = on) else before.copy(sendMusic = on)
+        if (!after.sendVideo && !after.sendMusic) {
+            disconnect()
+            return
+        }
+        _state.value = after
+        if (on) {
+            carryOver()
+        } else if (before.entry?.let { kindOf(it) } == what) {
+            // Keep its place, then clear it off the TV.
+            if (before.playing || before.positionMs > 0) rememberSpot(before.positionMs, before.durationMs)
+            loadJob?.cancel()
+            val target = link
+            _state.update { it.copy(queue = emptyList(), index = 0, playing = false, loading = false, positionMs = 0, durationMs = 0) }
+            if (target != null) scope.launch { runCatching { withContext(Dispatchers.IO) { target.stop() } } }
+        }
+    }
+
+    /** Connects for [what] and, if the phone is playing something of that kind, moves it to the TV. */
+    fun connect(device: CastDevice, what: CastWhat = CastWhat.VIDEO) {
         if (_state.value.connecting != null) return
         _state.update { it.copy(connecting = device.id, problem = null) }
         scope.launch {
@@ -197,23 +257,23 @@ class CastController(private val context: Context, private val scope: CoroutineS
             closeLink()
             link = newLink
             runCatching { withContext(Dispatchers.IO) { server.start() } }
-            _state.update { it.copy(connecting = null, device = device, queue = emptyList(), index = 0, playing = false, positionMs = 0, durationMs = 0) }
+            _state.update {
+                it.copy(
+                    connecting = null,
+                    device = device,
+                    queue = emptyList(),
+                    index = 0,
+                    playing = false,
+                    positionMs = 0,
+                    durationMs = 0,
+                    sendVideo = what == CastWhat.VIDEO,
+                    sendMusic = what == CastWhat.MUSIC,
+                )
+            }
             KeepAliveService.refresh(context)
             startPolling()
-            // Carry on with whatever the phone was playing.
-            val local = context.app.player
-            val now = local.state.value
-            if (now.current != null && now.queue.isNotEmpty()) {
-                val position = local.positionMs
-                local.pause()
-                // A live channel moves over with the channels around it, so the remote can change channel.
-                val around = if (now.current.isLiveTv) context.app.tv.lineupAround(now.current) else null
-                when {
-                    around != null -> play(around.first, around.second)
-                    now.current.isLiveTv || (now.current.isStream && !now.current.isTv) -> play(now.queue, now.index)
-                    else -> play(now.queue, now.index, position)
-                }
-            }
+            // Carry on with what the phone was playing - if it is the kind this connection is for.
+            carryOver()
         }
     }
 
