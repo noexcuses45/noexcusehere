@@ -1,5 +1,8 @@
 package com.noexcusehere.mashwave.ui
 
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.Dispatchers
+import android.util.Log
 import android.Manifest
 import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -29,12 +32,11 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.rounded.QueueMusic
-import androidx.compose.material.icons.rounded.GraphicEq
 import androidx.compose.material.icons.rounded.Home
 import androidx.compose.material.icons.rounded.LiveTv
 import androidx.compose.material.icons.rounded.LibraryMusic
 import androidx.compose.material.icons.rounded.MovieCreation
+import androidx.compose.material.icons.rounded.PhotoFilter
 import androidx.compose.material.icons.rounded.Pause
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.SkipNext
@@ -65,6 +67,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.LifecycleResumeEffect
@@ -78,6 +81,7 @@ import androidx.navigation.navArgument
 import com.noexcusehere.mashwave.app
 import com.noexcusehere.mashwave.cast.CastWhat
 import com.noexcusehere.mashwave.iptv.isLiveTv
+import com.noexcusehere.mashwave.iptv.isTv
 import com.noexcusehere.mashwave.playback.PlayerUiState
 import com.noexcusehere.mashwave.ui.components.Artwork
 import com.noexcusehere.mashwave.ui.components.ArtworkLoader
@@ -88,9 +92,11 @@ import com.noexcusehere.mashwave.ui.screens.EditorScreen
 import com.noexcusehere.mashwave.ui.screens.EqualizerScreen
 import com.noexcusehere.mashwave.ui.screens.HomeScreen
 import com.noexcusehere.mashwave.ui.screens.LibraryScreen
-import com.noexcusehere.mashwave.ui.screens.MashupScreen
+import com.noexcusehere.mashwave.photo.PhotoFiles
+import com.noexcusehere.mashwave.ui.screens.PhotoEditorScreen
+import com.noexcusehere.mashwave.ui.screens.PhotoToEdit
+import com.noexcusehere.mashwave.ui.screens.PhotosScreen
 import com.noexcusehere.mashwave.ui.screens.NowPlayingScreen
-import com.noexcusehere.mashwave.ui.screens.PlaylistsScreen
 import com.noexcusehere.mashwave.ui.screens.SearchScreen
 import com.noexcusehere.mashwave.ui.screens.TvDetailScreen
 import com.noexcusehere.mashwave.ui.screens.TvListScreen
@@ -116,9 +122,8 @@ private val tabs = listOf(
     Tab(Routes.LIBRARY, "Music", Icons.Rounded.LibraryMusic),
     Tab(Routes.VIDEOS, "Videos", Icons.Rounded.VideoLibrary),
     Tab(Routes.TV, "TV", Icons.Rounded.LiveTv),
-    Tab(Routes.MASHUP, "Mashup", Icons.Rounded.GraphicEq),
-    Tab(Routes.EDITOR, "Edit", Icons.Rounded.MovieCreation),
-    Tab(Routes.PLAYLISTS, "Playlists", Icons.AutoMirrored.Rounded.QueueMusic),
+    Tab(Routes.EDITOR, "Video editor", Icons.Rounded.MovieCreation),
+    Tab(Routes.PHOTOS, "Photo editor", Icons.Rounded.PhotoFilter),
 )
 
 fun mediaPermissions(): Array<String> = when {
@@ -250,9 +255,8 @@ fun AppRoot(ui: UiState) {
                                     category = entry.arguments?.getString("category")?.takeIf { it != "-" }.orEmpty(),
                                 )
                             }
-                            composable(Routes.MASHUP) { MashupScreen() }
-                            composable(Routes.PLAYLISTS) { PlaylistsScreen() }
                             composable(Routes.EDITOR) { EditorHomeScreen() }
+                            composable(Routes.PHOTOS) { PhotosScreen() }
                             composable(Routes.SEARCH) { SearchScreen() }
                             composable(Routes.EQUALIZER) { EqualizerScreen() }
                             composable(
@@ -287,7 +291,12 @@ fun AppRoot(ui: UiState) {
                             onOpen = { if (player.hasVideo) ui.videoFullscreen = true else ui.nowPlayingOpen = true },
                             onToggle = { app.player.togglePlay() },
                             // On a live channel "next" means the next channel.
-                            onNext = { if (player.current?.isLiveTv != true || !app.tv.zap(app.player, 1)) app.player.next() },
+                            onNext = {
+                                val zapped = player.current?.isLiveTv == true && app.tv.zap(app.player, 1)
+                                if (!zapped && !app.player.next()) {
+                                    app.say(if (player.current?.isTv == true) "That was the last episode" else "Nothing after this one")
+                                }
+                            },
                         )
                     }
                     BottomBar(
@@ -327,6 +336,28 @@ fun AppRoot(ui: UiState) {
                 // The video editor covers everything else while a project is open.
                 ui.editingProjectId?.let { id ->
                     EditorScreen(id, onClose = { ui.editingProjectId = null })
+                }
+                // The photo editor, for a photo picked on its own tab. Saving makes a new picture
+                // in the phone's gallery; the photo it was made from is left alone.
+                ui.editingPhoto?.let { photo ->
+                    PhotoEditorScreen(
+                        photo = PhotoToEdit(key = photo.uri, uri = photo.uri),
+                        doneLabel = "Save",
+                        onClose = { ui.editingPhoto = null },
+                        onDone = { picture ->
+                            val where = withContext(Dispatchers.IO) {
+                                runCatching { PhotoFiles.publish(app, picture, photo.title) }
+                                    .onFailure { Log.w("UltimateBeats", "Could not save the edited photo", it) }
+                                    .getOrNull()
+                            }
+                            if (where != null) {
+                                app.library.refresh()
+                                app.say("Saved to $where")
+                                ui.editingPhoto = null
+                            }
+                            where != null
+                        },
+                    )
                 }
                 SnackbarHost(
                     hostState = snackbar,
@@ -387,11 +418,12 @@ private fun BottomBar(current: String?, onSelect: (String) -> Unit) {
                 Spacer(Modifier.height(3.dp))
                 Text(
                     tab.label,
-                    // Seven tabs share the width; slightly tighter lettering keeps "Playlists" whole on narrow phones.
-                    style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.5.sp, letterSpacing = 0.1.sp),
+                    // Six tabs share the width. On a narrow phone "Video editor" and "Photo editor"
+                    // take two short lines rather than being cut off.
+                    style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.5.sp, lineHeight = 11.5.sp, letterSpacing = 0.1.sp),
                     color = if (isSelected) TextHi else TextLow,
-                    maxLines = 1,
-                    softWrap = false,
+                    maxLines = 2,
+                    textAlign = TextAlign.Center,
                 )
             }
         }

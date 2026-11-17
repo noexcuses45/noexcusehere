@@ -96,7 +96,6 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.noexcusehere.mashwave.app
-import com.noexcusehere.mashwave.editor.EditClip
 import com.noexcusehere.mashwave.photo.BrushTool
 import com.noexcusehere.mashwave.photo.CropTool
 import com.noexcusehere.mashwave.photo.DrawTool
@@ -107,7 +106,6 @@ import com.noexcusehere.mashwave.photo.PhotoOps
 import com.noexcusehere.mashwave.photo.PhotoSession
 import com.noexcusehere.mashwave.photo.PhotoTool
 import com.noexcusehere.mashwave.photo.ReshapeTool
-import com.noexcusehere.mashwave.photo.SavedPhoto
 import com.noexcusehere.mashwave.photo.ToneTool
 import com.noexcusehere.mashwave.photo.bitmapOf
 import com.noexcusehere.mashwave.photo.fitWithin
@@ -179,18 +177,26 @@ private class PhotoView {
 }
 
 /**
- * The photo editor: opens over the video editor for one photo on the timeline. "Done" writes the
- * edited picture to the app's own storage and hands it back through [onSaved]; the file the photo
- * came from is never changed.
+ * A photo to open in the photo editor. [key] tells one photo from another; [rotation] (degrees
+ * clockwise) and [mirrored] are how the video timeline shows it; [original] is where a photo
+ * that was edited before first came from, for "Start over".
+ */
+data class PhotoToEdit(val key: String, val uri: String, val rotation: Int = 0, val mirrored: Boolean = false, val original: String = "")
+
+/**
+ * The photo editor. It covers the whole screen, over the video editor (for a photo on the
+ * timeline) or over the Photo editor tab (for any photo on the phone). The button named
+ * [doneLabel] hands the finished picture to [onDone], which keeps it wherever it belongs and
+ * returns whether that worked; the file the photo came from is never changed.
  */
 @Composable
-fun PhotoEditorScreen(clip: EditClip, onClose: () -> Unit, onSaved: (SavedPhoto) -> Unit) {
+fun PhotoEditorScreen(photo: PhotoToEdit, doneLabel: String = "Done", onClose: () -> Unit, onDone: suspend (Bitmap) -> Boolean) {
     val context = LocalContext.current
     val app = context.app
     val density = LocalDensity.current.density
     val scope = rememberCoroutineScope()
-    val session = remember(clip.id) { PhotoSession(context.applicationContext) }
-    val view = remember(clip.id) { PhotoView() }
+    val session = remember(photo.key) { PhotoSession(context.applicationContext) }
+    val view = remember(photo.key) { PhotoView() }
     var tool by remember { mutableStateOf<PhotoTool?>(null) }
     var kind by remember { mutableStateOf<PhotoKind?>(null) }
     var busy by remember { mutableStateOf(true) }
@@ -201,14 +207,14 @@ fun PhotoEditorScreen(clip: EditClip, onClose: () -> Unit, onSaved: (SavedPhoto)
     // The row of tools stays where it was scrolled to while a tool is open.
     val toolRow = rememberLazyListState()
 
-    LaunchedEffect(clip.id) {
-        if (!session.open(clip.uri, clip.rotation, clip.mirrored)) {
+    LaunchedEffect(photo.key) {
+        if (!session.open(photo.uri, photo.rotation, photo.mirrored)) {
             app.say("That photo couldn't be opened")
             onClose()
         }
         busy = false
     }
-    DisposableEffect(clip.id) { onDispose { tool?.close() } }
+    DisposableEffect(photo.key) { onDispose { tool?.close() } }
 
     fun closeTool() {
         tool?.close()
@@ -238,7 +244,7 @@ fun PhotoEditorScreen(clip: EditClip, onClose: () -> Unit, onSaved: (SavedPhoto)
                 busy = true
                 scope.launch {
                     val first = withContext(Dispatchers.Default) {
-                        runCatching { PhotoFiles.read(context.applicationContext, clip.original.ifEmpty { clip.uri }, 0, false) }.getOrNull()
+                        runCatching { PhotoFiles.read(context.applicationContext, photo.original.ifEmpty { photo.uri }, 0, false) }.getOrNull()
                     }
                     if (first != null) {
                         session.commit(first)
@@ -300,11 +306,12 @@ fun PhotoEditorScreen(clip: EditClip, onClose: () -> Unit, onSaved: (SavedPhoto)
             onClose()
             return
         }
+        val finished = session.picture ?: return
         busy = true
         scope.launch {
-            val saved = session.save(clip.id)
+            val kept = onDone(finished)
             busy = false
-            if (saved == null) app.say("The photo couldn't be saved. Is the phone's storage full?") else onSaved(saved)
+            if (!kept) app.say("The photo couldn't be saved. Is the phone's storage full?")
         }
     }
 
@@ -390,7 +397,7 @@ fun PhotoEditorScreen(clip: EditClip, onClose: () -> Unit, onSaved: (SavedPhoto)
                 }
                 if (tool == null) {
                     Spacer(Modifier.width(6.dp))
-                    PillButton("Done", onClick = { done() }, filled = true)
+                    PillButton(doneLabel, onClick = { done() }, filled = true)
                 }
             }
 
@@ -451,7 +458,7 @@ fun PhotoEditorScreen(clip: EditClip, onClose: () -> Unit, onSaved: (SavedPhoto)
                     .background(Surface1),
             ) {
                 if (open == null || which == null) {
-                    val kinds = remember(clip.original) { PhotoKind.entries.filter { it != PhotoKind.ORIGINAL || clip.original.isNotEmpty() } }
+                    val kinds = remember(photo.original) { PhotoKind.entries.filter { it != PhotoKind.ORIGINAL || photo.original.isNotEmpty() } }
                     LazyRow(
                         Modifier
                             .fillMaxWidth()

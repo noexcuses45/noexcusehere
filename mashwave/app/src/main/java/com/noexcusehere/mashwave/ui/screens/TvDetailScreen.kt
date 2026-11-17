@@ -133,9 +133,12 @@ fun TvDetailScreen() {
     }
 
     fun playEpisode(list: List<MediaEntry>, index: Int) {
-        if (index !in list.indices) return
+        val chosen = list.getOrNull(index) ?: return
         app.tv.watched(item)
-        ui.play(app.player, list, index)
+        // The whole show is lined up, not just this season, so "next" at the end of a season
+        // carries on with the first episode of the following one.
+        val everything = allEpisodes.indexOfFirst { it.uri == chosen.uri }
+        if (everything >= 0) ui.play(app.player, allEpisodes, everything) else ui.play(app.player, list, index)
     }
 
     Box(Modifier.fillMaxSize()) {

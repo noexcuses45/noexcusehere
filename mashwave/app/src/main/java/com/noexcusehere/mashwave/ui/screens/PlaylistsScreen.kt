@@ -11,14 +11,12 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.QueueMusic
-import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.Favorite
@@ -52,8 +50,6 @@ import com.noexcusehere.mashwave.ui.LocalUi
 import com.noexcusehere.mashwave.ui.Routes
 import com.noexcusehere.mashwave.ui.components.ConfirmDialog
 import com.noexcusehere.mashwave.ui.components.EmptyState
-import com.noexcusehere.mashwave.ui.components.HeaderIcon
-import com.noexcusehere.mashwave.ui.components.ScreenHeader
 import com.noexcusehere.mashwave.ui.components.TextPromptDialog
 import com.noexcusehere.mashwave.ui.theme.Pink
 import com.noexcusehere.mashwave.ui.theme.Surface2
@@ -61,28 +57,13 @@ import com.noexcusehere.mashwave.ui.theme.TextHi
 import com.noexcusehere.mashwave.ui.theme.TextMid
 import com.noexcusehere.mashwave.ui.theme.Violet
 
-@Composable
-fun PlaylistsScreen() {
-    var creating by remember { mutableStateOf(false) }
-    Column(
-        Modifier
-            .fillMaxSize()
-            .statusBarsPadding(),
-    ) {
-        ScreenHeader("Playlists") {
-            HeaderIcon(Icons.Rounded.Add, "New playlist", { creating = true }, tint = Pink)
-        }
-        PlaylistsList(creating = creating, onCreating = { creating = it }, watchLists = true)
-    }
-}
-
 /**
- * The playlists themselves, with renaming and deleting. Shown on the Playlists tab and under
- * "Playlists" in the music library. [creating] opens the "new playlist" box; the screen around
- * the list owns the button for it. [watchLists] adds the video watch lists underneath.
+ * The music playlists, with renaming and deleting, shown under "Playlists" in the music library.
+ * [creating] opens the "new playlist" box; the screen around the list owns the button for it.
+ * (Watch lists - playlists of videos - live on the Videos tab.)
  */
 @Composable
-fun PlaylistsList(creating: Boolean, onCreating: (Boolean) -> Unit, watchLists: Boolean) {
+fun PlaylistsList(creating: Boolean, onCreating: (Boolean) -> Unit) {
     val app = LocalContext.current.app
     val ui = LocalUi.current
     val nav = LocalNav.current
@@ -125,29 +106,6 @@ fun PlaylistsList(creating: Boolean, onCreating: (Boolean) -> Unit, watchLists: 
                 onRename = { renaming = playlist },
                 onDelete = { deleting = playlist },
             )
-        }
-        // Watch lists live in the Videos tab; the Playlists tab lists them too so nothing is hidden.
-        val videoLists = if (watchLists) data.playlists.filter { it.video } else emptyList()
-        if (videoLists.isNotEmpty()) {
-            item {
-                Text(
-                    "Watch lists",
-                    style = MaterialTheme.typography.titleLarge,
-                    color = TextHi,
-                    modifier = Modifier.padding(start = 16.dp, top = 18.dp, bottom = 4.dp),
-                )
-            }
-            items(videoLists, key = { it.id }) { playlist ->
-                PlaylistRow(
-                    playlist = playlist,
-                    onClick = { nav.navigate(Routes.collection("playlist", playlist.id)) },
-                    onPlay = {
-                        if (playlist.items.isEmpty()) app.say("This watch list is empty") else ui.play(app.player, playlist.items, 0)
-                    },
-                    onRename = { renaming = playlist },
-                    onDelete = { deleting = playlist },
-                )
-            }
         }
         if (data.playlists.none { !it.video }) {
             item {

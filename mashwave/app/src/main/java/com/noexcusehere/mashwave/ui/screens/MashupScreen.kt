@@ -17,7 +17,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -77,10 +76,8 @@ import com.noexcusehere.mashwave.ui.SongPickerSheet
 import com.noexcusehere.mashwave.ui.components.Artwork
 import com.noexcusehere.mashwave.ui.components.Chip
 import com.noexcusehere.mashwave.ui.components.ConfirmDialog
-import com.noexcusehere.mashwave.ui.components.HeaderIcon
 import com.noexcusehere.mashwave.ui.components.MwSlider
 import com.noexcusehere.mashwave.ui.components.PillButton
-import com.noexcusehere.mashwave.ui.components.ScreenHeader
 import com.noexcusehere.mashwave.ui.components.SectionTitle
 import com.noexcusehere.mashwave.ui.components.SeekBar
 import com.noexcusehere.mashwave.ui.components.TextPromptDialog
@@ -116,8 +113,12 @@ private fun rememberDeckPosition(index: Int): State<Long> {
     }
 }
 
+/**
+ * The mashup studio - Auto Mashup and the two manual decks. It sits under "Mashups" in the
+ * music library, below that screen's title and buttons.
+ */
 @Composable
-fun MashupScreen() {
+fun MashupStudio() {
     val app = LocalContext.current.app
     val ui = LocalUi.current
     val engine = app.mashup
@@ -130,22 +131,26 @@ fun MashupScreen() {
     Column(
         Modifier
             .fillMaxSize()
-            .background(Brush.verticalGradient(listOf(DeckA.copy(alpha = 0.16f), Ink, DeckB.copy(alpha = 0.10f))))
-            .statusBarsPadding(),
+            .background(Brush.verticalGradient(listOf(DeckA.copy(alpha = 0.16f), Ink, DeckB.copy(alpha = 0.10f)))),
     ) {
-        ScreenHeader("Mashup") {
-            if (ui.mashupMode == 1) {
-                HeaderIcon(Icons.Rounded.Save, "Save this mashup", {
-                    if (state.ready) saving = true else app.say("Load a song on both decks first")
-                }, tint = if (state.ready) TextHi else TextLow)
-            }
-        }
         Row(
-            Modifier.padding(start = 14.dp, end = 14.dp, top = 4.dp, bottom = 10.dp),
+            Modifier
+                .fillMaxWidth()
+                .padding(start = 14.dp, end = 14.dp, top = 8.dp, bottom = 10.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
             Chip("Auto", selected = ui.mashupMode == 0, onClick = { ui.mashupMode = 0 })
             Chip("Manual decks", selected = ui.mashupMode == 1, onClick = { ui.mashupMode = 1 })
+            if (ui.mashupMode == 1) {
+                Spacer(Modifier.weight(1f))
+                PillButton(
+                    "Save",
+                    onClick = { if (state.ready) saving = true else app.say("Load a song on both decks first") },
+                    icon = Icons.Rounded.Save,
+                    tint = if (state.ready) TextHi else TextLow,
+                )
+            }
         }
 
         if (ui.mashupMode == 0) {

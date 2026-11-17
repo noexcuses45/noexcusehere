@@ -146,8 +146,10 @@ class PlayerConnection(private val context: Context, private val scope: Coroutin
     fun play(entries: List<MediaEntry>, startIndex: Int = 0, shuffle: Boolean? = null) {
         if (entries.isEmpty()) return
         withController { c ->
-            if (shuffle != null) c.shuffleModeEnabled = shuffle
             val index = if (shuffle == true && startIndex < 0) entries.indices.random() else startIndex.coerceIn(0, entries.lastIndex)
+            // Shuffle left on from listening to music must not scramble the episodes of a show
+            // or a folder of videos: those play in order unless shuffling was asked for here.
+            if (shuffle != null) c.shuffleModeEnabled = shuffle else if (entries[index].isVideo) c.shuffleModeEnabled = false
             c.setMediaItems(entries.map { it.toMediaItem() }, index, 0L)
             c.prepare()
             c.play()
@@ -188,7 +190,17 @@ class PlayerConnection(private val context: Context, private val scope: Coroutin
         controller?.stop()
     }
 
-    fun next() = withController { c -> if (c.hasNextMediaItem()) c.seekToNextMediaItem() }
+    /** Moves on to the next item in the list. Returns false when there is nothing after this one. */
+    fun next(): Boolean {
+        val c = controller
+        if (c == null) {
+            connect()
+            return false
+        }
+        if (!c.hasNextMediaItem()) return false
+        c.seekToNextMediaItem()
+        return true
+    }
 
     fun previous() = withController { c -> c.seekToPrevious() }
 

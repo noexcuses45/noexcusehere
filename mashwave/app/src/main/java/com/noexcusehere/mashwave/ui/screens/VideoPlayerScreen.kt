@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.ContextWrapper
 import android.content.pm.ActivityInfo
 import android.media.AudioManager
+import android.os.Build
 import android.view.WindowManager
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
@@ -43,6 +44,7 @@ import androidx.compose.material.icons.rounded.Forward10
 import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material.icons.rounded.LockOpen
 import androidx.compose.material.icons.rounded.Pause
+import androidx.compose.material.icons.rounded.PictureInPictureAlt
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Replay10
 import androidx.compose.material.icons.rounded.ScreenRotation
@@ -55,9 +57,11 @@ import androidx.compose.material.icons.rounded.Subtitles
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LocalMinimumInteractiveComponentSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -74,6 +78,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -82,6 +87,7 @@ import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.media3.ui.AspectRatioFrameLayout
+import com.noexcusehere.mashwave.MainActivity
 import com.noexcusehere.mashwave.app
 import com.noexcusehere.mashwave.data.MediaEntry
 import com.noexcusehere.mashwave.data.formatDuration
@@ -91,6 +97,7 @@ import com.noexcusehere.mashwave.ui.SpeedSheet
 import com.noexcusehere.mashwave.ui.TracksSheet
 import com.noexcusehere.mashwave.iptv.TvProgramme
 import com.noexcusehere.mashwave.iptv.isLiveTv
+import com.noexcusehere.mashwave.iptv.isTv
 import com.noexcusehere.mashwave.ui.components.MwSlider
 import com.noexcusehere.mashwave.ui.rememberPlaybackPosition
 import com.noexcusehere.mashwave.ui.theme.BrandGradient
@@ -177,6 +184,25 @@ fun VideoPlayerScreen() {
 
     BackHandler { if (locked) showHint(Icons.Rounded.Lock, "Screen locked") else close() }
 
+    // The pop-out window: leaving the app while a video plays here keeps it on screen in a small
+    // window that floats over whatever is opened next.
+    val main = activity as? MainActivity
+    val canSkipOn = if (live) app.tv.canStep else state.queue.size > 1
+    DisposableEffect(main, state.hasVideo, state.isPlaying, canSkipOn, state.videoWidth, state.videoHeight) {
+        main?.setFloatState(open = state.hasVideo, playing = state.isPlaying, hasNext = canSkipOn, videoWidth = state.videoWidth, videoHeight = state.videoHeight)
+        onDispose { main?.setFloatState(open = false, playing = false, hasNext = false, videoWidth = 0, videoHeight = 0) }
+    }
+    LaunchedEffect(ui.inPip) {
+        if (ui.inPip) {
+            // Nothing but the picture fits in the little window.
+            sheet = ""
+            controls = false
+        } else {
+            // Back to full size: the system bars come back with it, so put them away again.
+            activity?.window?.let { WindowCompat.getInsetsController(it, it.decorView).hide(WindowInsetsCompat.Type.systemBars()) }
+        }
+    }
+
     // Hide the system bars, keep the screen awake, and undo all of it on the way out.
     DisposableEffect(activity) {
         val window = activity?.window
@@ -246,7 +272,18 @@ fun VideoPlayerScreen() {
             .fillMaxSize()
             .background(Color.Black),
     ) {
-        VideoSurface(Modifier.fillMaxSize(), texture = false, resizeMode = resizeMode)
+        // Up to Android 11, shrinking the app to the floating window with the usual video surface
+        // on screen can leave the system showing the old full-screen picture, squeezed, for good
+        // (seen on Android 10). There the video is drawn as part of the window itself, which
+        // cannot get out of step. Android 12 and later keep the more efficient surface.
+        VideoSurface(
+            Modifier.fillMaxSize(),
+            texture = Build.VERSION.SDK_INT < 31,
+            resizeMode = if (ui.inPip) AspectRatioFrameLayout.RESIZE_MODE_FIT else resizeMode,
+        )
+        // In the small floating window there is only the picture; Android puts its own
+        // play / pause, enlarge and close buttons on it.
+        if (ui.inPip) return@Box
 
         // ---- gesture layer ----
         Box(
@@ -493,79 +530,90 @@ fun VideoPlayerScreen() {
                         )
                         .windowInsetsPadding(WindowInsets.displayCutout),
                 ) {
-                    // top bar
-                    Row(
-                        Modifier
-                            .align(Alignment.TopCenter)
-                            .fillMaxWidth()
-                            .padding(horizontal = 6.dp, vertical = 6.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        IconButton(onClick = { close() }) {
-                            Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = "Back", tint = Color.White)
-                        }
-                        Text(
-                            state.current?.title ?: "",
-                            style = MaterialTheme.typography.titleMedium,
-                            color = Color.White,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.weight(1f),
-                        )
-                        com.noexcusehere.mashwave.ui.CastButton(com.noexcusehere.mashwave.cast.CastWhat.VIDEO, tint = Color.White)
-                        IconButton(onClick = { sheet = "tracks" }) {
-                            Icon(Icons.Rounded.Subtitles, contentDescription = "Audio and subtitles", tint = Color.White)
-                        }
-                        if (live) {
-                            IconButton(onClick = {
-                                // The channel that is on becomes the first of up to four pictures.
-                                app.multiview.begin(app.tv.itemOf(state.current))
-                                close()
-                                ui.multiviewOpen = true
-                            }) {
-                                Icon(Icons.Rounded.GridView, contentDescription = "Multiview: watch up to four channels at once", tint = Color.White)
+                    // top bar. Held upright on a narrow phone the buttons sit a little closer
+                    // together, so all of them fit.
+                    val buttonSize = if (LocalConfiguration.current.screenWidthDp < 440) 40.dp else 48.dp
+                    CompositionLocalProvider(LocalMinimumInteractiveComponentSize provides buttonSize) {
+                        Row(
+                            Modifier
+                                .align(Alignment.TopCenter)
+                                .fillMaxWidth()
+                                .padding(horizontal = 6.dp, vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            IconButton(onClick = { close() }) {
+                                Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = "Back", tint = Color.White)
                             }
-                        }
-                        if (!live) {
-                            IconButton(onClick = { sheet = "speed" }) {
-                                Icon(Icons.Rounded.Speed, contentDescription = "Playback speed", tint = Color.White)
-                            }
-                        }
-                        IconButton(onClick = {
-                            resizeMode = when (resizeMode) {
-                                AspectRatioFrameLayout.RESIZE_MODE_FIT -> AspectRatioFrameLayout.RESIZE_MODE_ZOOM
-                                AspectRatioFrameLayout.RESIZE_MODE_ZOOM -> AspectRatioFrameLayout.RESIZE_MODE_FILL
-                                else -> AspectRatioFrameLayout.RESIZE_MODE_FIT
-                            }
-                            showHint(
-                                Icons.Rounded.AspectRatio,
-                                when (resizeMode) {
-                                    AspectRatioFrameLayout.RESIZE_MODE_ZOOM -> "Zoom to fill"
-                                    AspectRatioFrameLayout.RESIZE_MODE_FILL -> "Stretch"
-                                    else -> "Fit to screen"
-                                },
+                            Text(
+                                state.current?.title ?: "",
+                                style = MaterialTheme.typography.titleMedium,
+                                color = Color.White,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.weight(1f),
                             )
-                            touchTick++
-                        }) {
-                            Icon(Icons.Rounded.AspectRatio, contentDescription = "Change picture size", tint = Color.White)
-                        }
-                        IconButton(onClick = {
-                            rotationChosen = true
-                            val landscape = activity?.requestedOrientation == ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
-                            activity?.requestedOrientation = if (landscape) {
-                                ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT
-                            } else {
-                                ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+                            IconButton(onClick = {
+                                if (main?.floatNow() != true) {
+                                    showHint(Icons.Rounded.PictureInPictureAlt, "This phone won't show a floating window")
+                                }
+                            }) {
+                                Icon(Icons.Rounded.PictureInPictureAlt, contentDescription = "Shrink to a small floating window", tint = Color.White)
                             }
-                            touchTick++
-                        }) {
-                            Icon(Icons.Rounded.ScreenRotation, contentDescription = "Rotate screen", tint = Color.White)
-                        }
-                        IconButton(onClick = {
-                            locked = true
-                            showHint(Icons.Rounded.Lock, "Controls locked")
-                        }) {
-                            Icon(Icons.Rounded.LockOpen, contentDescription = "Lock controls", tint = Color.White)
+                            com.noexcusehere.mashwave.ui.CastButton(com.noexcusehere.mashwave.cast.CastWhat.VIDEO, tint = Color.White)
+                            IconButton(onClick = { sheet = "tracks" }) {
+                                Icon(Icons.Rounded.Subtitles, contentDescription = "Audio and subtitles", tint = Color.White)
+                            }
+                            if (live) {
+                                IconButton(onClick = {
+                                    // The channel that is on becomes the first of up to four pictures.
+                                    app.multiview.begin(app.tv.itemOf(state.current))
+                                    close()
+                                    ui.multiviewOpen = true
+                                }) {
+                                    Icon(Icons.Rounded.GridView, contentDescription = "Multiview: watch up to four channels at once", tint = Color.White)
+                                }
+                            }
+                            if (!live) {
+                                IconButton(onClick = { sheet = "speed" }) {
+                                    Icon(Icons.Rounded.Speed, contentDescription = "Playback speed", tint = Color.White)
+                                }
+                            }
+                            IconButton(onClick = {
+                                resizeMode = when (resizeMode) {
+                                    AspectRatioFrameLayout.RESIZE_MODE_FIT -> AspectRatioFrameLayout.RESIZE_MODE_ZOOM
+                                    AspectRatioFrameLayout.RESIZE_MODE_ZOOM -> AspectRatioFrameLayout.RESIZE_MODE_FILL
+                                    else -> AspectRatioFrameLayout.RESIZE_MODE_FIT
+                                }
+                                showHint(
+                                    Icons.Rounded.AspectRatio,
+                                    when (resizeMode) {
+                                        AspectRatioFrameLayout.RESIZE_MODE_ZOOM -> "Zoom to fill"
+                                        AspectRatioFrameLayout.RESIZE_MODE_FILL -> "Stretch"
+                                        else -> "Fit to screen"
+                                    },
+                                )
+                                touchTick++
+                            }) {
+                                Icon(Icons.Rounded.AspectRatio, contentDescription = "Change picture size", tint = Color.White)
+                            }
+                            IconButton(onClick = {
+                                rotationChosen = true
+                                val landscape = activity?.requestedOrientation == ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+                                activity?.requestedOrientation = if (landscape) {
+                                    ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT
+                                } else {
+                                    ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+                                }
+                                touchTick++
+                            }) {
+                                Icon(Icons.Rounded.ScreenRotation, contentDescription = "Rotate screen", tint = Color.White)
+                            }
+                            IconButton(onClick = {
+                                locked = true
+                                showHint(Icons.Rounded.Lock, "Controls locked")
+                            }) {
+                                Icon(Icons.Rounded.LockOpen, contentDescription = "Lock controls", tint = Color.White)
+                            }
                         }
                     }
 
@@ -626,7 +674,9 @@ fun VideoPlayerScreen() {
                             }
                             if (state.queue.size > 1) {
                                 RoundControl(Icons.Rounded.SkipNext, "Next") {
-                                    app.player.next()
+                                    if (!app.player.next()) {
+                                        showHint(Icons.Rounded.SkipNext, if (state.current?.isTv == true) "That was the last episode" else "Nothing after this one")
+                                    }
                                     touchTick++
                                 }
                             }

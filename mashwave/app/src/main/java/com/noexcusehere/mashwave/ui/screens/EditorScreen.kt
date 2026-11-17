@@ -84,6 +84,7 @@ import com.noexcusehere.mashwave.editor.EditorOps
 import com.noexcusehere.mashwave.editor.EditorPreview
 import com.noexcusehere.mashwave.editor.EditorSession
 import com.noexcusehere.mashwave.editor.EditorStore
+import com.noexcusehere.mashwave.photo.PhotoFiles
 import com.noexcusehere.mashwave.ui.LocalUi
 import com.noexcusehere.mashwave.ui.components.PillButton
 import com.noexcusehere.mashwave.ui.components.TextPromptDialog
@@ -94,8 +95,10 @@ import com.noexcusehere.mashwave.ui.theme.Surface1
 import com.noexcusehere.mashwave.ui.theme.TextHi
 import com.noexcusehere.mashwave.ui.theme.TextLow
 import com.noexcusehere.mashwave.ui.theme.TextMid
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /** Which tool panel is open. */
 private enum class Panel { NONE, ADD, MUSIC, TEXT, EMOJI, FILTER, ADJUST, TRIM, SPEED, VOLUME, CANVAS, EXPORT }
@@ -522,25 +525,32 @@ fun EditorScreen(projectId: String, onClose: () -> Unit) {
             LaunchedEffect(id) { photoClipId = null }
         } else {
             PhotoEditorScreen(
-                clip = target,
+                photo = PhotoToEdit(target.id, target.uri, target.rotation, target.mirrored, target.original),
                 onClose = { photoClipId = null },
-                onSaved = { saved ->
-                    // The timeline now shows the edited copy. Turning and mirroring are already
-                    // part of that copy, so they are not applied a second time.
-                    panelClipId = id
-                    changeClip(
-                        EditorOps.updateClip(session.project, id) {
-                            it.copy(
-                                uri = saved.uri,
-                                width = saved.width,
-                                height = saved.height,
-                                rotation = 0,
-                                mirrored = false,
-                                original = it.original.ifEmpty { it.uri },
-                            )
-                        },
-                    )
-                    photoClipId = null
+                onDone = { picture ->
+                    // The edited copy is kept in the app's own storage, next to the project.
+                    val saved = withContext(Dispatchers.IO) {
+                        runCatching { PhotoFiles.write(context.applicationContext, id, picture) }.getOrNull()
+                    }
+                    if (saved != null) {
+                        // The timeline now shows the edited copy. Turning and mirroring are already
+                        // part of that copy, so they are not applied a second time.
+                        panelClipId = id
+                        changeClip(
+                            EditorOps.updateClip(session.project, id) {
+                                it.copy(
+                                    uri = saved.uri,
+                                    width = saved.width,
+                                    height = saved.height,
+                                    rotation = 0,
+                                    mirrored = false,
+                                    original = it.original.ifEmpty { it.uri },
+                                )
+                            },
+                        )
+                        photoClipId = null
+                    }
+                    saved != null
                 },
             )
         }

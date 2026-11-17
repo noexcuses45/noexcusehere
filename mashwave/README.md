@@ -16,8 +16,9 @@ and TV sign-ins. Mashups and exported videos made before the latest rename stay 
 ## What it does
 
 **Music**
+- The tabs along the bottom are Home, Music, Videos, TV, Video editor and Photo editor
 - The **Music** tab is the music library. It finds every song on the phone and shows Songs,
-  Albums, Artists, Folders and Playlists, with sorting and search
+  Albums, Artists, Folders, Playlists and Mashups (the mashup studio), with sorting and search
 - Background playback with lock-screen, notification, headset and Bluetooth controls
 - Queue (play next / add to queue / remove), shuffle, repeat, speed 0.5×–2×, sleep timer
 - Playlists you create, rename, reorder and delete; Liked, Recently played, Most played
@@ -38,9 +39,14 @@ and TV sign-ins. Mashups and exported videos made before the latest rename stay 
   "Start over" button for a few seconds. Videos under a minute, and ones watched to the end,
   start from the beginning. The place is shared between the phone and the TV
 - Audio-track and subtitle selection, playback speed
-- Keeps playing as audio when you leave the video
+- **Pop-out window:** leave the app while a video is playing full-screen (or tap the shrink
+  button in the player) and it keeps playing in a small window that floats over whatever you
+  open next. Drag it anywhere; tap it for play / pause, next, enlarge and close. Closing it
+  stops the video. (Android's "picture in picture"; from Android 12 the shrink is automatic
+  and smooth, on older versions it happens when Home is pressed)
+- Going back to the app's other screens keeps the video playing as audio in the mini player
 
-**TV** (TV tab, between Videos and Mashup)
+**TV** (TV tab, between Videos and Video editor)
 - Plays **your own TV service** - the kind TiviMate or IPTV Smarters play. The app has no
   channels of its own; without a subscription from a provider the tab is empty
 - Sign in with what the provider gives you: **DNS (URL), username and password** (an "Xtream
@@ -67,6 +73,9 @@ and TV sign-ins. Mashups and exported videos made before the latest rename stay 
 - A dropped channel reconnects by itself; it never skips to a different channel on an error
 - Movies and episodes use the normal video player: carry on where you stopped, -10 / +10,
   hold to fast-forward, audio and subtitle tracks. A show remembers which episode you were on
+- Starting an episode lines up the whole show, so **Next** (and the end of an episode)
+  carries on into the following season; episodes always play in order, even if shuffle was
+  left on from music
 - **Multiview** (the grid button on the TV tab, or in the live player): up to four live
   channels on screen at once - one fills the screen, two sit side by side, three or four make
   a grid. Tap a picture to hear it, double-tap to make it big, and use the buttons on each
@@ -85,7 +94,7 @@ and TV sign-ins. Mashups and exported videos made before the latest rename stay 
 - Channel lists are kept on the phone (the tab opens at once) and refreshed when older than
   half a day, or from the settings button
 
-**Auto Mashup** (Mashup tab → Auto)
+**Auto Mashup** (Music → Mashups → Auto)
 - Pick 2 to 6 songs, choose how long it should be (Auto, or 1 to 7 minutes) and press
   **Create mashup**; the app does the rest and saves one new track into `Music/Ultimate Media Manager`,
   where it shows up in the library like any other song
@@ -112,14 +121,14 @@ melodies) from the other, with the bass swapped exactly on the bar line. Songs w
 steady beat work best; live recordings, rubato and beatless music don't. Songs with very
 different tempos have to be stretched a lot to meet, and that can be heard.
 
-**Manual decks** (Mashup tab → Manual decks)
+**Manual decks** (Music → Mashups → Manual decks)
 - Two decks that play at the same time, each with its own tempo, pitch (in semitones) and volume
 - Automatic BPM detection, plus tap-tempo if you want to set it by hand
 - "Match tempo" brings one deck to the other's beat
 - Crossfader (the middle is both songs at full volume), start points, restart together
 - Save mashups by name and reopen them later
 
-**Video editor** (Edit tab, next to Mashup)
+**Video editor** (Video editor tab)
 - "Add clips" shows every photo and video on the phone in one grid, with filters for where
   they came from - Camera, WhatsApp, Messenger, Texts, Screenshots, Downloads - and a search
   box, plus buttons that reach into Google Photos and Google Drive
@@ -139,7 +148,13 @@ different tempos have to be stretched a lot to meet, and that can be heard.
 Not in the editor: transitions, stickers / GIFs, picture-in-picture, cut-out, auto captions,
 reverse and freeze-frame.
 
-**Photo editor** (inside the video editor: put the white line on a photo and tap **Edit photo**)
+**Photo editor** (its own tab, and inside the video editor)
+- The **Photo editor** tab shows every photo on the phone (with buttons to pick one from
+  Google Photos, Drive or files). Tap one to edit it; **Save** makes a new picture in
+  `Pictures/Ultimate Media Manager` and leaves the original as it is. Pictures are worked on
+  and saved at up to 2048 pixels on the long side
+- In the video editor, put the white line on a photo and tap **Edit photo**; **Done** puts
+  the edited photo back on the timeline
 - **Crop** with free or fixed shapes (square, 4:5, 9:16, 16:9 ...), quarter turns, mirror and flip
 - **Auto** tidy-up in one tap; **Adjust** brightness, contrast, colour, warmth, highlights,
   shadows, sharpen, fade and vignette; twelve **Looks** with a strength slider

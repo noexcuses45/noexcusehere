@@ -28,7 +28,6 @@ import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.Equalizer
 import androidx.compose.material.icons.rounded.Favorite
 import androidx.compose.material.icons.rounded.FolderOpen
-import androidx.compose.material.icons.rounded.GraphicEq
 import androidx.compose.material.icons.rounded.History
 import androidx.compose.material.icons.rounded.Link
 import androidx.compose.material.icons.rounded.MusicOff
@@ -63,6 +62,7 @@ import com.noexcusehere.mashwave.data.Mashup
 import com.noexcusehere.mashwave.data.MediaEntry
 import com.noexcusehere.mashwave.data.Playlist
 import com.noexcusehere.mashwave.data.countLabel
+import com.noexcusehere.mashwave.ui.LibraryTabs
 import com.noexcusehere.mashwave.ui.LocalNav
 import com.noexcusehere.mashwave.ui.LocalUi
 import com.noexcusehere.mashwave.ui.Routes
@@ -177,7 +177,8 @@ fun HomeScreen() {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     QuickTile("Auto Mashup", Icons.Rounded.AutoAwesome, listOf(DeckA, DeckB), Modifier.weight(1f)) {
                         ui.mashupMode = 0
-                        nav.openTab(Routes.MASHUP)
+                        ui.libraryTab = LibraryTabs.MASHUPS
+                        nav.openTab(Routes.LIBRARY)
                     }
                     QuickTile("Videos", Icons.Rounded.VideoLibrary, listOf(Color(0xFFE11D48), Violet), Modifier.weight(1f)) {
                         nav.openTab(Routes.VIDEOS)
@@ -195,7 +196,10 @@ fun HomeScreen() {
 
         if (data.playlists.isNotEmpty()) {
             item {
-                SectionTitle("Your playlists", action = "See all", onAction = { nav.openTab(Routes.PLAYLISTS) })
+                SectionTitle("Your playlists", action = "See all", onAction = {
+                    ui.libraryTab = LibraryTabs.PLAYLISTS
+                    nav.openTab(Routes.LIBRARY)
+                })
                 LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     items(data.playlists, key = { it.id }) { playlist ->
                         PlaylistCard(playlist) { nav.navigate(Routes.collection("playlist", playlist.id)) }
@@ -206,13 +210,17 @@ fun HomeScreen() {
 
         if (data.mashups.isNotEmpty()) {
             item {
-                SectionTitle("Your mashups", action = "Studio", onAction = { nav.openTab(Routes.MASHUP) })
+                SectionTitle("Your mashups", action = "Studio", onAction = {
+                    ui.libraryTab = LibraryTabs.MASHUPS
+                    nav.openTab(Routes.LIBRARY)
+                })
                 LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     items(data.mashups, key = { it.id }) { mashup ->
                         MashupCard(mashup) {
                             app.mashup.open(mashup, autoPlay = true)
                             ui.mashupMode = 1
-                            nav.openTab(Routes.MASHUP)
+                            ui.libraryTab = LibraryTabs.MASHUPS
+                            nav.openTab(Routes.LIBRARY)
                         }
                     }
                 }

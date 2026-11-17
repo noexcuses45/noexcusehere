@@ -43,8 +43,17 @@ class UiState {
     /** A bottom-bar tab to jump to (set when a notification is tapped). */
     var pendingTab by mutableStateOf<String?>(null)
 
-    /** Which half of the Mashup tab is showing: 0 = Auto Mashup, 1 = the two manual decks. */
+    /** Which half of the mashup studio is showing: 0 = Auto Mashup, 1 = the two manual decks. */
     var mashupMode by mutableStateOf(0)
+
+    /** Which button of the music library is chosen (see [LibraryTabs]). */
+    var libraryTab by mutableStateOf(LibraryTabs.SONGS)
+
+    /** The photo open in the photo editor (picked on the Photo editor tab), which covers the whole screen. */
+    var editingPhoto by mutableStateOf<MediaEntry?>(null)
+
+    /** True while the app is shrunk to the small floating video window. */
+    var inPip by mutableStateOf(false)
 
     /** Entry whose "..." menu is showing, and the playlist it was opened from (if any). */
     var menuEntry by mutableStateOf<MediaEntry?>(null)
@@ -73,6 +82,16 @@ class UiState {
     }
 }
 
+/** The buttons under the music library's title, in order. */
+object LibraryTabs {
+    const val SONGS = 0
+    const val ALBUMS = 1
+    const val ARTISTS = 2
+    const val FOLDERS = 3
+    const val PLAYLISTS = 4
+    const val MASHUPS = 5
+}
+
 val LocalUi = staticCompositionLocalOf<UiState> { error("UiState not provided") }
 val LocalNav = staticCompositionLocalOf<NavHostController> { error("NavController not provided") }
 
@@ -84,9 +103,8 @@ object Routes {
     const val TV_LIST = "tv/list/{section}/{category}"
     const val TV_DETAIL = "tv/detail"
     const val TV_SEARCH = "tv/search"
-    const val MASHUP = "mashup"
-    const val PLAYLISTS = "playlists"
     const val EDITOR = "editor"
+    const val PHOTOS = "photos"
     const val SEARCH = "search"
     const val EQUALIZER = "equalizer"
     const val COLLECTION = "collection/{type}/{key}"

@@ -23,6 +23,7 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -39,10 +40,10 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -56,6 +57,7 @@ import com.noexcusehere.mashwave.data.MediaEntry
 import com.noexcusehere.mashwave.data.toAlbums
 import com.noexcusehere.mashwave.data.toArtists
 import com.noexcusehere.mashwave.data.toFolders
+import com.noexcusehere.mashwave.ui.LibraryTabs
 import com.noexcusehere.mashwave.ui.LocalNav
 import com.noexcusehere.mashwave.ui.ImportKind
 import com.noexcusehere.mashwave.ui.LocalUi
@@ -89,9 +91,6 @@ fun sortSongs(songs: List<MediaEntry>, sort: String): List<MediaEntry> = when (s
     else -> songs
 }
 
-/** Where "Playlists" sits in the row of buttons under the title. */
-private const val PLAYLISTS = 4
-
 @Composable
 fun LibraryScreen() {
     val app = LocalContext.current.app
@@ -100,10 +99,11 @@ fun LibraryScreen() {
     val songs by app.library.songs.collectAsStateWithLifecycle()
     val data by app.store.data.collectAsStateWithLifecycle()
     val player by app.player.state.collectAsStateWithLifecycle()
-    var tab by rememberSaveable { mutableStateOf(0) }
+    // Kept with the app's other screen state so Home's shortcuts can open a particular button.
+    val tab = ui.libraryTab
     var sortOpen by remember { mutableStateOf(false) }
     val importer = rememberMediaImporter()
-    val tabs = listOf("Songs", "Albums", "Artists", "Folders", "Playlists")
+    val tabs = listOf("Songs", "Albums", "Artists", "Folders", "Playlists", "Mashups")
     var creatingPlaylist by remember { mutableStateOf(false) }
 
     Column(
@@ -114,7 +114,7 @@ fun LibraryScreen() {
         ScreenHeader("Music library") {
             HeaderIcon(Icons.Rounded.CloudDownload, "Add music from Google Drive or files", { importer.fromFiles(ImportKind.MUSIC) })
             HeaderIcon(Icons.Rounded.Search, "Search", { nav.navigate(Routes.SEARCH) })
-            if (tab == 0) {
+            if (tab == LibraryTabs.SONGS) {
                 Box {
                     HeaderIcon(Icons.AutoMirrored.Rounded.Sort, "Sort", { sortOpen = true })
                     DropdownMenu(expanded = sortOpen, onDismissRequest = { sortOpen = false }, containerColor = Surface2) {
@@ -130,26 +130,36 @@ fun LibraryScreen() {
                     }
                 }
             }
-            if (tab == PLAYLISTS) {
+            if (tab == LibraryTabs.PLAYLISTS) {
                 HeaderIcon(Icons.Rounded.Add, "New playlist", { creatingPlaylist = true })
             }
             HeaderIcon(Icons.Rounded.Shuffle, "Shuffle all songs", {
                 if (songs.isEmpty()) app.say("No songs found yet") else app.player.shuffleAll(songs)
             }, tint = Pink)
         }
+        // On a narrow screen not every button fits: the chosen one is brought into view, for
+        // when a shortcut elsewhere in the app opened it.
+        val buttons = rememberLazyListState()
+        LaunchedEffect(tab) { buttons.animateScrollToItem(tab) }
         LazyRow(
+            state = buttons,
             contentPadding = PaddingValues(horizontal = 16.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             modifier = Modifier.padding(vertical = 8.dp),
         ) {
             itemsIndexed(tabs) { index, label ->
-                Chip(label, selected = tab == index, onClick = { tab = index })
+                Chip(label, selected = tab == index, onClick = { ui.libraryTab = index })
             }
         }
 
-        if (tab == PLAYLISTS) {
+        if (tab == LibraryTabs.PLAYLISTS) {
             // Playlists are shown even when no songs were found on the phone.
-            PlaylistsList(creating = creatingPlaylist, onCreating = { creatingPlaylist = it }, watchLists = false)
+            PlaylistsList(creating = creatingPlaylist, onCreating = { creatingPlaylist = it })
+            return@Column
+        }
+        if (tab == LibraryTabs.MASHUPS) {
+            // The mashup studio: Auto Mashup and the two manual decks.
+            MashupStudio()
             return@Column
         }
 

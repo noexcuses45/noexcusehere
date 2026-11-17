@@ -1,5 +1,6 @@
 package com.noexcusehere.mashwave.photo
 
+import android.content.ContentValues
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
@@ -10,15 +11,20 @@ import android.graphics.Paint
 import android.graphics.RectF
 import android.media.ExifInterface
 import android.net.Uri
+import android.os.Build
+import android.os.Environment
+import android.provider.MediaStore
 import android.util.Log
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import com.noexcusehere.mashwave.APP_NAME
 import com.noexcusehere.mashwave.editor.EditProject
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.ByteArrayOutputStream
 import java.io.File
+import java.io.IOException
 import kotlin.math.max
 import kotlin.math.roundToInt
 
@@ -97,14 +103,6 @@ class PhotoSession(private val context: Context) {
         undoStack.addLast(restored.second)
         picture = restored.first ?: current
         flags()
-    }
-
-    /** Writes the picture into the app's storage for the clip [clipId]. Null when that fails. */
-    suspend fun save(clipId: String): SavedPhoto? = withContext(Dispatchers.IO) {
-        val bitmap = picture ?: return@withContext null
-        runCatching { PhotoFiles.write(context, clipId, bitmap) }
-            .onFailure { Log.w("UltimateBeats", "Could not save the edited photo", it) }
-            .getOrNull()
     }
 
     private fun flags() {
@@ -199,6 +197,48 @@ object PhotoFiles {
         file.outputStream().use { bitmap.compress(Bitmap.CompressFormat.JPEG, 95, it) }
         if (file.length() == 0L) throw IllegalStateException("Nothing was written")
         return SavedPhoto(Uri.fromFile(file).toString(), bitmap.width, bitmap.height)
+    }
+
+    /**
+     * Saves [bitmap] as a new picture in the phone's gallery, in a folder named after the app,
+     * and returns where it went in plain words. [name] is the name of the photo it was made from.
+     */
+    fun publish(context: Context, bitmap: Bitmap, name: String): String {
+        val clean = name.substringBeforeLast('.').replace(Regex("[\\\\/:*?\"<>|]"), " ").replace(Regex("\\s+"), " ").trim().ifBlank { "Photo" }
+        val title = "$clean edited"
+        if (Build.VERSION.SDK_INT >= 29) {
+            val resolver = context.contentResolver
+            val values = ContentValues().apply {
+                put(MediaStore.Images.Media.DISPLAY_NAME, "$title.jpg")
+                put(MediaStore.Images.Media.TITLE, title)
+                put(MediaStore.Images.Media.MIME_TYPE, "image/jpeg")
+                put(MediaStore.Images.Media.RELATIVE_PATH, Environment.DIRECTORY_PICTURES + "/" + APP_NAME)
+                put(MediaStore.Images.Media.IS_PENDING, 1)
+            }
+            val collection = MediaStore.Images.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
+            val item = resolver.insert(collection, values) ?: throw IOException("could not create the picture")
+            try {
+                resolver.openOutputStream(item)?.use { out ->
+                    if (!bitmap.compress(Bitmap.CompressFormat.JPEG, 95, out)) throw IOException("could not write the picture")
+                } ?: throw IOException("could not open the picture")
+                values.clear()
+                values.put(MediaStore.Images.Media.IS_PENDING, 0)
+                resolver.update(item, values, null, null)
+            } catch (e: Exception) {
+                runCatching { resolver.delete(item, null, null) }
+                throw e
+            }
+            return "Pictures › $APP_NAME"
+        }
+        // Older Android: keep it in the app's own pictures folder (no extra permission needed).
+        val dir = File(context.getExternalFilesDir(Environment.DIRECTORY_PICTURES) ?: context.filesDir, APP_NAME)
+        dir.mkdirs()
+        var target = File(dir, "$title.jpg")
+        var n = 2
+        while (target.exists()) target = File(dir, "$title ($n).jpg").also { n++ }
+        target.outputStream().use { bitmap.compress(Bitmap.CompressFormat.JPEG, 95, it) }
+        if (target.length() == 0L) throw IOException("nothing was written")
+        return "the app's Pictures folder"
     }
 
     /**

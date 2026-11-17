@@ -193,14 +193,16 @@ fun TrackMenuSheet(entry: MediaEntry, playlistId: String?, onDismiss: () -> Unit
                     app.mashup.load(0, entry)
                     ui.nowPlayingOpen = false
                     ui.mashupMode = 1
-                    nav.openTab(Routes.MASHUP)
+                    ui.libraryTab = LibraryTabs.MASHUPS
+                    nav.openTab(Routes.LIBRARY)
                     onDismiss()
                 }, tint = DeckA)
                 SheetAction(Icons.Rounded.GraphicEq, "Manual mashup: load on Deck B", {
                     app.mashup.load(1, entry)
                     ui.nowPlayingOpen = false
                     ui.mashupMode = 1
-                    nav.openTab(Routes.MASHUP)
+                    ui.libraryTab = LibraryTabs.MASHUPS
+                    nav.openTab(Routes.LIBRARY)
                     onDismiss()
                 }, tint = DeckB)
             }
