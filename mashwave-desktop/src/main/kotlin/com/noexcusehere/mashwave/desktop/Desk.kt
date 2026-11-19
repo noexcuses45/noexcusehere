@@ -110,7 +110,7 @@ class Desk(private val scope: CoroutineScope, val dataDir: File, private val vlc
                 player = pair.first
                 vlcFolder = pair.second
             } else {
-                vlcProblem = VlcFinder.problem.ifEmpty { "VLC could not be started." }
+                vlcProblem = VlcFinder.problem.ifEmpty { "The video player could not be started." }
             }
             lookingForVlc = false
         }
@@ -147,7 +147,7 @@ class Desk(private val scope: CoroutineScope, val dataDir: File, private val vlc
     private fun ready(): VlcPlayer? {
         val p = player
         if (p == null) {
-            say(if (lookingForVlc) "The player is still starting. Try again in a moment." else "VLC is needed to play - see the note at the top.")
+            say(if (lookingForVlc) "The player is still starting. Try again in a moment." else "The video player is missing - see the note at the top.")
         }
         return p
     }

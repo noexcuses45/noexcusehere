@@ -276,7 +276,7 @@ fun LiveScreen(desk: Desk) {
                         Icon(Icons.Rounded.PlayArrow, contentDescription = null, tint = TextLow, modifier = Modifier.size(40.dp))
                         val noPlayer = player == null && !desk.lookingForVlc
                         Text(
-                            if (noPlayer) "VLC is needed to play" else "Click a channel to watch it here",
+                            if (noPlayer) "The video player is missing" else "Click a channel to watch it here",
                             style = MaterialTheme.typography.bodyMedium,
                             color = TextLow,
                         )

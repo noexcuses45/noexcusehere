@@ -1,4 +1,7 @@
+import org.gradle.internal.os.OperatingSystem
 import org.jetbrains.compose.desktop.application.dsl.TargetFormat
+import java.net.URI
+import java.security.MessageDigest
 
 plugins {
     kotlin("jvm") version "2.3.21"
@@ -55,6 +58,74 @@ val usedIconsJar by tasks.registering(Jar::class) {
     includeEmptyDirs = false
 }
 
+// ---- the video player packed with the Windows app --------------------------------------------
+//
+// The picture and sound are played by the VLC engine (libVLC). For Windows it is packed inside
+// the app, so nothing else has to be installed. The files come from VideoLAN's own package for
+// use inside other programs, which is under the LGPL; only the plug-ins listed in
+// engine/plugins.txt are taken. The download is checked against a known fingerprint before use.
+val engineVersion = "3.0.24"
+val engineFingerprint = "3da3f37ee2b2b10e5c788d830a3b513658c36521ea1b0f966ed86eb69f41ef3c"
+val engineResources = layout.buildDirectory.dir("engine")
+val packEngine = OperatingSystem.current().isWindows || hasProperty("packEngine")
+
+val fetchEngine by tasks.registering {
+    val download = layout.buildDirectory.file("downloads/libvlc-$engineVersion.nupkg")
+    val wantedList = file("engine/plugins.txt")
+    val notices = file("engine/notices")
+    val into = engineResources.map { it.dir("windows-x64/vlc") }
+    inputs.property("version", engineVersion)
+    inputs.file(wantedList)
+    inputs.dir(notices)
+    outputs.dir(into)
+    onlyIf { packEngine }
+    doLast {
+        fun fingerprint(of: File): String {
+            val digest = MessageDigest.getInstance("SHA-256")
+            of.inputStream().use { input ->
+                val chunk = ByteArray(1 shl 16)
+                while (true) {
+                    val n = input.read(chunk)
+                    if (n < 0) break
+                    digest.update(chunk, 0, n)
+                }
+            }
+            return digest.digest().joinToString("") { "%02x".format(it) }
+        }
+        val archive = download.get().asFile
+        if (!archive.isFile || fingerprint(archive) != engineFingerprint) {
+            archive.parentFile.mkdirs()
+            val address = "https://api.nuget.org/v3-flatcontainer/videolan.libvlc.windows/$engineVersion/videolan.libvlc.windows.$engineVersion.nupkg"
+            URI(address).toURL().openStream().use { input -> archive.outputStream().use { input.copyTo(it) } }
+        }
+        check(fingerprint(archive) == engineFingerprint) { "The player engine that was downloaded is not the expected file" }
+
+        val wanted = wantedList.readLines().map { it.trim() }.filter { it.isNotEmpty() && !it.startsWith("#") }
+            .map { "build/x64/plugins/" + it.substringBefore('/') + "/lib" + it.substringAfter('/') + "_plugin.dll" }.toSet()
+        val target = into.get().asFile
+        delete(target)
+        copy {
+            from(zipTree(archive)) {
+                include { it.isDirectory || it.path == "build/x64/libvlc.dll" || it.path == "build/x64/libvlccore.dll" || it.path in wanted }
+                eachFile { path = path.removePrefix("build/x64/") }
+                includeEmptyDirs = false
+            }
+            into(target)
+        }
+        copy {
+            from(notices)
+            into(target)
+            filter { it.replace("@VERSION@", engineVersion) }
+        }
+        val found = fileTree(target).files.count { it.name.endsWith("_plugin.dll") }
+        check(found == wanted.size) { "Only $found of the ${wanted.size} listed player plug-ins are in the package" }
+        check(File(target, "libvlc.dll").isFile && File(target, "libvlccore.dll").isFile) { "The player engine itself is missing from the package" }
+    }
+}
+
+// The packaging step that gathers the app's extra files must wait for the engine to be there.
+tasks.matching { it.name == "prepareAppResources" }.configureEach { dependsOn(fetchEngine) }
+
 kotlin {
     jvmToolchain(21)
     sourceSets.main {
@@ -95,6 +166,8 @@ compose.desktop {
             vendor = "Ultimate Media Manager"
             // The parts of Java the app needs beyond the basics (found with "gradlew suggestRuntimeModules").
             modules("java.instrument", "jdk.unsupported")
+            // Extra files that travel with the app: the video player, for Windows.
+            appResourcesRootDir.set(engineResources)
 
             windows {
                 iconFile.set(project.file("icons/icon.ico"))

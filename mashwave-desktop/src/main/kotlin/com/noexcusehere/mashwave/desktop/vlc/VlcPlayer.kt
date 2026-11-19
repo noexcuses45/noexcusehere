@@ -81,6 +81,27 @@ class VlcPlayer(private val found: VlcFinder.Found, private val host: PlayerHost
     val version: String
         get() = found.version
 
+    /** True when the engine came packed with the app rather than from a VLC on the computer. */
+    val builtIn: Boolean
+        get() = found.builtIn
+
+    /** How much has been decoded and played so far; for the app's check on itself. */
+    class Counts(val pictures: Int, val soundDecoded: Int, val soundPlayed: Int)
+
+    fun counts(): Counts? = runCatching {
+        control.submit<Counts?> {
+            val media = lib.libvlc_media_player_get_media(player) ?: return@submit null
+            try {
+                // Fifteen numbers of four bytes each; the decoders' counts are the 7th, 8th and 11th.
+                val stats = Memory(64)
+                stats.clear()
+                if (lib.libvlc_media_get_stats(media, stats) == 0) null else Counts(stats.getInt(24), stats.getInt(28), stats.getInt(40))
+            } finally {
+                lib.libvlc_media_release(media)
+            }
+        }.get(3, TimeUnit.SECONDS)
+    }.getOrNull()
+
     // ---- what the screen shows ------------------------------------------------------------------
 
     var queue by mutableStateOf(emptyList<MediaEntry>())

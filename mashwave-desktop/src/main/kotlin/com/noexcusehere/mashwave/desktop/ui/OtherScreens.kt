@@ -72,6 +72,7 @@ import kotlinx.coroutines.withContext
 import java.awt.Desktop
 import java.awt.Toolkit
 import java.awt.datatransfer.DataFlavor
+import java.io.File
 import java.net.URI
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -346,8 +347,9 @@ fun SettingsScreen(desk: Desk) {
             Heading("Player")
             val player = desk.player
             when {
-                player != null -> Text("Using VLC ${player.version} from ${desk.vlcFolder}", style = MaterialTheme.typography.bodyMedium, color = TextMid)
-                desk.lookingForVlc -> Text("Looking for VLC...", style = MaterialTheme.typography.bodyMedium, color = TextMid)
+                player != null && player.builtIn -> Text("Built in (VLC engine ${player.version}).", style = MaterialTheme.typography.bodyMedium, color = TextMid)
+                player != null -> Text("Using the VLC ${player.version} installed in ${desk.vlcFolder}", style = MaterialTheme.typography.bodyMedium, color = TextMid)
+                desk.lookingForVlc -> Text("Starting the player...", style = MaterialTheme.typography.bodyMedium, color = TextMid)
                 else -> VlcNeeded(desk)
             }
 
@@ -356,6 +358,18 @@ fun SettingsScreen(desk: Desk) {
             Text("Sign-ins, favourites and lists are kept on this computer only.", style = MaterialTheme.typography.bodySmall, color = TextLow)
             Spacer(Modifier.height(8.dp))
             Quiet("Open the folder they are kept in", { runCatching { Desktop.getDesktop().open(desk.dataDir) } }, icon = Icons.Rounded.FolderOpen)
+            val notices = remember(player) { if (player?.builtIn == true) File(desk.vlcFolder, "NOTICE.txt").takeIf { it.isFile } else null }
+            if (notices != null) {
+                Spacer(Modifier.height(14.dp))
+                Text(
+                    "Video and sound are played by the VLC engine (libVLC) from VideoLAN, which is free software used under the LGPL licence. " +
+                        "It sits in its own folder inside the app and can be replaced with another copy of the same engine.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = TextLow,
+                )
+                Spacer(Modifier.height(8.dp))
+                Quiet("Read its licence and notices", { runCatching { Desktop.getDesktop().open(notices.parentFile) } }, icon = Icons.Rounded.FolderOpen)
+            }
         }
     }
     removing?.let { account ->
@@ -373,15 +387,15 @@ fun SettingsScreen(desk: Desk) {
     }
 }
 
-/** Shown wherever playing is not possible because VLC is not on the computer. */
+/** Shown wherever playing is not possible because there is no video player to play with. */
 @Composable
 fun VlcNeeded(desk: Desk, modifier: Modifier = Modifier) {
     Column(modifier.clip(RoundedCornerShape(14.dp)).background(Amber.copy(alpha = 0.12f)).border(1.dp, Amber.copy(alpha = 0.5f), RoundedCornerShape(14.dp)).padding(16.dp)) {
-        Text("VLC is needed to play video", style = MaterialTheme.typography.titleLarge, color = TextHi)
+        Text("The video player is missing", style = MaterialTheme.typography.titleLarge, color = TextHi)
         Spacer(Modifier.height(4.dp))
         Text(
-            desk.vlcProblem.ifBlank { "VLC was not found on this computer." } +
-                " VLC is a free player; this app uses it to show the picture and sound. Install it, then click \"Look again\".",
+            desk.vlcProblem.ifBlank { "The video player was not found on this computer." } +
+                " Installing the app again puts it back. Or install VLC (a free player) and click \"Look again\": the app can use that instead.",
             style = MaterialTheme.typography.bodyMedium,
             color = TextMid,
         )

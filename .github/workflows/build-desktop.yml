@@ -46,13 +46,15 @@ jobs:
           name: ultimate-media-manager-windows-zip
           path: mashwave-desktop/UltimateMediaManager-Windows.zip
 
-      # The app is started for real on this Windows machine: it has to find VLC, show its
-      # window and play a short clip. Snapshots of the window are kept with the build.
-      - name: Install VLC for the self-check
-        run: choco install vlc -y --no-progress
-
-      - name: "Self-check: start the app and play a clip"
+      # The app is started for real on this Windows machine, which has no VLC installed: it
+      # has to start the player packed inside it, show its window, and play a file, a TV-style
+      # stream, a film with subtitles and a stream that comes in pieces. Snapshots of the window
+      # are kept with the build. The machine has no speakers, so the sound is sent nowhere
+      # ("adummy") - that way it is still decoded and can be counted.
+      - name: "Self-check: start the app and play the test clips"
         id: selfcheck
+        env:
+          UMM_VLC_ARGS: "--aout=adummy"
         run: |
           $app = Join-Path $PWD "build\compose\binaries\main\app\Ultimate Media Manager\Ultimate Media Manager.exe"
           $clip = Join-Path $PWD "selftest\clip.mp4"

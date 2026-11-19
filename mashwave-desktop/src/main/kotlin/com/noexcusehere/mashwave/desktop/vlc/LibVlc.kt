@@ -27,6 +27,7 @@ interface LibVlc : Library {
     fun libvlc_media_release(media: Pointer)
     fun libvlc_media_tracks_get(media: Pointer, tracks: PointerByReference): Int
     fun libvlc_media_tracks_release(tracks: Pointer, count: Int)
+    fun libvlc_media_get_stats(media: Pointer, stats: Pointer): Int
 
     fun libvlc_media_player_new(instance: Pointer): Pointer?
     fun libvlc_media_player_release(player: Pointer)
@@ -91,18 +92,29 @@ interface LibVlc : Library {
 
 /** Finding the VLC installed on this computer and starting its engine. */
 object VlcFinder {
-    class Found(val lib: LibVlc, val version: String, val folder: String)
+    /** [builtIn] is true for the engine that comes packed with the app, false for a VLC installed on the computer. */
+    class Found(val lib: LibVlc, val version: String, val folder: String, val builtIn: Boolean)
+
+    /** The engine packed with the app, when this build has one (the Windows installer does). */
+    fun packed(): File? = System.getProperty("compose.application.resources.dir")
+        ?.takeIf { it.isNotBlank() }
+        ?.let { File(it, "vlc") }
+        ?.takeIf { it.isDirectory && hasEngine(it) }
 
     /** Why the last [load] failed, in plain words; empty when it worked or was never tried. */
     @Volatile
     var problem: String = ""
         private set
 
-    /** Folders worth looking in, most likely first. Naming one (VLC_DIR) means: look only there. */
+    /**
+     * Folders worth looking in, most likely first: the engine packed with the app, then a VLC
+     * installed on the computer. Naming one (VLC_DIR) means: look only there.
+     */
     fun folders(): List<File> {
         val named = (System.getProperty("vlc.dir") ?: System.getenv("VLC_DIR"))?.takeIf { it.isNotBlank() }
         if (named != null) return listOf(File(named))
         val list = ArrayList<File>()
+        packed()?.let { list += it }
         when {
             Platform.isWindows() -> {
                 registryFolder()?.let { list += it }
@@ -153,9 +165,10 @@ object VlcFinder {
     fun load(): Found? {
         val candidates = folders().filter { it.isDirectory && hasEngine(it) }
         if (candidates.isEmpty()) {
-            problem = "VLC was not found on this computer."
+            problem = "The video player was not found on this computer."
             return null
         }
+        val own = packed()?.absolutePath
         var last = ""
         for (folder in candidates) {
             try {
@@ -181,10 +194,12 @@ object VlcFinder {
                     continue
                 }
                 problem = ""
-                return Found(lib, version.substringBefore(' '), dir)
+                return Found(lib, version.substringBefore(' '), dir, builtIn = dir == own)
             } catch (e: Throwable) {
                 // The usual cause on Windows: a 32-bit VLC, which a 64-bit program cannot use.
-                last = if (Platform.isWindows()) {
+                last = if (folder.absolutePath == own) {
+                    "The app's own video player could not be started (${e.javaClass.simpleName})."
+                } else if (Platform.isWindows()) {
                     "VLC is installed, but it is the 32-bit kind. Install the 64-bit VLC from videolan.org instead."
                 } else {
                     "VLC is installed but could not be loaded (${e.javaClass.simpleName})."

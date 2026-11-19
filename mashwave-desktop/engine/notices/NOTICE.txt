@@ -1,0 +1,32 @@
+The video player inside Ultimate Media Manager
+===============================================
+
+This folder holds the VLC engine (libVLC) version @VERSION@, made by VideoLAN and the VLC
+authors. Ultimate Media Manager uses it to turn TV streams and video files into picture and
+sound. Ultimate Media Manager is a separate program: it is not made, endorsed or supported by
+VideoLAN.
+
+libVLC is free software. You may pass it on and change it under the terms of the GNU Lesser
+General Public License, version 2.1 or (at your choice) any later version. The full text is in
+the file LGPL-2.1.txt next to this one. It comes with no warranty.
+
+What is here
+------------
+libvlc.dll, libvlccore.dll and the files in the "plugins" folder are unchanged copies taken from
+VideoLAN's own package for use inside other programs, "VideoLAN.LibVLC.Windows" @VERSION@
+(https://www.nuget.org/packages/VideoLAN.LibVLC.Windows). Only some of the plug-ins in that
+package are included: the ones needed to play streams and files. The plug-ins contain other free
+libraries, among them FFmpeg (LGPL), dav1d, libass, FreeType, GnuTLS and mpg123, each under its
+own licence; see https://www.videolan.org/legal.html and the VLC source for the details.
+
+The source code
+---------------
+The source code of this version of VLC is published by VideoLAN at
+https://download.videolan.org/pub/videolan/vlc/@VERSION@/ and https://code.videolan.org/videolan/vlc
+
+Using your own copy
+-------------------
+The engine is kept separate from the app on purpose. You may replace the files in this folder
+with another build of libVLC 3 (for example one you built yourself from the source above), and
+the app will use it. You may also study how the app works with the engine in order to make such
+a replacement work.

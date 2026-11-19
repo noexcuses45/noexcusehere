@@ -30,6 +30,19 @@ class DesktopTest {
         assertEquals(emptyList(), missing)
     }
 
+    /** The list of player parts packed with the app: well formed, and nothing with a licence that forbids it. */
+    @Test
+    fun onlyAllowedPlayerPartsArePacked() {
+        val lines = File("engine/plugins.txt").readLines().map { it.trim() }.filter { it.isNotEmpty() && !it.startsWith("#") }
+        assertTrue(lines.size > 60, "the list of player parts looks too short")
+        assertEquals(lines.size, lines.toSet().size, "a player part is listed twice")
+        assertEquals(emptyList(), lines.filterNot { Regex("[a-z0-9_]+/[a-z0-9_]+").matches(it) })
+        // Parts of VLC that are under the GPL (or pull in a GPL library) and must not ship in a closed app.
+        val forbidden = listOf("x264", "x265", "a52", "dca", "dts_", "faad", "mpeg2", "postproc", "dvdnav", "dvdread", "sid", "qt", "skins", "zvbi", "samplerate", "realrtsp", "vcd", "cdda", "goom")
+        val names = lines.map { it.substringAfter('/') }
+        assertEquals(emptyList(), names.filter { name -> forbidden.any { name == it.trimEnd('_') || name.startsWith(it) } })
+    }
+
     @Test
     fun timesReadTheWayPeopleSayThem() {
         assertEquals("0:00", clock(0))

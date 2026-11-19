@@ -19,11 +19,25 @@ watch its channels, movies and shows. The app has no channels, logins or playlis
 
 Not in this version: music, mashups, the photo and video editors, and sending to a TV.
 
-## VLC is needed
+## The player inside it
 
-The picture and sound are played by [VLC](https://www.videolan.org/vlc/), which has to be
-installed on the computer (the free 64-bit version 3). The app finds it by itself and says so,
-with a button to get it, when it is missing. VLC is not included in the download.
+The picture and sound are played by the VLC engine (libVLC, from VideoLAN). On Windows it is
+packed inside the app, so there is nothing else to install: one download, one program.
+
+- The build fetches VideoLAN's own package for use inside other programs
+  (`VideoLAN.LibVLC.Windows`, under the LGPL), checks it against a known fingerprint, and takes
+  only the plug-ins listed in [`engine/plugins.txt`](engine/plugins.txt) - what is needed to play
+  streams, films and subtitles. That keeps the download small and leaves out the parts with
+  stricter licences (a check in `DesktopTest` keeps them off the list).
+- The engine sits in its own folder inside the app (`app/resources/vlc`) with its licence and a
+  notice saying what it is and where its source code is ([`engine/notices`](engine/notices)).
+  Settings has a line about it and a button that opens that folder.
+- Where no engine is packed (Linux, or a build made without it), the app uses a VLC installed on
+  the computer instead, and says so when there is none.
+
+Before selling the app, have someone who knows licences look over this arrangement: the notices
+are written to meet the LGPL's terms, but this is not legal advice. Video formats such as H.264
+and HEVC also have patent licences of their own that can apply to whoever sells a player.
 
 ## Getting it
 
@@ -34,8 +48,10 @@ Every change is built by GitHub Actions (`.github/workflows/build-desktop.yml`):
 - **UltimateMediaManager-Windows.zip** - the same app without an installer: unzip it anywhere and
   run `Ultimate Media Manager.exe`.
 
-The build also starts the app on a Windows machine, has it find VLC and play a short clip, and
-keeps snapshots of the window, so a build that cannot start never gets as far as a download.
+The build also starts the app on a Windows machine that has no VLC installed and has it play a
+file, a TV-style stream with Dolby sound, a film with subtitles and a stream that comes in
+pieces. Snapshots of the window are kept, and a build that cannot do this never becomes a
+download.
 
 ## Building it yourself
 
@@ -57,5 +73,6 @@ Where things are kept: `%APPDATA%\Ultimate Media Manager` on Windows,
 
     "Ultimate Media Manager" --self-test <video file> <folder for results>
 
-starts the app, plays the file and writes `result.txt` and snapshots into the folder. It uses its
-own empty settings, so it does not touch a real sign-in.
+starts the app, plays the file (and the other clips in the same folder, fetched through a tiny
+web server it runs for itself) and writes `result.txt` and snapshots into the folder. It uses
+its own empty settings, so it does not touch a real sign-in.
