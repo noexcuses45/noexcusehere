@@ -205,7 +205,7 @@ fun LiveScreen(desk: Desk) {
         }
 
         // ---- channels --------------------------------------------------------------------------
-        Column(Modifier.weight(1f).fillMaxHeight()) {
+        Column(Modifier.weight(1.2f).fillMaxHeight()) {
             Field(filter, { filter = it }, "Find a channel in this list", Modifier.fillMaxWidth().padding(start = 14.dp, end = 14.dp, top = 16.dp, bottom = 8.dp), icon = Icons.Rounded.Search)
             if (shelf.error != null) {
                 Text(
@@ -260,7 +260,7 @@ fun LiveScreen(desk: Desk) {
         }
 
         // ---- what is on ------------------------------------------------------------------------
-        Column(Modifier.weight(1.15f).fillMaxHeight().background(Surface1).padding(16.dp)) {
+        Column(Modifier.weight(1f).fillMaxHeight().background(Surface1).padding(16.dp)) {
             Box(
                 Modifier
                     .fillMaxWidth()

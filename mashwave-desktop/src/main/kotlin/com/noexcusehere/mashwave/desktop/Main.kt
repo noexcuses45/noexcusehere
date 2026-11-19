@@ -86,8 +86,12 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import java.awt.Dimension
+import java.awt.GraphicsEnvironment
 import java.io.File
 import kotlin.system.exitProcess
+
+private const val SMALLEST_WIDTH = 1040
+private const val SMALLEST_HEIGHT = 640
 
 fun main(args: Array<String>) {
     // "--self-test <video file> <folder>" starts the app, plays the file and writes down how it went.
@@ -99,10 +103,19 @@ fun main(args: Array<String>) {
     application {
         val desk = remember { Desk(CoroutineScope(SupervisorJob() + Dispatchers.Main), dataDir, vlcArgs) }
         val saved = remember { desk.store.saved }
+        // The room there is on this screen once the taskbar is taken off. A small laptop screen
+        // is smaller than the window would like to be: then it simply fills the screen.
+        val room = remember { runCatching { GraphicsEnvironment.getLocalGraphicsEnvironment().maximumWindowBounds }.getOrNull() }
+        val roomWidth = room?.width?.takeIf { it > 200 } ?: 1280
+        val roomHeight = room?.height?.takeIf { it > 200 } ?: 800
+        val cramped = roomWidth < SMALLEST_WIDTH + 60 || roomHeight < SMALLEST_HEIGHT + 60
         val windowState = rememberWindowState(
-            placement = if (saved.maximised) WindowPlacement.Maximized else WindowPlacement.Floating,
+            placement = if (saved.maximised || cramped) WindowPlacement.Maximized else WindowPlacement.Floating,
             position = WindowPosition.Aligned(Alignment.Center),
-            size = DpSize(saved.windowWidth.coerceIn(1040, 4000).dp, saved.windowHeight.coerceIn(640, 3000).dp),
+            size = DpSize(
+                saved.windowWidth.coerceIn(minOf(SMALLEST_WIDTH, roomWidth), roomWidth).dp,
+                saved.windowHeight.coerceIn(minOf(SMALLEST_HEIGHT, roomHeight), roomHeight).dp,
+            ),
         )
         // Full screen comes and goes; underneath, the window is either maximised or not.
         val resting = remember { arrayOf(windowState.placement) }
@@ -119,7 +132,8 @@ fun main(args: Array<String>) {
             val placement = if (windowState.placement == WindowPlacement.Fullscreen) resting[0] else windowState.placement
             desk.store.edit {
                 if (placement == WindowPlacement.Maximized) {
-                    it.copy(maximised = true)
+                    // Filling a small screen was not the viewer's choice; do not hold them to it on a bigger one.
+                    it.copy(maximised = !cramped)
                 } else {
                     it.copy(maximised = false, windowWidth = windowState.size.width.value.toInt(), windowHeight = windowState.size.height.value.toInt())
                 }
@@ -135,7 +149,7 @@ fun main(args: Array<String>) {
             icon = remember { AppLogo?.let { BitmapPainter(it) } },
             onPreviewKeyEvent = { handleKey(desk, it) },
         ) {
-            LaunchedEffect(Unit) { window.minimumSize = Dimension(1040, 640) }
+            LaunchedEffect(Unit) { window.minimumSize = Dimension(minOf(SMALLEST_WIDTH, roomWidth), minOf(SMALLEST_HEIGHT, roomHeight)) }
             DeskTheme { AppBody(desk) }
             if (selfTest != null) {
                 LaunchedEffect(Unit) {
