@@ -1,0 +1,108 @@
+name: Build Ultimate Media Manager for Windows
+
+# Builds the computer version of Ultimate Media Manager (the TV player) in mashwave-desktop/.
+# It shares the TV code with the phone app, so changes to those files rebuild it too.
+on:
+  push:
+    paths:
+      - "mashwave-desktop/**"
+      - "mashwave/app/src/main/java/com/noexcusehere/mashwave/iptv/**"
+      - "mashwave/app/src/main/java/com/noexcusehere/mashwave/data/Resume.kt"
+      - ".github/workflows/build-desktop.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: mashwave-desktop
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Run checks
+        run: ./gradlew test
+
+      - name: Build the app
+        run: ./gradlew createDistributable "-PappVersionName=1.0.${{ github.run_number }}"
+
+      - name: Zip the app (no installer needed - unzip and run)
+        run: Compress-Archive -Path "build\compose\binaries\main\app\Ultimate Media Manager" -DestinationPath UltimateMediaManager-Windows.zip
+
+      - name: Upload the zipped app
+        uses: actions/upload-artifact@v4
+        with:
+          name: ultimate-media-manager-windows-zip
+          path: mashwave-desktop/UltimateMediaManager-Windows.zip
+
+      # The app is started for real on this Windows machine: it has to find VLC, show its
+      # window and play a short clip. Snapshots of the window are kept with the build.
+      - name: Install VLC for the self-check
+        run: choco install vlc -y --no-progress
+
+      - name: "Self-check: start the app and play a clip"
+        id: selfcheck
+        run: |
+          $app = Join-Path $PWD "build\compose\binaries\main\app\Ultimate Media Manager\Ultimate Media Manager.exe"
+          $clip = Join-Path $PWD "selftest\clip.mp4"
+          $out = Join-Path $env:RUNNER_TEMP "selfcheck"
+          New-Item -ItemType Directory -Force -Path $out | Out-Null
+          $run = Start-Process -FilePath $app -ArgumentList "--self-test", "`"$clip`"", "`"$out`"" -PassThru
+          if (-not $run.WaitForExit(240000)) {
+            Write-Host "The app did not finish within four minutes"
+            $run.Kill()
+          }
+          $code = $run.ExitCode
+          Write-Host "---- what the app wrote down ----"
+          if (Test-Path "$out\result.txt") { Get-Content "$out\result.txt" } else { Write-Host "(nothing)" }
+          Write-Host "---- exit code: $code ----"
+          Get-ChildItem $out -Filter "*-small.jpg" | ForEach-Object {
+            Write-Host "---- snapshot $($_.Name) ----"
+            Write-Host ([Convert]::ToBase64String([IO.File]::ReadAllBytes($_.FullName), 'InsertLineBreaks'))
+            Write-Host "---- end of snapshot ----"
+          }
+          if ($code -ne 0) { exit 1 }
+
+      - name: Upload the self-check snapshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: self-check
+          path: ${{ runner.temp }}/selfcheck
+          if-no-files-found: ignore
+
+      - name: Build the installer
+        run: |
+          ./gradlew packageMsi "-PappVersionName=1.0.${{ github.run_number }}"
+          Copy-Item (Get-ChildItem "build\compose\binaries\main\msi\*.msi" | Select-Object -First 1).FullName UltimateMediaManager-Setup.msi
+
+      - name: Upload the installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: ultimate-media-manager-windows-installer
+          path: mashwave-desktop/UltimateMediaManager-Setup.msi
+
+      # Published as a pre-release on purpose, like the phone app: the fitness app's updater
+      # reads this repo's "latest release", and pre-releases never count as latest.
+      - name: Publish download
+        if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ultimate-media-manager-windows-v${{ github.run_number }}
+          name: Ultimate Media Manager for Windows 1.0.${{ github.run_number }}
+          prerelease: true
+          make_latest: "false"
+          files: |
+            mashwave-desktop/UltimateMediaManager-Setup.msi
+            mashwave-desktop/UltimateMediaManager-Windows.zip
