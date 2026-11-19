@@ -1,10 +1,6 @@
 package com.noexcusehere.mashwave.iptv
 
-import android.content.Context
-import android.os.Build
-import android.util.Log
 import com.noexcusehere.mashwave.data.MediaEntry
-import com.noexcusehere.mashwave.playback.PlayerConnection
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -41,11 +37,13 @@ data class TvState(
 
 /**
  * Everything behind the TV tab: the services the user signed in to, their channel / movie / show
- * lists (kept on the phone and refreshed now and then), favourites, what was watched recently,
+ * lists (kept on the device and refreshed now and then), favourites, what was watched recently,
  * and turning a list entry into something the player can play.
+ *
+ * Nothing here is tied to Android, so the phone app and the computer app run the same code.
+ * [log] receives a line when a request to a service fails.
  */
-class TvRepository(context: Context, private val scope: CoroutineScope) {
-    private val store = TvStore(context)
+class TvRepository(private val store: TvStore, private val scope: CoroutineScope, private val log: (String) -> Unit = {}) {
     private var saved = TvSaved()
     private val writes = Channel<TvSaved>(Channel.CONFLATED)
     private val jobs = HashMap<TvSection, Job>()
@@ -63,7 +61,6 @@ class TvRepository(context: Context, private val scope: CoroutineScope) {
     private var lineupIndex = 0
 
     init {
-        TvNet.userAgent = "UltimateBeats/1.0 (Linux;Android ${Build.VERSION.RELEASE}) AndroidXMedia3/1.9.4"
         scope.launch(Dispatchers.IO) {
             for (snapshot in writes) store.save(snapshot)
         }
@@ -185,7 +182,7 @@ class TvRepository(context: Context, private val scope: CoroutineScope) {
     } catch (e: TvException) {
         throw e
     } catch (e: Exception) {
-        Log.w(TAG, "TV service request failed: ${e.javaClass.simpleName}")
+        log("TV service request failed: ${e.javaClass.simpleName}")
         throw TvException(TvNet.explain(e), e)
     }
 
@@ -433,13 +430,6 @@ class TvRepository(context: Context, private val scope: CoroutineScope) {
     val channels: List<TvItem>
         get() = lineup
 
-    /** Changes channel on the phone's own player. */
-    fun zap(player: PlayerConnection, delta: Int): Boolean {
-        val entry = step(player.state.value.current, delta) ?: return false
-        player.play(listOf(entry))
-        return true
-    }
-
     /** The channels around the one playing, so a TV's remote can move through them too. */
     fun lineupAround(entry: MediaEntry): Pair<List<MediaEntry>, Int>? {
         val ref = entry.tvRef ?: return null
@@ -516,7 +506,6 @@ class TvRepository(context: Context, private val scope: CoroutineScope) {
     }
 
     companion object {
-        private const val TAG = "UltimateBeats"
         private const val STALE_AFTER_MS = 12 * 60 * 60 * 1000L
         private const val RECENTS = 30
         private const val CAST_WINDOW = 150

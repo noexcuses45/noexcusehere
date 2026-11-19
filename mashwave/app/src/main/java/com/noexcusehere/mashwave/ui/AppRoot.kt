@@ -81,6 +81,7 @@ import androidx.navigation.navArgument
 import com.noexcusehere.mashwave.app
 import com.noexcusehere.mashwave.cast.CastWhat
 import com.noexcusehere.mashwave.iptv.isLiveTv
+import com.noexcusehere.mashwave.iptv.zap
 import com.noexcusehere.mashwave.iptv.isTv
 import com.noexcusehere.mashwave.playback.PlayerUiState
 import com.noexcusehere.mashwave.ui.components.Artwork

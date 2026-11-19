@@ -1,6 +1,5 @@
 package com.noexcusehere.mashwave.iptv
 
-import android.content.Context
 import com.noexcusehere.mashwave.data.AppJson
 import kotlinx.serialization.Serializable
 import java.io.DataInputStream
@@ -25,12 +24,12 @@ data class TvSaved(
 )
 
 /**
- * Files behind the TV tab. Logins live in a folder Android leaves out of cloud backups, and the
- * channel lists are kept next to them so the tab opens at once instead of downloading every time.
+ * Files behind the TV tab, in the folder [dir]. The logins are kept there, and the channel lists
+ * next to them so the tab opens at once instead of downloading every time. (On a phone the
+ * folder is one Android leaves out of cloud backups.)
  */
-class TvStore(context: Context) {
-    private val dir = File(context.noBackupFilesDir, "tv").apply { mkdirs() }
-    private val file = File(dir, "tv.json")
+class TvStore(private val dir: File) {
+    private val file = File(dir.apply { mkdirs() }, "tv.json")
 
     fun load(): TvSaved = runCatching {
         if (file.exists()) AppJson.decodeFromString(TvSaved.serializer(), file.readText()) else TvSaved()

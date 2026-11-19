@@ -25,6 +25,7 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import com.noexcusehere.mashwave.data.describeUri
 import com.noexcusehere.mashwave.iptv.isLiveTv
+import com.noexcusehere.mashwave.iptv.zap
 import com.noexcusehere.mashwave.ui.AppRoot
 import com.noexcusehere.mashwave.ui.FloatingWindow
 import com.noexcusehere.mashwave.ui.LibraryTabs

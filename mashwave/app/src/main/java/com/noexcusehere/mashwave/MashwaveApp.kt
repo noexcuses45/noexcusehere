@@ -10,6 +10,7 @@ import com.noexcusehere.mashwave.editor.EditorStore
 import com.noexcusehere.mashwave.editor.ExportManager
 import com.noexcusehere.mashwave.iptv.Multiview
 import com.noexcusehere.mashwave.iptv.TvRepository
+import com.noexcusehere.mashwave.iptv.phoneTvRepository
 import com.noexcusehere.mashwave.photo.PhotoFiles
 import com.noexcusehere.mashwave.playback.MashupEngine
 import com.noexcusehere.mashwave.playback.PlayerConnection
@@ -62,7 +63,7 @@ class MashwaveApp : Application() {
         scope.launch(Dispatchers.IO) { runCatching { PhotoFiles.sweep(this@MashwaveApp, editorStore.projects.value) } }
         exporter = ExportManager(this, scope)
         cast = CastController(this, scope)
-        tv = TvRepository(this, scope)
+        tv = phoneTvRepository(this, scope)
         multiview = Multiview(this)
     }
 

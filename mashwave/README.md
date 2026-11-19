@@ -6,6 +6,10 @@ on a TV.
 Native Android app (Kotlin, Jetpack Compose, Media3 / ExoPlayer). It lives in its own
 folder and does not touch the No Excuse Here fitness app in the rest of this repo.
 
+The TV side also exists as a program for Windows computers, in [`../mashwave-desktop`](../mashwave-desktop).
+It compiles the very same TV code as this app (the `iptv` folder), so sign-in, lists and fixes
+behave the same on both.
+
 The app has been called Mashwave and then Ultimate Beats. Only the name and the logo people
 see changed: the folder, the code package and the app's internal id are still `mashwave`, so
 each new version installs over the old one and keeps playlists, likes, mashups, video projects

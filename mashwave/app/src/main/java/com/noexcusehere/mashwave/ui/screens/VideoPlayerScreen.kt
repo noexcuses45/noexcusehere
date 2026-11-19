@@ -97,6 +97,7 @@ import com.noexcusehere.mashwave.ui.SpeedSheet
 import com.noexcusehere.mashwave.ui.TracksSheet
 import com.noexcusehere.mashwave.iptv.TvProgramme
 import com.noexcusehere.mashwave.iptv.isLiveTv
+import com.noexcusehere.mashwave.iptv.zap
 import com.noexcusehere.mashwave.iptv.isTv
 import com.noexcusehere.mashwave.ui.components.MwSlider
 import com.noexcusehere.mashwave.ui.rememberPlaybackPosition
