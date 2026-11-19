@@ -3,8 +3,8 @@ package com.noexcusehere.mashwave.cast
 import com.noexcusehere.mashwave.iptv.TvNet
 import java.io.BufferedInputStream
 import java.io.ByteArrayOutputStream
+import java.io.IOException
 import java.io.OutputStream
-import java.net.SocketException
 import java.util.Base64
 
 /**
@@ -31,11 +31,39 @@ class StreamRelay(
     @Volatile
     private var rangesWork = false
 
+    // ---- what happened, for saying why something would not play ---------------------------------
+
+    /** How many times the TV has asked this relay for something. Zero means it never came. */
+    @Volatile
+    var asked = 0
+        private set
+
+    /** How much has been handed to the TV so far. */
+    @Volatile
+    var handedOver = 0L
+        private set
+
+    /** Why the service last failed to send the stream, in plain words; null while all is well. */
+    @Volatile
+    var trouble: String? = null
+        private set
+
+    /** The service's answer number when it refused (403, 404...); 0 when the trouble was something else. */
+    @Volatile
+    var troubleCode = 0
+        private set
+
+    /** True once a stream that was flowing was lost for good (the service stopped sending and would not resume). */
+    @Volatile
+    var gaveUp = false
+        private set
+
     override fun respond(method: String, rest: String, query: String, headers: Map<String, String>, output: OutputStream) {
         val wrapped = parameter(query, "u")
         val target = if (wrapped != null) unwrap(wrapped) ?: return plain(output, 400, "Bad Request") else address
         val isMain = wrapped == null
         val headOnly = method == "HEAD"
+        asked++
 
         // Answering "what is this?" must not use up one of the service's connections.
         if (headOnly && isMain && (live || knownLength >= 0)) {
@@ -58,13 +86,27 @@ class StreamRelay(
         if (range != null && !(live && isMain)) request["Range"] = range
 
         val upstream = try {
-            TvNet.open(target, request, connectMs = 12_000, readMs = 30_000, check = false, agent = agent)
+            TvNet.open(target, request, connectMs = 12_000, readMs = if (live) LIVE_SILENCE_MS else 30_000, check = false, agent = agent)
         } catch (e: Exception) {
+            trouble = TvNet.explain(e)
             return plain(output, 502, "Bad Gateway")
         }
-        upstream.use { response ->
-            val code = response.code
-            if (code !in 200..299) return plain(output, if (code in 400..599) code else 502, "Upstream Error")
+        var current = upstream
+        try {
+            val response = upstream
+            val code = try {
+                response.code
+            } catch (e: Exception) {
+                trouble = TvNet.explain(e)
+                return plain(output, 502, "Bad Gateway")
+            }
+            if (code !in 200..299) {
+                trouble = TvNet.explain(code)
+                troubleCode = code
+                return plain(output, if (code in 400..599) code else 502, "Upstream Error")
+            }
+            trouble = null
+            troubleCode = 0
             val type = response.header("Content-Type")
             val input = BufferedInputStream(response.stream, 64 * 1024)
             input.mark(64)
@@ -107,20 +149,103 @@ class StreamRelay(
                 output.flush()
                 return
             }
+            // From here the stream is flowing. A hiccup on the line - the service drops the
+            // connection, or sends nothing for a while - should not end the film or the channel
+            // on the TV: the phone asks the service again and carries on from the same place.
+            val liveMain = live && isMain
+            val firstByte = if (code == 206) contentRange?.substringAfter("bytes", "")?.trim()?.substringBefore('-')?.trim()?.toLongOrNull() ?: -1L else 0L
+            val canResume = !liveMain && acceptsRanges && length >= 0 && firstByte >= 0
             val buffer = ByteArray(64 * 1024)
-            try {
-                while (true) {
-                    val n = input.read(buffer)
-                    if (n < 0) break
+            var stream: java.io.InputStream = input
+            var sent = 0L
+            var failures = 0
+            var goodSince = System.nanoTime()
+            while (true) {
+                val n = try {
+                    stream.read(buffer)
+                } catch (e: IOException) {
+                    BROKEN
+                }
+                val complete = n == -1 && (liveMain.not()) && (length < 0 || sent >= length)
+                if (complete) break
+                if (n < 0) {
+                    // Lost, or (for a channel) ended. Flowing well for a while wipes the slate clean.
+                    if (System.nanoTime() - goodSince > STEADY_NS) failures = 0
+                    failures++
+                    val again = if (failures > MAX_RETRIES || !(canResume || liveMain)) null else {
+                        runCatching { current.close() }
+                        try {
+                            Thread.sleep(RETRY_PAUSE_MS * failures)
+                        } catch (e: InterruptedException) {
+                            Thread.currentThread().interrupt()
+                            return
+                        }
+                        reopen(target, if (liveMain) -1 else firstByte + sent, if (liveMain) -1 else firstByte + length - 1)
+                    }
+                    if (again == null) {
+                        if (failures > MAX_RETRIES || !(canResume || liveMain)) {
+                            gaveUp = true
+                            if (trouble == null) trouble = "the stream stopped arriving"
+                            break
+                        }
+                        continue
+                    }
+                    current = again
+                    stream = BufferedInputStream(again.stream, 64 * 1024)
+                    goodSince = System.nanoTime()
+                    continue
+                }
+                try {
                     output.write(buffer, 0, n)
                     // A live channel trickles in; hand each piece on at once rather than waiting to fill a buffer.
                     if (live) output.flush()
+                } catch (e: IOException) {
+                    // The TV stopped listening (channel changed, or it is seeking).
+                    return
                 }
-                output.flush()
-            } catch (e: SocketException) {
-                // The TV stopped listening (channel changed, or it is seeking).
+                sent += n
+                handedOver += n
             }
+            try {
+                output.flush()
+            } catch (e: IOException) {
+                // The TV had already hung up.
+            }
+        } finally {
+            runCatching { current.close() }
         }
+    }
+
+    /**
+     * Asks the service for the stream again: from byte [from] to [to] of a film, or from "now"
+     * for a channel ([from] below zero). Null when it will not send what is needed.
+     */
+    private fun reopen(target: String, from: Long, to: Long): TvNet.Response? {
+        val request = HashMap<String, String>()
+        request["Accept-Encoding"] = "identity"
+        if (from >= 0) request["Range"] = "bytes=$from-" + (if (to >= from) to.toString() else "")
+        val response = try {
+            TvNet.open(target, request, connectMs = 12_000, readMs = if (live) LIVE_SILENCE_MS else 30_000, check = false, agent = agent)
+        } catch (e: Exception) {
+            trouble = TvNet.explain(e)
+            return null
+        }
+        val code = runCatching { response.code }.getOrDefault(0)
+        // A film must carry on from exactly where it stopped; an answer from the beginning would scramble it.
+        val usable = if (from >= 0) {
+            code == 206 && response.header("Content-Range")?.substringAfter("bytes", "")?.trim()?.substringBefore('-')?.trim()?.toLongOrNull() == from
+        } else {
+            code in 200..299
+        }
+        if (!usable) {
+            trouble = if (code in 200..299) "the service would not carry on from where it stopped" else TvNet.explain(code)
+            troubleCode = if (code in 200..299) 0 else code
+            runCatching { response.close() }
+            return null
+        }
+        trouble = null
+        troubleCode = 0
+        return response
     }
 
     private fun finish(head: StringBuilder, dlnaHints: Boolean) {
@@ -151,6 +276,16 @@ class StreamRelay(
     }
 
     companion object {
+        private const val BROKEN = -2
+        private const val MAX_RETRIES = 4
+        private const val RETRY_PAUSE_MS = 500L
+
+        /** A channel that sends nothing for this long has dropped out; ask for it again. */
+        private const val LIVE_SILENCE_MS = 15_000
+
+        /** A stream that has flowed this long since its last hiccup is counted as healthy again. */
+        private const val STEADY_NS = 20_000_000_000L
+
         fun wrap(url: String): String = Base64.getUrlEncoder().withoutPadding().encodeToString(url.toByteArray(Charsets.UTF_8))
 
         fun unwrap(text: String): String? = runCatching { String(Base64.getUrlDecoder().decode(text), Charsets.UTF_8) }

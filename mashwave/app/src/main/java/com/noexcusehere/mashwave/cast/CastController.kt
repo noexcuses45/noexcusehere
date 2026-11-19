@@ -68,6 +68,30 @@ data class CastState(
 
 enum class RemoteState { PLAYING, PAUSED, LOADING, STOPPED, FINISHED }
 
+/** Why something would not start on the TV. */
+enum class CastWhy {
+    /** The phone has no Wi-Fi, so the TV cannot reach it. */
+    NO_WIFI,
+
+    /** The TV service refused or failed to send the stream. */
+    SERVICE,
+
+    /** The TV never came to the phone for the stream. */
+    NOT_COLLECTED,
+
+    /** The TV answered "no" when told to play. */
+    TV_SAID_NO,
+
+    /** The TV stopped answering. */
+    TV_SILENT,
+
+    /** The TV took the stream and could not play it. */
+    UNSUPPORTED,
+}
+
+/** The phone is not on a home network, so nothing on it can be fetched by a TV. */
+class NoWifiException : IllegalStateException("The phone is not on Wi-Fi")
+
 data class RemoteStatus(val state: RemoteState, val positionMs: Long, val durationMs: Long, val volume: Float?)
 
 /** What every kind of connected device must be able to do. All calls may block or fail. */
@@ -109,6 +133,22 @@ class CastController(private val context: Context, private val scope: CoroutineS
     private var polls = 0
     private var liveRetries = 0
     private var lastLiveRetry = 0L
+
+    /** The pass-through the TV is being fed from, when what is on comes from the TV tab. */
+    @Volatile
+    private var relay: StreamRelay? = null
+
+    /** Set once the TV has accepted something and we are waiting to see it actually start. */
+    private var awaitingStart = false
+    private var acceptedAt = 0L
+
+    /** Each thing gets one more go by itself before the viewer is told it would not start. */
+    private var triedAgain = false
+
+    /** True when nothing is loaded on the TV any more, so "play" has to hand it over again. */
+    private var needsReload = false
+    private var dropRetries = 0
+    private var lastDropRetry = 0L
 
     val isConnected: Boolean
         get() = _state.value.device != null
@@ -343,24 +383,59 @@ class CastController(private val context: Context, private val scope: CoroutineS
         }
     }
 
-    private fun load(entry: MediaEntry, startMs: Long) {
+    private fun load(entry: MediaEntry, startMs: Long, secondGo: Boolean = false) {
         val target = link ?: return
         loadJob?.cancel()
         quietUntil = System.currentTimeMillis() + 8000
         sawPlaying = false
+        awaitingStart = false
+        needsReload = false
+        if (!secondGo) triedAgain = false
+        relay = null
         loadJob = scope.launch {
+            val began = System.currentTimeMillis()
             try {
+                // A service that allows one screen at a time must not find the phone still on the line.
+                if (entry.isTv) releasePhoneStream()
                 val (url, mime, art) = withContext(Dispatchers.IO) { addressFor(entry) }
                 withContext(Dispatchers.IO) { target.load(url, entry, mime, art, startMs) }
+                acceptedAt = System.currentTimeMillis()
+                awaitingStart = true
                 if (!entry.isTv) context.app.store.recordPlay(entry)
             } catch (e: Exception) {
                 if (!isActive) return@launch
                 Log.w(TAG, "Casting ${entry.title} failed", e)
-                _state.update {
-                    it.copy(loading = false, playing = false, problem = "${it.device?.name ?: "The TV"} couldn't play “${entry.title}”. It may not support this kind of file.")
-                }
+                // A quick "no" is often just a slow start; a long wait that still failed has had its chance.
+                didNotStart(entry, startMs, e, mayRetry = System.currentTimeMillis() - began < 12_000)
             }
         }
+    }
+
+    /** The phone's own player lets go of a TV-service stream, so the TV can have the line. */
+    private fun releasePhoneStream() {
+        val local = context.app.player
+        if (local.state.value.current?.isTv == true) local.stop()
+    }
+
+    /** [entry] did not start on the TV: try once more by itself, then say why in plain words. */
+    private fun didNotStart(entry: MediaEntry, startMs: Long, error: Exception?, mayRetry: Boolean) {
+        awaitingStart = false
+        val why = whyNot(error, relay?.asked, relay?.handedOver ?: 0, relay?.trouble)
+        if (mayRetry && !triedAgain && why != CastWhy.NO_WIFI) {
+            triedAgain = true
+            _state.update { it.copy(loading = true, playing = false, problem = null) }
+            loadJob = scope.launch {
+                delay(1500)
+                if (link != null && _state.value.entry?.uri == entry.uri) load(entry, startMs, secondGo = true)
+            }
+            return
+        }
+        needsReload = true
+        val name = _state.value.device?.name ?: "The TV"
+        val detail = if (why == CastWhy.SERVICE) relay?.trouble else (error as? DlnaException)?.message
+        // "Not found" is not a sign of the line being busy elsewhere; a refusal or a stream that dried up can be.
+        val busyElsewhere = relay?.troubleCode !in NOT_THERE
+        _state.update { it.copy(loading = false, playing = false, problem = wordsFor(why, name, entry.title, detail, busyElsewhere)) }
     }
 
     /** Where the TV can fetch [entry] from: the stream's own address, or this phone. */
@@ -368,7 +443,7 @@ class CastController(private val context: Context, private val scope: CoroutineS
         if (entry.isTv) return relayFor(entry)
         val mime = mimeOf(entry)
         if (entry.isStream) return Triple(entry.uri, mime, null)
-        val host = MediaServer.localAddress()?.hostAddress ?: throw IllegalStateException("The phone is not on Wi-Fi")
+        val host = MediaServer.localAddress()?.hostAddress ?: throw NoWifiException()
         val port = server.start()
         val uri = Uri.parse(entry.uri)
         val source = if (uri.scheme == "file") FileSource(File(uri.path.orEmpty()), mime) else ContentSource(context, uri, mime)
@@ -382,13 +457,14 @@ class CastController(private val context: Context, private val scope: CoroutineS
      * given an address here, and the phone fetches the real stream (whose address holds the login).
      */
     private fun relayFor(entry: MediaEntry): Triple<String, String, String?> {
-        val host = MediaServer.localAddress()?.hostAddress ?: throw IllegalStateException("The phone is not on Wi-Fi")
+        val host = MediaServer.localAddress()?.hostAddress ?: throw NoWifiException()
         val port = server.start()
         val chromecast = _state.value.device?.kind == CastKind.CHROMECAST
         val address = context.app.tv.castAddress(entry, chromecast)
         val mime = StreamRelay.mimeFor(address, entry.isLiveTv, link?.accepts.orEmpty())
         var base = ""
         val relay = StreamRelay(address, entry.isLiveTv, mime, context.app.tv.agentFor(entry)) { base }
+        this.relay = relay
         val name = when {
             mime == "application/x-mpegURL" -> "stream.m3u8"
             entry.isLiveTv -> "stream.ts"
@@ -433,6 +509,12 @@ class CastController(private val context: Context, private val scope: CoroutineS
 
     fun togglePlay() {
         val target = link ?: return
+        val now = _state.value
+        // After something failed or stopped part-way there is nothing on the TV to "play": hand it over again.
+        if (needsReload && !now.playing && now.entry != null) {
+            skipTo(now.index)
+            return
+        }
         val wasPlaying = _state.value.playing
         _state.update { it.copy(playing = !wasPlaying) }
         scope.launch {
@@ -506,6 +588,25 @@ class CastController(private val context: Context, private val scope: CoroutineS
     private fun apply(status: RemoteStatus) {
         val quiet = System.currentTimeMillis() < quietUntil
         if (status.state == RemoteState.PLAYING) sawPlaying = true
+
+        // The TV said "yes" to something; make sure it then really starts.
+        if (awaitingStart) {
+            val waited = System.currentTimeMillis() - acceptedAt
+            when {
+                status.state == RemoteState.PLAYING || status.state == RemoteState.PAUSED -> awaitingStart = false
+                (status.state == RemoteState.STOPPED && waited > START_STOPPED_MS) || waited > START_WAIT_MS -> {
+                    val s = _state.value
+                    val entry = s.entry
+                    if (entry != null) {
+                        Log.w(TAG, "The TV accepted ${entry.title} but did not start it")
+                        didNotStart(entry, s.positionMs, null, mayRetry = true)
+                        return
+                    }
+                    awaitingStart = false
+                }
+            }
+        }
+
         val ended = !quiet && sawPlaying && (status.state == RemoteState.FINISHED || status.state == RemoteState.STOPPED)
         if (ended && _state.value.queue.isNotEmpty()) {
             sawPlaying = false
@@ -518,13 +619,40 @@ class CastController(private val context: Context, private val scope: CoroutineS
                 if (liveRetries++ < 2) {
                     skipTo(s.index)
                 } else {
+                    needsReload = true
                     _state.update { it.copy(playing = false, loading = false, problem = "“${s.entry?.title}” stopped. Tap play to try again, or pick another channel.") }
+                }
+                return
+            }
+            // Stopping in the middle is not the same as finishing: the next episode must not start
+            // because the line hiccuped (or someone pressed stop on the TV's remote).
+            val entry = s.entry
+            if (entry != null && status.state != RemoteState.FINISHED && stoppedEarly(s.positionMs, s.durationMs)) {
+                rememberSpot(s.positionMs, s.durationMs)
+                val lost = relay?.let { it.gaveUp || it.trouble != null } == true
+                val now = System.currentTimeMillis()
+                if (now - lastDropRetry > 120_000) dropRetries = 0
+                lastDropRetry = now
+                if (lost && dropRetries++ < 2) {
+                    // The stream was lost: pick the same thing up from where it stopped.
+                    _state.update { it.copy(loading = true, playing = false, problem = null) }
+                    load(entry, s.positionMs)
+                } else {
+                    needsReload = true
+                    _state.update {
+                        it.copy(
+                            playing = false,
+                            loading = false,
+                            problem = if (lost) "“${entry.title}” stopped because the stream stopped arriving. Tap play to carry on from where it was." else null,
+                        )
+                    }
                 }
                 return
             }
             if (s.index < s.queue.lastIndex) {
                 skipTo(s.index + 1)
             } else {
+                needsReload = true
                 _state.update { it.copy(playing = false, loading = false, positionMs = 0) }
             }
             return
@@ -540,8 +668,9 @@ class CastController(private val context: Context, private val scope: CoroutineS
         _state.update {
             it.copy(
                 playing = status.state == RemoteState.PLAYING,
-                loading = status.state == RemoteState.LOADING || (quiet && !sawPlaying && status.state != RemoteState.PAUSED),
-                positionMs = if (quiet && status.positionMs == 0L) it.positionMs else status.positionMs,
+                loading = status.state == RemoteState.LOADING || awaitingStart || loadJob?.isActive == true ||
+                    (quiet && !sawPlaying && status.state != RemoteState.PAUSED),
+                positionMs = if ((quiet || awaitingStart) && status.positionMs == 0L) it.positionMs else status.positionMs,
                 durationMs = if (status.durationMs > 0) status.durationMs else it.durationMs,
                 volume = status.volume ?: it.volume,
             )
@@ -552,6 +681,55 @@ class CastController(private val context: Context, private val scope: CoroutineS
 
     companion object {
         private const val TAG = "UltimateBeats"
+
+        /** How long a TV that said "yes" may sit at "stopped" before it counts as not starting. */
+        private const val START_STOPPED_MS = 10_000L
+
+        /** ...and how long it may take in all, however busy it says it is. */
+        private const val START_WAIT_MS = 45_000L
+
+        /**
+         * True when something stopped well before its end - a lost stream or a press of "stop",
+         * not a film running out. Without a believable position (some TVs never report one) it
+         * counts as finished, as before.
+         */
+        fun stoppedEarly(positionMs: Long, durationMs: Long): Boolean {
+            if (durationMs < 60_000 || positionMs < 5_000) return false
+            return positionMs < durationMs - maxOf(20_000L, durationMs / 20)
+        }
+
+        /**
+         * Works out why something would not start, from what is known: the [error] if there was
+         * one, how often the TV [asked] the phone for the stream (null when the phone was not
+         * feeding it), how much was [handedOver], and what the service said was wrong ([trouble]).
+         */
+        fun whyNot(error: Throwable?, asked: Int?, handedOver: Long, trouble: String?): CastWhy = when {
+            error is NoWifiException -> CastWhy.NO_WIFI
+            trouble != null -> CastWhy.SERVICE
+            // No answer at all from the TV (as opposed to an answer of "no").
+            error != null && error !is DlnaException -> CastWhy.TV_SILENT
+            asked == 0 -> CastWhy.NOT_COLLECTED
+            error is DlnaException && handedOver == 0L -> CastWhy.TV_SAID_NO
+            else -> CastWhy.UNSUPPORTED
+        }
+
+        /** Answers from a service that mean "there is no such thing here". */
+        private val NOT_THERE = setOf(404, 410)
+
+        /**
+         * The sentence shown to the viewer. [detail] is the service's or the TV's own explanation,
+         * when there is one; [busyElsewhere] adds the hint about plans that allow one screen at a time.
+         */
+        fun wordsFor(why: CastWhy, tv: String, title: String, detail: String?, busyElsewhere: Boolean = true): String = when (why) {
+            CastWhy.NO_WIFI -> "The phone isn't on Wi-Fi, so $tv can't collect the video from it. Join the same Wi-Fi as the TV, then tap play."
+            CastWhy.SERVICE ->
+                "Your TV service didn't send “$title”" + (if (detail.isNullOrBlank()) "" else " (${detail.trimEnd('.')})") +
+                    (if (busyElsewhere) ". If your plan allows one screen at a time, make sure nothing else is using it, then tap play." else ". Tap play to try again.")
+            CastWhy.NOT_COLLECTED -> "$tv didn't collect “$title” from the phone. Check the phone and the TV are on the same Wi-Fi, then tap play."
+            CastWhy.TV_SAID_NO -> "$tv wouldn't start “$title”" + (if (detail.isNullOrBlank()) "" else " (it said: ${detail.trimEnd('.')})") + ". Tap play to try again."
+            CastWhy.TV_SILENT -> "$tv isn't answering. Check it is still on, then tap play."
+            CastWhy.UNSUPPORTED -> "$tv couldn't play “$title”. It may not support this kind of file."
+        }
 
         /**
          * Corrects [declared] when the first [count] bytes of the file ([head]) show it is really
@@ -589,26 +767,49 @@ class DlnaLink(private val device: DlnaRenderer, override val accepts: Set<Strin
             // Some TVs choke on the description; the bare address is enough for them.
             Dlna.setUri(device, url, "")
         }
+        // The TV may still be collecting the start of the file when it is first told to play,
+        // and says "not now". Keep asking for a while rather than giving up after two seconds.
+        val giveUpAt = System.currentTimeMillis() + START_PATIENCE_MS
         var last: Exception? = null
-        for (attempt in 0 until 4) {
+        var attempt = 0
+        while (true) {
             try {
                 Dlna.play(device)
                 last = null
                 break
             } catch (e: Exception) {
-                // "Not ready yet" right after being handed a new address is common - try again shortly.
                 last = e
-                delay(600)
+                // It may have started by itself while the answer was on its way.
+                val now = runCatching { Dlna.transportState(device) }.getOrNull()
+                if (now == "PLAYING" || now == "TRANSITIONING") {
+                    last = null
+                    break
+                }
+                // "No such file" and "wrong kind of file" will not change by asking again.
+                val final = e is DlnaException && e.code in FINAL_REFUSALS && attempt >= 1
+                if (final || System.currentTimeMillis() >= giveUpAt) break
+                delay((600L + 300L * attempt).coerceAtMost(2000L))
+                attempt++
             }
         }
         last?.let { throw it }
         if (startMs > 3000) {
-            // Wait until it is really playing before jumping to where the phone left off.
-            for (i in 0 until 16) {
+            // Wait until it is really playing before jumping to where it was left off. A TV that
+            // just sits at "stopped" is not going to start; there is nothing to jump in.
+            var idle = 0
+            var started = false
+            for (i in 0 until 40) {
                 delay(500)
-                if (runCatching { Dlna.transportState(device) }.getOrNull() == "PLAYING") break
+                val now = runCatching { Dlna.transportState(device) }.getOrNull()
+                if (now == "PLAYING") {
+                    started = true
+                    break
+                }
+                idle = if (now == "STOPPED" || now == "NO_MEDIA_PRESENT") idle + 1 else 0
+                if (idle >= 12) break
             }
-            runCatching { Dlna.seek(device, startMs) }
+            // Still busy loading after all that waiting: ask for the jump anyway, as it may yet start.
+            if (started || idle < 12) runCatching { Dlna.seek(device, startMs) }
         }
     }
 
@@ -644,6 +845,14 @@ class DlnaLink(private val device: DlnaRenderer, override val accepts: Set<Strin
     }
 
     override fun close() = Unit
+
+    private companion object {
+        /** How long to keep asking a TV to start something it has accepted. */
+        const val START_PATIENCE_MS = 20_000L
+
+        /** Answers that mean "never": bad request, wrong kind of file, no such file. */
+        val FINAL_REFUSALS = setOf(402, 714, 716)
+    }
 }
 
 /** A song or video in the phone's media library. */

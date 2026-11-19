@@ -199,6 +199,18 @@ eye and eyebrow tools) and sky / backdrop / clothes swaps.
   service the app asks for the channel as a list of short pieces (HLS) instead - this only
   works when the service offers channels that way. Movies in MKV with surround sound play on
   most TVs but not on every Chromecast
+- **Keeping it going.** While something plays on the TV the phone is kept awake (screen off is
+  fine), because the stream runs through it. If the service drops the line in the middle of a
+  film, the phone asks for the rest from the same place and the TV never notices; a channel
+  that drops out is asked for again. A TV that says "not ready" when first told to play is
+  asked again for up to twenty seconds, and one more start is tried by itself before giving up
+- **Stopping part-way is not finishing.** If a film or episode stops well before its end, the
+  next one does not start: its place is kept and Play carries on from there (it is picked up
+  automatically when the stream was lost)
+- **When it will not play, the app says why**: the phone has no Wi-Fi, the TV service refused
+  or stopped sending (with what it answered), the TV never came to the phone for the stream,
+  the TV said no, or - only when the TV took the stream and still would not play - the TV may
+  not support that kind of file
 
 **Google Drive, Google Photos and other apps**
 - The music library has an "add from Google Drive or files" button, Videos has "From Google Photos" and

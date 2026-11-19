@@ -1,12 +1,19 @@
 package com.noexcusehere.mashwave
 
+import com.noexcusehere.mashwave.cast.CastController
+import com.noexcusehere.mashwave.cast.CastWhy
 import com.noexcusehere.mashwave.cast.Dlna
 import com.noexcusehere.mashwave.cast.DlnaException
+import com.noexcusehere.mashwave.cast.DlnaLink
 import com.noexcusehere.mashwave.cast.MediaServer
+import com.noexcusehere.mashwave.cast.NoWifiException
 import com.noexcusehere.mashwave.cast.ServedSource
+import com.noexcusehere.mashwave.data.MediaEntry
+import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -228,6 +235,12 @@ class CastTest {
         var state = "STOPPED"
         var failPlay = 0
 
+        /** Says yes to "play" but never starts. */
+        var dud = false
+
+        /** What the TV says when it refuses: the standard number and its words. */
+        var refusal = 701 to "Transition not available"
+
         init {
             thread(isDaemon = true) {
                 while (!socket.isClosed) {
@@ -254,7 +267,7 @@ class CastTest {
             var code = "200 OK"
             val inner = when (action) {
                 "SetAVTransportURI" -> { state = "STOPPED"; "" }
-                "Play" -> if (failPlay > 0) { failPlay--; code = "500 Internal Server Error"; "" } else { state = "PLAYING"; "" }
+                "Play" -> if (failPlay > 0) { failPlay--; code = "500 Internal Server Error"; "" } else { if (!dud) state = "PLAYING"; "" }
                 "Pause" -> { state = "PAUSED_PLAYBACK"; "" }
                 "Stop" -> { state = "STOPPED"; "" }
                 "GetTransportInfo" -> "<CurrentTransportState>$state</CurrentTransportState><CurrentTransportStatus>OK</CurrentTransportStatus>"
@@ -267,7 +280,7 @@ class CastTest {
                     "<u:${action}Response xmlns:u=\"urn:schemas-upnp-org:service:AVTransport:1\">$inner</u:${action}Response></s:Body></s:Envelope>"
             } else {
                 "<?xml version=\"1.0\"?><s:Envelope xmlns:s=\"http://schemas.xmlsoap.org/soap/envelope/\"><s:Body><s:Fault><detail>" +
-                    "<UPnPError xmlns=\"urn:schemas-upnp-org:control-1-0\"><errorCode>701</errorCode><errorDescription>Transition not available</errorDescription>" +
+                    "<UPnPError xmlns=\"urn:schemas-upnp-org:control-1-0\"><errorCode>${refusal.first}</errorCode><errorDescription>${refusal.second}</errorDescription>" +
                     "</UPnPError></detail></s:Fault></s:Body></s:Envelope>"
             }.toByteArray()
             client.getOutputStream().write(("HTTP/1.1 $code\r\nContent-Type: text/xml\r\nContent-Length: ${reply.size}\r\nConnection: close\r\n\r\n").toByteArray())
@@ -304,6 +317,99 @@ class CastTest {
         assertTrue(set.contains("&lt;dc:title&gt;Song &amp;lt;One&amp;gt;&lt;/dc:title&gt;"))
         assertTrue(tv.commands[5].second.contains("<Unit>REL_TIME</Unit><Target>0:01:35</Target>"))
         assertTrue(tv.commands[6].second.contains("<DesiredVolume>100</DesiredVolume>"))
+    }
+
+    @Test
+    fun keepsAskingATvThatIsNotReadyYet() {
+        val tv = FakeTv()
+        closers += { tv.socket.close() }
+        val device = Dlna.parseDescription(description, "http://127.0.0.1:${tv.socket.localPort}/desc.xml")!!
+        // "Not now" three times over - a TV still collecting the start of a film - and then yes.
+        tv.failPlay = 3
+        runBlocking {
+            DlnaLink(device).load("http://192.168.1.7:4000/m/abc/video.mkv", MediaEntry(uri = "x", title = "Film", isVideo = true), "video/x-matroska", null, 0)
+        }
+        assertEquals("PLAYING", tv.state)
+        assertEquals(4, tv.commands.count { it.first == "Play" })
+    }
+
+    @Test
+    fun stopsAskingWhenTheTvSaysNever() {
+        val tv = FakeTv()
+        closers += { tv.socket.close() }
+        val device = Dlna.parseDescription(description, "http://127.0.0.1:${tv.socket.localPort}/desc.xml")!!
+        tv.failPlay = 50
+        tv.refusal = 716 to "Resource not found"
+        try {
+            runBlocking {
+                DlnaLink(device).load("http://192.168.1.7:4000/m/abc/video.mkv", MediaEntry(uri = "x", title = "Film", isVideo = true), "video/x-matroska", null, 0)
+            }
+            fail("expected a refusal")
+        } catch (e: DlnaException) {
+            assertEquals(716, e.code)
+        }
+        assertEquals("asked twice, not for twenty seconds", 2, tv.commands.count { it.first == "Play" })
+    }
+
+    @Test
+    fun doesNotWaitForeverOnATvThatWillNotStart() {
+        val tv = FakeTv()
+        closers += { tv.socket.close() }
+        val device = Dlna.parseDescription(description, "http://127.0.0.1:${tv.socket.localPort}/desc.xml")!!
+        // Says yes to "play" and then just sits there.
+        tv.dud = true
+        val began = System.currentTimeMillis()
+        runBlocking {
+            DlnaLink(device).load("http://192.168.1.7:4000/m/abc/video.mkv", MediaEntry(uri = "x", title = "Film", isVideo = true), "video/x-matroska", null, 75_000)
+        }
+        assertTrue("gave up waiting after a few seconds", System.currentTimeMillis() - began < 12_000)
+        assertEquals("nothing to jump forward in", 0, tv.commands.count { it.first == "Seek" })
+    }
+
+    @Test
+    fun stoppingInTheMiddleIsNotFinishing() {
+        val episode = 37 * 60_000L
+        assertTrue(CastController.stoppedEarly(8 * 60_000L + 13_000, episode))
+        assertTrue(CastController.stoppedEarly(30 * 60_000L, episode))
+        // The last couple of minutes (the credits) count as the end.
+        assertFalse(CastController.stoppedEarly(episode - 60_000, episode))
+        assertFalse(CastController.stoppedEarly(episode, episode))
+        // A TV that never says where it is up to, or a length that is not known: treated as finished.
+        assertFalse(CastController.stoppedEarly(0, episode))
+        assertFalse(CastController.stoppedEarly(120_000, 0))
+        // Short clips simply run out.
+        assertFalse(CastController.stoppedEarly(10_000, 30_000))
+    }
+
+    @Test
+    fun saysWhatReallyWentWrong() {
+        val refused = DlnaException("Transition not available", 701)
+        // The phone lost its Wi-Fi.
+        assertEquals(CastWhy.NO_WIFI, CastController.whyNot(NoWifiException(), null, 0, null))
+        // The service refused the stream: that is the reason, whatever the TV then said.
+        assertEquals(CastWhy.SERVICE, CastController.whyNot(refused, 2, 0, "the service answered 403"))
+        assertEquals(CastWhy.SERVICE, CastController.whyNot(null, 1, 0, "the stream stopped arriving"))
+        // The TV never came to the phone for it.
+        assertEquals(CastWhy.NOT_COLLECTED, CastController.whyNot(refused, 0, 0, null))
+        assertEquals(CastWhy.NOT_COLLECTED, CastController.whyNot(null, 0, 0, null))
+        // The TV did not answer at all.
+        assertEquals(CastWhy.TV_SILENT, CastController.whyNot(java.net.SocketTimeoutException("timeout"), 0, 0, null))
+        // The TV said no before taking any of it.
+        assertEquals(CastWhy.TV_SAID_NO, CastController.whyNot(refused, 1, 0, null))
+        assertEquals(CastWhy.TV_SAID_NO, CastController.whyNot(refused, null, 0, null))
+        // The TV took the stream and still would not play: only then is the file the suspect.
+        assertEquals(CastWhy.UNSUPPORTED, CastController.whyNot(null, 3, 5_000_000, null))
+        assertEquals(CastWhy.UNSUPPORTED, CastController.whyNot(refused, 3, 5_000_000, null))
+
+        val service = CastController.wordsFor(CastWhy.SERVICE, "Lounge TV", "Fresh Meat", "The service refused the request (403).")
+        assertTrue(service.contains("Your TV service didn't send “Fresh Meat” (The service refused the request (403))"))
+        assertTrue(service.contains("one screen at a time"))
+        // "Not found" does not get the hint about a plan being in use elsewhere.
+        val missing = CastController.wordsFor(CastWhy.SERVICE, "Lounge TV", "Old Film", "Nothing was found at that address.", busyElsewhere = false)
+        assertEquals("Your TV service didn't send “Old Film” (Nothing was found at that address). Tap play to try again.", missing)
+        assertEquals("Lounge TV couldn't play “Fresh Meat”. It may not support this kind of file.", CastController.wordsFor(CastWhy.UNSUPPORTED, "Lounge TV", "Fresh Meat", null))
+        assertTrue(CastController.wordsFor(CastWhy.NO_WIFI, "Lounge TV", "Fresh Meat", null).startsWith("The phone isn't on Wi-Fi"))
+        assertTrue(CastController.wordsFor(CastWhy.TV_SAID_NO, "Lounge TV", "Fresh Meat", "Transition not available").contains("(it said: Transition not available)"))
     }
 
     @Test

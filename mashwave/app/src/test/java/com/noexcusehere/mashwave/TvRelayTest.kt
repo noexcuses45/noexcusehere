@@ -29,7 +29,14 @@ import java.util.concurrent.atomic.AtomicInteger
  */
 class TvRelayTest {
     /** A few lines of web server standing in for the TV service. */
-    private class Reply(val code: Int, val headers: Map<String, String> = emptyMap(), val body: ByteArray = ByteArray(0), val sized: Boolean = true)
+    private class Reply(
+        val code: Int,
+        val headers: Map<String, String> = emptyMap(),
+        val body: ByteArray = ByteArray(0),
+        val sized: Boolean = true,
+        /** Hang up after this many bytes of the body, as a dropped line does (-1: send it all). */
+        val cut: Int = -1,
+    )
 
     private val listener = ServerSocket(0, 16, InetAddress.getByName("127.0.0.1"))
     private val workers = Executors.newCachedThreadPool()
@@ -39,6 +46,8 @@ class TvRelayTest {
     private val gets = AtomicInteger()
     private val heads = AtomicInteger()
     private val servicePort = listener.localPort
+    private val flakyGets = AtomicInteger()
+    private val liveGets = AtomicInteger()
 
     private fun answer(method: String, path: String, headers: Map<String, String>): Reply {
         val plain = path.substringBefore('?')
@@ -95,6 +104,27 @@ class TvRelayTest {
                 }
             }
             "/gone" -> Reply(403)
+            // A film on a bad line: the first answer breaks off part-way, later ones are fine.
+            "/movie/u/p/8.mkv" -> {
+                val nth = flakyGets.incrementAndGet()
+                val range = headers["range"]
+                val (first, last) = if (range != null) MediaServer.parseRange(range, movie.size.toLong())!! else 0L to movie.size - 1L
+                Reply(
+                    if (range != null) 206 else 200,
+                    mapOf("Content-Type" to "application/octet-stream", "Accept-Ranges" to "bytes") +
+                        (if (range != null) mapOf("Content-Range" to "bytes $first-$last/${movie.size}") else emptyMap()),
+                    movie.copyOfRange(first.toInt(), last.toInt() + 1),
+                    cut = if (nth == 1) 70_000 else -1,
+                )
+            }
+            // The same film from a service that cannot carry on from the middle: it always starts over.
+            "/movie/u/p/9.mkv" -> Reply(200, mapOf("Content-Type" to "application/octet-stream", "Accept-Ranges" to "bytes"), movie, cut = 70_000)
+            // A channel that drops out after a moment, twice, and is then gone.
+            "/live/u/p/5.ts" -> if (liveGets.incrementAndGet() <= 2) {
+                Reply(200, mapOf("Content-Type" to "video/mp2t"), ByteArray(20 * 188) { 0x47 }, sized = false)
+            } else {
+                Reply(404)
+            }
             else -> Reply(404)
         }
     }
@@ -126,7 +156,7 @@ class TvRelayTest {
                         if (reply.sized) head.append("Content-Length: ${reply.body.size}\r\n")
                         head.append("Connection: close\r\n\r\n")
                         out.write(head.toString().toByteArray(Charsets.ISO_8859_1))
-                        if (parts[0] != "HEAD") out.write(reply.body)
+                        if (parts[0] != "HEAD") out.write(if (reply.cut >= 0) reply.body.copyOfRange(0, minOf(reply.cut, reply.body.size)) else reply.body)
                         out.flush()
                     }
                 }
@@ -142,12 +172,89 @@ class TvRelayTest {
         workers.shutdownNow()
     }
 
+    private var lastRelay: StreamRelay? = null
+
     private fun publish(path: String, live: Boolean, mime: String): String {
         var base = ""
         val relay = StreamRelay("http://127.0.0.1:$servicePort$path", live, mime) { base }
+        lastRelay = relay
         val published = server.publish(relay, "stream")
         base = "http://127.0.0.1:${server.port}" + published.substringBeforeLast('/')
         return "http://127.0.0.1:${server.port}$published"
+    }
+
+    @Test
+    fun aFilmCarriesOnFromTheSamePlaceWhenTheLineDrops() {
+        val url = publish("/movie/u/p/8.mkv", live = false, mime = "video/x-matroska")
+        val relay = lastRelay!!
+        val connection = open(url)
+        assertEquals(200, connection.responseCode)
+        assertEquals(movie.size.toLong(), connection.contentLengthLong)
+        // Every byte arrives, in order, although the service hung up after 70 000 of them.
+        assertArrayEquals(movie, connection.inputStream.readBytes())
+        assertEquals("the phone asked once more, from where it stopped", 2, flakyGets.get())
+        assertFalse(relay.gaveUp)
+        assertNull(relay.trouble)
+        assertEquals(movie.size.toLong(), relay.handedOver)
+
+        // The same when the TV itself had asked for a part of the film.
+        flakyGets.set(0)
+        val part = open(url, range = "bytes=50000-199999")
+        assertEquals(206, part.responseCode)
+        assertArrayEquals(movie.copyOfRange(50_000, 200_000), part.inputStream.readBytes())
+        assertEquals(2, flakyGets.get())
+    }
+
+    @Test
+    fun aFilmThatCannotBeCarriedOnIsNotScrambled() {
+        val url = publish("/movie/u/p/9.mkv", live = false, mime = "video/x-matroska")
+        val relay = lastRelay!!
+        val connection = open(url)
+        connection.readTimeout = 20_000
+        assertEquals(200, connection.responseCode)
+        // What did arrive is the true beginning of the film; nothing from a restart is glued on.
+        val arrived = java.io.ByteArrayOutputStream()
+        runCatching {
+            val input = connection.inputStream
+            val chunk = ByteArray(8192)
+            while (true) {
+                val n = input.read(chunk)
+                if (n < 0) break
+                arrived.write(chunk, 0, n)
+            }
+        }
+        val got = arrived.toByteArray()
+        assertEquals(70_000, got.size)
+        assertArrayEquals(movie.copyOfRange(0, got.size), got)
+        assertTrue(relay.gaveUp)
+        assertTrue(relay.trouble.orEmpty().isNotBlank())
+    }
+
+    @Test
+    fun aChannelIsAskedForAgainWhenItDropsOut() {
+        val url = publish("/live/u/p/5.ts", live = true, mime = "video/mp2t")
+        val relay = lastRelay!!
+        val connection = open(url)
+        connection.readTimeout = 20_000
+        assertEquals(200, connection.responseCode)
+        // Two helpings arrive on the one connection the TV opened; then the channel is really gone.
+        val got = connection.inputStream.readBytes()
+        assertEquals(2 * 20 * 188, got.size)
+        assertTrue(liveGets.get() >= 3)
+        assertTrue(relay.gaveUp)
+        assertTrue(relay.trouble.orEmpty().isNotBlank())
+    }
+
+    @Test
+    fun remembersWhyTheServiceWouldNotSend() {
+        val url = publish("/gone", live = false, mime = "video/mp4")
+        val relay = lastRelay!!
+        assertEquals(0, relay.asked)
+        assertEquals(403, open(url).responseCode)
+        assertEquals(1, relay.asked)
+        assertEquals(0L, relay.handedOver)
+        assertTrue(relay.trouble.orEmpty().isNotBlank())
+        assertFalse(relay.gaveUp)
     }
 
     private fun open(url: String, method: String = "GET", range: String? = null): HttpURLConnection {
@@ -203,10 +310,13 @@ class TvRelayTest {
         assertEquals("video/mp2t", stream.contentType)
         assertTrue(stream.getHeaderField("contentFeatures.dlna.org").contains("DLNA.ORG_OP=00"))
         assertEquals("*", stream.getHeaderField("Access-Control-Allow-Origin"))
-        val bytes = stream.inputStream.readBytes()
+        // The pretend channel ends after one helping; the TV takes that much and switches off.
+        // (Left connected, the phone would ask the service for the channel again - see below.)
+        val bytes = stream.inputStream.readNBytes(50 * 1880)
         assertEquals(50 * 1880, bytes.size)
         assertTrue(bytes.all { it == 0x47.toByte() })
         assertEquals(1, gets.get())
+        stream.disconnect()
     }
 
     @Test

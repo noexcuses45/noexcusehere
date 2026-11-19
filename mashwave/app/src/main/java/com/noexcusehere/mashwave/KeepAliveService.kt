@@ -26,6 +26,7 @@ class KeepAliveService : Service() {
     private var watcher: Job? = null
     private var wakeLock: PowerManager.WakeLock? = null
     private var wifiLock: WifiManager.WifiLock? = null
+    private var castWakeLock: PowerManager.WakeLock? = null
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -45,6 +46,7 @@ class KeepAliveService : Service() {
                         exportPercent = (export.progress * 100).toInt(),
                         castingTo = cast.device?.name,
                         castTitle = cast.entry?.title,
+                        castBusy = cast.device != null && (cast.playing || cast.loading),
                     )
                 }.distinctUntilChanged().collect { status ->
                     if (!status.exporting && status.castingTo == null) {
@@ -66,12 +68,17 @@ class KeepAliveService : Service() {
         val exportPercent: Int,
         val castingTo: String?,
         val castTitle: String?,
+        /** Something is playing on the TV (or about to), as opposed to merely being connected. */
+        val castBusy: Boolean = false,
     )
 
     private fun snapshot(): Status {
         val export = app.exporter.state.value
         val cast = app.cast.state.value
-        return Status(export.running, export.name, (export.progress * 100).toInt(), cast.device?.name, cast.entry?.title)
+        return Status(
+            export.running, export.name, (export.progress * 100).toInt(), cast.device?.name, cast.entry?.title,
+            castBusy = cast.device != null && (cast.playing || cast.loading),
+        )
     }
 
     private fun show(status: Status) {
@@ -100,6 +107,18 @@ class KeepAliveService : Service() {
             wakeLock?.let { runCatching { if (it.isHeld) it.release() } }
             wakeLock = null
         }
+        // While casting, the video often reaches the TV through this phone. With the screen off
+        // the phone would otherwise doze, the stream would dry up and the TV would stop.
+        if (status.castBusy && castWakeLock == null) {
+            castWakeLock = runCatching {
+                (getSystemService(Context.POWER_SERVICE) as PowerManager)
+                    .newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "ultimatebeats:cast")
+                    .apply { acquire(12 * 60 * 60 * 1000L) }
+            }.getOrNull()
+        } else if (!status.castBusy) {
+            castWakeLock?.let { runCatching { if (it.isHeld) it.release() } }
+            castWakeLock = null
+        }
         if (status.castingTo != null && wifiLock == null) {
             // The TV pulls the file from this phone over Wi-Fi, so Wi-Fi must not doze off.
             wifiLock = runCatching {
@@ -119,6 +138,8 @@ class KeepAliveService : Service() {
         wakeLock = null
         wifiLock?.let { runCatching { if (it.isHeld) it.release() } }
         wifiLock = null
+        castWakeLock?.let { runCatching { if (it.isHeld) it.release() } }
+        castWakeLock = null
     }
 
     private fun build(status: Status): Notification {
