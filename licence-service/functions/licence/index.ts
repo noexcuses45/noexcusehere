@@ -8,8 +8,28 @@ import { createClient } from "jsr:@supabase/supabase-js@2";
 import { importPrivate, importPublic, makeKeys } from "./note.ts";
 import { handle, type Keys, type Outcome, type Store } from "./service.ts";
 
-const db = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!, {
-  auth: { persistSession: false },
+/**
+ * The key that lets this service (and nobody else) into the codes. Supabase hands it over in
+ * the environment: newer projects as a named list, older ones as a single value.
+ */
+function databaseKey(): string {
+  const named = Deno.env.get("SUPABASE_SECRET_KEYS");
+  if (named) {
+    try {
+      const keys = JSON.parse(named) as Record<string, unknown>;
+      const key = keys["default"] ?? Object.values(keys)[0];
+      if (typeof key === "string" && key) return key;
+    } catch {
+      // not a list after all: try the single values below
+    }
+  }
+  const single = Deno.env.get("SUPABASE_SECRET_KEY") ?? Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+  if (!single) throw new Error("the environment holds no key for the database");
+  return single;
+}
+
+const db = createClient(Deno.env.get("SUPABASE_URL")!, databaseKey(), {
+  auth: { persistSession: false, autoRefreshToken: false },
 });
 
 const store: Store = {
