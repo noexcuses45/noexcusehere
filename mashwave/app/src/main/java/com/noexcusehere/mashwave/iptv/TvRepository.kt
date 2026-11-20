@@ -510,6 +510,27 @@ class TvRepository(private val store: TvStore, private val scope: CoroutineScope
         private const val RECENTS = 30
         private const val CAST_WINDOW = 150
 
+        /**
+         * The service among [accounts] that [draft] is another sign-in to: the same login at the
+         * same address, or the same playlist link. Signing in again then renews that one instead
+         * of listing the service twice.
+         */
+        fun twinOf(accounts: List<TvAccount>, draft: TvAccount): TvAccount? {
+            if (draft.isXtream) {
+                val server = Xtream.normalizeServer(draft.server)
+                val user = draft.username.trim()
+                if (server.isEmpty() || user.isEmpty()) return null
+                return accounts.firstOrNull { it.isXtream && it.username == user && Xtream.normalizeServer(it.server).equals(server, ignoreCase = true) }
+            }
+            val link = draft.playlistUrl.trim().let { if (it.isEmpty() || it.contains("://")) it else "http://$it" }
+            if (link.isEmpty()) return null
+            // A link that holds a login is kept as that login.
+            Xtream.loginFromLink(link)?.let { login ->
+                accounts.firstOrNull { it.isXtream && it.username == login.username && Xtream.normalizeServer(it.server).equals(Xtream.normalizeServer(login.server), ignoreCase = true) }?.let { return it }
+            }
+            return accounts.firstOrNull { !it.isXtream && it.playlistUrl == link }
+        }
+
         private val episodeTag = Regex("""^\s*[-–|:]*\s*S\d{1,2}\s*[.:x-]?\s*E\d{1,3}\s*[-–|:]*\s*""", RegexOption.IGNORE_CASE)
 
         /** "Some Show - S01E02 - The Letter" is how services title episodes; people want "The Letter". */

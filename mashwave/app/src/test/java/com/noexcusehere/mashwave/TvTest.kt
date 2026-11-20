@@ -73,6 +73,31 @@ class TvTest {
     }
 
     @Test
+    fun readsALoginHoweverTheMessageIsLaidOut() {
+        // A sentence that mentions both words before the details themselves.
+        val chatty = "Hi! Here is your username and password:\nUsername: bob77\nPassword: s3cret\nURL: http://tv.example.com:8080\nEnjoy"
+        val first = Xtream.loginFromText(chatty)!!
+        assertEquals("bob77", first.username)
+        assertEquals("s3cret", first.password)
+        assertEquals("http://tv.example.com:8080", first.server)
+
+        // Dashes, arrows and equals signs instead of colons.
+        val dashes = Xtream.loginFromText("Server - http://tv.example.com\nUsername - bob77\nPassword - s3cret")!!
+        assertEquals("bob77" to "s3cret", dashes.username to dashes.password)
+        val arrows = Xtream.loginFromText("Portal: http://tv.example.com\nUser ➡️ bob77\nPass ➡️ s3cret")!!
+        assertEquals("bob77" to "s3cret", arrows.username to arrows.password)
+        val equals = Xtream.loginFromText("http://tv.example.com username=bob77 password=s3cret")!!
+        assertEquals("bob77" to "s3cret", equals.username to equals.password)
+
+        // The details on the line underneath their labels.
+        val below = Xtream.loginFromText("Link: http://tv.example.com\nUsername:\nbob77\nPassword:\ns3cret")!!
+        assertEquals("bob77" to "s3cret", below.username to below.password)
+
+        // Ordinary words with a dash in them are not a login.
+        assertNull(Xtream.loginFromText("A user-friendly player. See http://tv.example.com for the password-reset page."))
+    }
+
+    @Test
     fun findsTheSpareAddressInAMessage() {
         val message = """
             tv.example.com
@@ -461,6 +486,11 @@ class TvTest {
         assertTrue(Hls.isPlaylist("application/vnd.apple.mpegurl", "http://h/x", ""))
         assertTrue(Hls.isPlaylist(null, "http://h/live/1.m3u8?x=1", ""))
         assertTrue(Hls.isPlaylist("text/plain", "http://h/x", "#EXTM3U\n#EXT-X"))
+        // Some services put an invisible "this is text" mark in front; it is not part of the list.
+        assertTrue(Hls.isPlaylist("text/plain", "http://h/x", "\uFEFF#EXTM3U\n#EXT-X"))
+        val marked = ArrayList<M3u.Entry>()
+        M3u.parse("\uFEFF#EXTM3U\n#EXTINF:-1,One\nhttp://tv.example.com/1.ts\n".reader().buffered()) { marked += it }
+        assertEquals(listOf("One"), marked.map { it.name })
         assertFalse(Hls.isPlaylist("video/mp2t", "http://h/live/1.ts", "G@\u0000"))
     }
 

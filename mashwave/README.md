@@ -261,8 +261,43 @@ The APK appears at `app/build/outputs/apk/release/app-release.apk`.
 ## Installing on a phone
 
 Copy the APK to the phone, tap it, and allow "install unknown apps" when asked — normal for
-apps outside the Play Store. Needs Android 8.0 or newer. On first launch tap
+apps outside the Play Store. Needs Android 7.1 or newer. On first launch tap
 **Allow access to music, photos & videos**.
+
+## On a TV stick or box
+
+The same APK also runs on **Amazon Fire TV sticks** (Fire OS 6 and newer) and on
+**Android TV / Google TV** sticks, boxes and TVs. There it shows only the TV side, in a
+layout made for the remote: arrows to move, OK to choose, Back to go back.
+
+- It appears among the stick's apps with its own banner. It is not for Roku, Apple TV, or
+  the Fire sticks that run Amazon's newer non-Android system (those cannot install APKs).
+- **Signing in** is easiest from a phone: the TV shows an address and a four-digit code;
+  open that address in the phone's browser (same Wi-Fi), type the code and paste the
+  message from the TV provider. The details go straight from the phone to the TV and
+  nowhere else, and the page exists only while the sign-in screen is open. Typing with the
+  remote works too. Signing in again to a service that is already there renews it.
+- **Menu down the left:** Live TV, Movies, Shows, Search, Favourites, Settings. Moving over
+  an entry opens it; Back from inside a screen returns to the menu, and Back on the menu
+  leaves the app.
+- **Live TV:** groups in the middle, channels on the right. The Menu button (or holding OK)
+  on a channel adds it to favourites.
+- **While watching:** OK pauses and plays; left and right skip ten seconds in a film; up and
+  down change channel; the Menu button (or holding OK) opens sound track, subtitles,
+  picture fit, favourite and next episode; Back returns to the list, on the channel or
+  episode that was playing. The play, rewind and fast-forward buttons work as well.
+- A show's page starts on the episode last watched, and films offer to carry on from where
+  they were stopped.
+- Nothing keeps playing behind the lists: leaving the player lets go of the channel, which
+  matters with services that allow one screen at a time.
+
+A TV box that calls itself a tablet starts in the phone layout: open the TV tab, the
+services button, and choose **Use the TV remote layout**. Settings on the TV has the way
+back. (`adb shell am start -n com.noexcusehere.mashwave/.MainActivity --ez tvmode true`
+does the same from a computer.)
+
+Tried on an Android emulator driven only by remote-control key presses, not yet on a real
+stick. Music, the editors, mashups and casting are not in the TV layout.
 
 ### Updates and the signing key
 
@@ -311,6 +346,12 @@ app/src/main/java/com/noexcusehere/mashwave/
   iptv/TvClient.kt, TvNet.kt            asking the service; following forwarded addresses
   iptv/TvRepository.kt, TvStore.kt      services, lists kept on the phone, favourites, what plays
   iptv/TvRegions.kt, TvSearch.kt        country buttons and search
+  iptv/TvPairing.kt                     the little web page for signing a TV in from a phone
+  ui/tv/TvMode.kt                       decides between the phone layout and the TV-remote layout
+  ui/tv/TvParts.kt                      buttons, rows and text boxes worked with a remote
+  ui/tv/TvRoot.kt, TvBrowse.kt          the TV layout: side menu, lists, pages, search
+  ui/tv/TvPlayer.kt, TvSetup.kt         the TV layout's player, sign-in and settings
+  playback/SpeakerFocus.kt              asking Android for the speaker, on old and new versions
   cast/MediaServer.kt                   the small web server a TV fetches files from
   cast/StreamRelay.kt, Hls.kt           passes a TV-tab stream through the phone to the TV
   cast/Dlna.kt                          finding and controlling smart TVs (UPnP / DLNA)
@@ -320,7 +361,8 @@ app/src/main/java/com/noexcusehere/mashwave/
   ui/                                   Compose screens, sheets, theme and components
 app/src/test/                           unit tests (tempo and beat detection, the auto-mixer, saved data,
                                         editing rules, the media server, TV control, TV-service
-                                        answers and playlists, country detection, the pass-through)
+                                        answers and playlists, country detection, the pass-through,
+                                        the TV-stick layout choice and sign-in from a phone)
 ```
 
 User data (playlists, likes, history, mashups, video projects, sound settings) is stored as

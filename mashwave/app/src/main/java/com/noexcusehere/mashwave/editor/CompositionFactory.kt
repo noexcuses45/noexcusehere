@@ -5,6 +5,7 @@ import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Paint
 import android.graphics.Typeface
+import android.os.Build
 import android.net.Uri
 import android.text.Layout
 import android.text.StaticLayout
@@ -93,6 +94,7 @@ object CompositionFactory {
     private var captionFace: Typeface? = null
 
     /** The app's own lettering in a bold weight, so captions read clearly over moving pictures. */
+    @android.annotation.SuppressLint("ResourceType") // the font file is read as plain bytes on purpose
     private fun captionTypeface(context: Context): Typeface {
         captionFace?.let { return it }
         val face = runCatching {
@@ -101,7 +103,8 @@ object CompositionFactory {
             if (file.length() == 0L) {
                 context.resources.openRawResource(R.font.outfit).use { input -> file.outputStream().use { input.copyTo(it) } }
             }
-            Typeface.Builder(file).setFontVariationSettings("'wght' 700").build()
+            // Choosing a weight from one font file arrived with Android 8; before that, plain bold.
+            if (Build.VERSION.SDK_INT >= 26) Typeface.Builder(file).setFontVariationSettings("'wght' 700").build() else null
         }.getOrNull() ?: Typeface.DEFAULT_BOLD
         captionFace = face
         return face

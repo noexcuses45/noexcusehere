@@ -144,7 +144,8 @@ class KeepAliveService : Service() {
 
     private fun build(status: Status): Notification {
         val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        if (manager.getNotificationChannel(CHANNEL) == null) {
+        // Notification "channels" arrived with Android 8; older devices do without.
+        if (Build.VERSION.SDK_INT >= 26 && manager.getNotificationChannel(CHANNEL) == null) {
             manager.createNotificationChannel(
                 NotificationChannel(CHANNEL, "Saving videos and casting", NotificationManager.IMPORTANCE_LOW).apply {
                     description = "Shown while a video is being saved or something is playing on a TV"
@@ -158,7 +159,8 @@ class KeepAliveService : Service() {
             Intent(this, MainActivity::class.java).setAction(if (status.exporting) MainActivity.ACTION_SHOW_EDITOR else MainActivity.ACTION_SHOW_CAST),
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
-        val builder = Notification.Builder(this, CHANNEL)
+        @Suppress("DEPRECATION")
+        val builder = (if (Build.VERSION.SDK_INT >= 26) Notification.Builder(this, CHANNEL) else Notification.Builder(this))
             .setSmallIcon(R.drawable.ic_stat_mashwave)
             .setContentIntent(open)
             .setOngoing(true)
@@ -217,7 +219,7 @@ class KeepAliveService : Service() {
                 context.startService(intent)
             } catch (e: IllegalStateException) {
                 // The app is in the background after all: the stricter call is the only one allowed.
-                runCatching { context.startForegroundService(intent) }
+                runCatching { if (Build.VERSION.SDK_INT >= 26) context.startForegroundService(intent) else context.startService(intent) }
                     .onFailure { Log.w("UltimateBeats", "Could not start the keep-alive service", it) }
             } catch (e: Exception) {
                 Log.w("UltimateBeats", "Could not start the keep-alive service", e)

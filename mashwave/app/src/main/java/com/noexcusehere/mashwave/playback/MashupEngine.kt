@@ -8,7 +8,6 @@ import android.app.Service
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
-import android.media.AudioFocusRequest
 import android.media.AudioManager
 import android.os.Build
 import android.os.IBinder
@@ -84,20 +83,14 @@ class MashupEngine(private val context: Context, private val scope: CoroutineSco
     private val _state = MutableStateFlow(MashupState())
     val state: StateFlow<MashupState> = _state
 
-    private val focusRequest: AudioFocusRequest = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
-        .setAudioAttributes(
-            android.media.AudioAttributes.Builder()
-                .setUsage(android.media.AudioAttributes.USAGE_MEDIA)
-                .setContentType(android.media.AudioAttributes.CONTENT_TYPE_MUSIC)
-                .build(),
-        )
-        .setOnAudioFocusChangeListener { change ->
+    private val speaker: SpeakerFocus by lazy {
+        SpeakerFocus(audioManager, film = false) { change ->
             // Another player (including this app's own main player) took over the speakers.
             if (change == AudioManager.AUDIOFOCUS_LOSS || change == AudioManager.AUDIOFOCUS_LOSS_TRANSIENT) {
                 pauseBoth()
             }
         }
-        .build()
+    }
 
     private fun deck(i: Int) = _state.value.decks[i]
 
@@ -351,7 +344,7 @@ class MashupEngine(private val context: Context, private val scope: CoroutineSco
 
     private fun requestFocus(): Boolean {
         if (hasFocus) return true
-        hasFocus = audioManager.requestAudioFocus(focusRequest) == AudioManager.AUDIOFOCUS_REQUEST_GRANTED
+        hasFocus = speaker.take()
         return hasFocus
     }
 
@@ -365,7 +358,7 @@ class MashupEngine(private val context: Context, private val scope: CoroutineSco
         }
         wasPlaying = playing
         if (!playing && hasFocus) {
-            audioManager.abandonAudioFocusRequest(focusRequest)
+            speaker.drop()
             hasFocus = false
         }
     }
@@ -433,7 +426,7 @@ class MashupService : Service() {
 
         private fun buildNotification(context: Context): Notification {
             val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-            if (manager.getNotificationChannel(CHANNEL) == null) {
+            if (Build.VERSION.SDK_INT >= 26 && manager.getNotificationChannel(CHANNEL) == null) {
                 manager.createNotificationChannel(
                     NotificationChannel(CHANNEL, "Mashup playback", NotificationManager.IMPORTANCE_LOW).apply {
                         description = "Shown while a two-deck mashup is playing"
@@ -455,7 +448,8 @@ class MashupService : Service() {
                 Intent(context, MashupService::class.java).setAction(ACTION_STOP),
                 PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
             )
-            return Notification.Builder(context, CHANNEL)
+            @Suppress("DEPRECATION")
+            return (if (Build.VERSION.SDK_INT >= 26) Notification.Builder(context, CHANNEL) else Notification.Builder(context))
                 .setSmallIcon(R.drawable.ic_stat_mashwave)
                 .setContentTitle(state.loadedName ?: "Mashup playing")
                 .setContentText(names.ifBlank { "Two decks" })

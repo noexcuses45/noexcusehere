@@ -12,6 +12,12 @@ object TvClient {
     /** Shown when a service that can be reached still says no, since the usual cause is on its side. */
     const val OTHER_PLAYER_HINT = "If the same details work in another player on this phone, open \"More\" and choose how the app introduces itself."
 
+    /**
+     * [message] without that tip, for the layouts that have no "More" to open (the TV remote
+     * one and the computer): there the app has already tried every way of introducing itself.
+     */
+    fun withoutPhoneTip(message: String?): String? = message?.removeSuffix(OTHER_PLAYER_HINT)?.trim()
+
     private fun agent(account: TvAccount): String? = account.userAgent.ifBlank { null }
 
     /** Checks the login and returns the account with what the service said about the subscription. */

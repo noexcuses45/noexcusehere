@@ -60,6 +60,7 @@ import com.noexcusehere.mashwave.desktop.Desk
 import com.noexcusehere.mashwave.desktop.SignIn
 import com.noexcusehere.mashwave.iptv.LiveCushion
 import com.noexcusehere.mashwave.iptv.TvAccount
+import com.noexcusehere.mashwave.iptv.TvClient
 import com.noexcusehere.mashwave.iptv.TvException
 import com.noexcusehere.mashwave.iptv.TvItem
 import com.noexcusehere.mashwave.iptv.TvSearch
@@ -464,7 +465,7 @@ fun SignInSheet(desk: Desk, signIn: SignIn) {
                 desk.signIn = null
                 desk.tab = com.noexcusehere.mashwave.desktop.Tab.LIVE
             } catch (e: TvException) {
-                problem = e.message
+                problem = TvClient.withoutPhoneTip(e.message)
             } finally {
                 busy = false
             }

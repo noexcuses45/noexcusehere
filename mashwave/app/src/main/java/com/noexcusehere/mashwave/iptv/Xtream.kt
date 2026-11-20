@@ -11,7 +11,7 @@ import kotlinx.serialization.json.decodeToSequence
 import java.io.InputStream
 import java.net.URLDecoder
 import java.net.URLEncoder
-import java.util.Base64
+import kotlin.io.encoding.Base64
 import java.util.Locale
 
 /**
@@ -73,8 +73,14 @@ object Xtream {
     }
 
     private val linkPattern = Regex("""https?://[^\s"'<>]+""", RegexOption.IGNORE_CASE)
-    private val userPattern = Regex("""user(?:\s*name)?\s*[:=]\s*(\S+)""", RegexOption.IGNORE_CASE)
-    private val passPattern = Regex("""pass(?:word)?\s*[:=]\s*(\S+)""", RegexOption.IGNORE_CASE)
+    // "Username: me", "user = me", "Username - me", "Username ➡ me": the value on the same line.
+    private const val BETWEEN = """(?:[ \t]*[:=][ \t]*|[ \t]+[-–—>→➡]+\uFE0F?[ \t]+)"""
+    private val userPattern = Regex("""user(?:[ \t]*name)?$BETWEEN(\S+)""", RegexOption.IGNORE_CASE)
+    private val passPattern = Regex("""pass(?:word)?$BETWEEN(\S+)""", RegexOption.IGNORE_CASE)
+
+    // Looser, for when nothing is found that way: the value may sit on the line underneath.
+    private val userBelow = Regex("""user(?:\s*name)?\s*[:=]\s*(\S+)""", RegexOption.IGNORE_CASE)
+    private val passBelow = Regex("""pass(?:word)?\s*[:=]\s*(\S+)""", RegexOption.IGNORE_CASE)
 
     /**
      * Picks a login out of whatever the service sent - a whole chat message can be pasted:
@@ -88,8 +94,10 @@ object Xtream {
     fun loginFromText(text: String): Login? {
         val links = linkPattern.findAll(text).map { it.value.trimEnd('.', ',', ')', ';') }.toList()
         links.firstNotNullOfOrNull { loginFromLink(it) }?.let { return it }
-        val user = userPattern.find(text)?.groupValues?.get(1) ?: return null
-        val pass = passPattern.find(text)?.groupValues?.get(1) ?: return null
+        // Same-line first: in "your username and password:" followed by the details, the word
+        // after that colon is on the next line and is not the password.
+        val user = (userPattern.find(text) ?: userBelow.find(text))?.groupValues?.get(1) ?: return null
+        val pass = (passPattern.find(text) ?: passBelow.find(text))?.groupValues?.get(1) ?: return null
         val server = links.firstOrNull() ?: return null
         return Login(normalizeServer(server), user, pass)
     }
@@ -311,9 +319,12 @@ object Xtream {
         }.sortedBy { it.startMs }
     }
 
+    /** Reads scrambled (base64) text however it was wrapped or padded; works on every Android version. */
+    private val lenient = Base64.Mime.withPadding(Base64.PaddingOption.PRESENT_OPTIONAL)
+
     private fun unscramble(text: String): String {
         if (text.isEmpty()) return ""
-        return runCatching { String(Base64.getMimeDecoder().decode(text), Charsets.UTF_8).trim() }.getOrDefault(text)
+        return runCatching { String(lenient.decode(text), Charsets.UTF_8).trim() }.getOrDefault(text)
     }
 
     private fun seconds(info: JsonObject): Int {

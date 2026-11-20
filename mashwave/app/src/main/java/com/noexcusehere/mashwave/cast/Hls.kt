@@ -8,7 +8,7 @@ object Hls {
 
     fun isPlaylist(contentType: String?, url: String, firstBytes: String): Boolean {
         val type = contentType.orEmpty().lowercase()
-        return "mpegurl" in type || url.substringBefore('?').endsWith(".m3u8", ignoreCase = true) || firstBytes.trimStart('﻿', ' ', '\n', '\r').startsWith("#EXTM3U")
+        return "mpegurl" in type || url.substringBefore('?').endsWith(".m3u8", ignoreCase = true) || firstBytes.trimStart('\uFEFF', ' ', '\n', '\r').startsWith("#EXTM3U")
     }
 
     /**

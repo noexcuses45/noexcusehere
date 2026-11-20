@@ -18,6 +18,7 @@ import android.os.PowerManager
 import android.os.SystemClock
 import android.util.Rational
 import androidx.activity.ComponentActivity
+import androidx.annotation.RequiresApi
 import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -32,6 +33,12 @@ import com.noexcusehere.mashwave.ui.LibraryTabs
 import com.noexcusehere.mashwave.ui.Routes
 import com.noexcusehere.mashwave.ui.UiState
 import com.noexcusehere.mashwave.ui.theme.MashwaveTheme
+import android.content.pm.ActivityInfo
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
+import com.noexcusehere.mashwave.ui.tv.TvMode
+import com.noexcusehere.mashwave.ui.tv.TvRoot
 
 class MainActivity : ComponentActivity() {
     private val ui = UiState()
@@ -46,10 +53,34 @@ class MainActivity : ComponentActivity() {
         volumeControlStream = AudioManager.STREAM_MUSIC
         app.player.connect()
         ContextCompat.registerReceiver(this, floatButtonPressed, IntentFilter(ACTION_FLOAT_BUTTON), ContextCompat.RECEIVER_NOT_EXPORTED)
-        if (savedInstanceState == null) handleIntent(intent)
+        // On a Fire TV or Android TV stick the app shows its remote-control layout instead.
+        tvLayout = TvMode.wanted(this, intent)
+        if (tvLayout) {
+            requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+            WindowCompat.getInsetsController(window, window.decorView).apply {
+                systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+                hide(WindowInsetsCompat.Type.systemBars())
+            }
+        } else if (savedInstanceState == null) {
+            handleIntent(intent)
+        }
         setContent {
             MashwaveTheme {
-                AppRoot(ui)
+                if (tvLayout) TvRoot() else AppRoot(ui)
+            }
+        }
+    }
+
+    /** True while the app is showing its TV (remote-control) layout. */
+    private var tvLayout = false
+
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        // A TV has no status bar. On a box or tablet that has one, the TV layout takes the whole screen.
+        if (hasFocus && tvLayout) {
+            WindowCompat.getInsetsController(window, window.decorView).apply {
+                systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+                hide(WindowInsetsCompat.Type.systemBars())
             }
         }
     }
@@ -61,7 +92,7 @@ class MainActivity : ComponentActivity() {
 
     // ---- the small floating video window ("picture in picture") --------------------------------
 
-    private val canFloat: Boolean by lazy { packageManager.hasSystemFeature(PackageManager.FEATURE_PICTURE_IN_PICTURE) }
+    private val canFloat: Boolean by lazy { Build.VERSION.SDK_INT >= 26 && packageManager.hasSystemFeature(PackageManager.FEATURE_PICTURE_IN_PICTURE) }
     private var floatWhenLeaving = false
     private var floatPlaying = false
     private var floatHasNext = false
@@ -80,9 +111,10 @@ class MainActivity : ComponentActivity() {
         FloatingWindow.shape(videoWidth, videoHeight)?.let { floatShape = Rational(it.first, it.second) }
         // Keeps the window's own buttons right (play or pause), and from Android 12 lets the
         // system do the shrinking itself, smoothly, as the app is left.
-        if (canFloat) runCatching { setPictureInPictureParams(floatParams()) }
+        if (canFloat && Build.VERSION.SDK_INT >= 26) runCatching { setPictureInPictureParams(floatParams()) }
     }
 
+    @RequiresApi(26)
     private fun floatParams(): PictureInPictureParams {
         val builder = PictureInPictureParams.Builder().setAspectRatio(floatShape).setActions(floatButtons())
         if (Build.VERSION.SDK_INT >= 31) {
@@ -93,6 +125,7 @@ class MainActivity : ComponentActivity() {
     }
 
     /** The buttons Android shows on the floating window when it is tapped: play or pause, and next. */
+    @RequiresApi(26)
     private fun floatButtons(): List<RemoteAction> {
         fun button(code: Int, icon: Int, label: String) = RemoteAction(
             Icon.createWithResource(this, icon),
@@ -125,7 +158,7 @@ class MainActivity : ComponentActivity() {
 
     /** Shrinks the app to the floating video window now. False when this phone will not do it. */
     fun floatNow(): Boolean {
-        if (!canFloat) return false
+        if (!canFloat || Build.VERSION.SDK_INT < 26) return false
         return runCatching { enterPictureInPictureMode(floatParams()) }.getOrDefault(false)
     }
 
@@ -156,6 +189,12 @@ class MainActivity : ComponentActivity() {
         // The same, for phones that report "closed" a moment before the app leaves the screen, or
         // that take the window away without reporting it at all. With the screen switched off
         // the video carries on (sound only), exactly as it does when it fills the screen.
+        // A TV has no "carry on in the background": leaving the app (Home on the remote) stops what was on.
+        if (tvLayout) {
+            app.player.pause()
+            app.player.stop()
+            return
+        }
         val wasFloating = ui.inPip || (floatEndedAt != 0L && SystemClock.elapsedRealtime() - floatEndedAt < 1500)
         val screenOn = (getSystemService(Context.POWER_SERVICE) as PowerManager).isInteractive
         if (wasFloating && (isFinishing || screenOn)) app.player.pause()
@@ -165,7 +204,7 @@ class MainActivity : ComponentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
-        handleIntent(intent)
+        if (!tvLayout) handleIntent(intent)
     }
 
     override fun onDestroy() {

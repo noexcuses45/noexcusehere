@@ -1,9 +1,8 @@
 package com.noexcusehere.mashwave.iptv
 
 import android.content.Context
-import android.media.AudioAttributes as PlatformAudioAttributes
-import android.media.AudioFocusRequest
 import android.media.AudioManager
+import com.noexcusehere.mashwave.playback.SpeakerFocus
 import android.os.Handler
 import android.os.Looper
 import androidx.compose.runtime.getValue
@@ -186,7 +185,7 @@ class Multiview(private val context: Context) {
         private set
 
     private val audio = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
-    private var focus: AudioFocusRequest? = null
+    private var focus: SpeakerFocus? = null
     private var silenced = false
 
     private val tv: TvRepository
@@ -256,7 +255,7 @@ class Multiview(private val context: Context) {
         if (index !in tiles.indices) return
         sound = index
         // Asking to hear a picture also asks for the speaker back, if something else had taken it.
-        if (silenced) focus?.let { if (audio.requestAudioFocus(it) == AudioManager.AUDIOFOCUS_REQUEST_GRANTED) silenced = false }
+        if (silenced) focus?.let { if (it.take()) silenced = false }
         applySound()
     }
 
@@ -282,23 +281,18 @@ class Multiview(private val context: Context) {
 
     private fun takeSpeaker() {
         if (focus != null) return
-        val request = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
-            .setAudioAttributes(
-                PlatformAudioAttributes.Builder().setUsage(PlatformAudioAttributes.USAGE_MEDIA).setContentType(PlatformAudioAttributes.CONTENT_TYPE_MOVIE).build(),
-            )
-            .setOnAudioFocusChangeListener({ change ->
-                // A phone call or another player wants the speaker: go quiet, and come back when it is free.
-                silenced = change != AudioManager.AUDIOFOCUS_GAIN
-                applySound()
-            }, Handler(Looper.getMainLooper()))
-            .build()
+        val request = SpeakerFocus(audio, film = true) { change ->
+            // A phone call or another player wants the speaker: go quiet, and come back when it is free.
+            silenced = change != AudioManager.AUDIOFOCUS_GAIN
+            applySound()
+        }
         focus = request
         silenced = false
-        audio.requestAudioFocus(request)
+        request.take()
     }
 
     private fun dropSpeaker() {
-        focus?.let { audio.abandonAudioFocusRequest(it) }
+        focus?.drop()
         focus = null
         silenced = false
     }

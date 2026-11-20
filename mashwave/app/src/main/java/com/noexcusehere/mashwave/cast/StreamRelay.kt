@@ -5,7 +5,7 @@ import java.io.BufferedInputStream
 import java.io.ByteArrayOutputStream
 import java.io.IOException
 import java.io.OutputStream
-import java.util.Base64
+import kotlin.io.encoding.Base64
 
 /**
  * Passes a stream from the internet through the phone to a TV on the home network.
@@ -286,9 +286,12 @@ class StreamRelay(
         /** A stream that has flowed this long since its last hiccup is counted as healthy again. */
         private const val STEADY_NS = 20_000_000_000L
 
-        fun wrap(url: String): String = Base64.getUrlEncoder().withoutPadding().encodeToString(url.toByteArray(Charsets.UTF_8))
+        private val packing = Base64.UrlSafe.withPadding(Base64.PaddingOption.ABSENT)
+        private val unpacking = Base64.UrlSafe.withPadding(Base64.PaddingOption.ABSENT_OPTIONAL)
 
-        fun unwrap(text: String): String? = runCatching { String(Base64.getUrlDecoder().decode(text), Charsets.UTF_8) }
+        fun wrap(url: String): String = packing.encode(url.toByteArray(Charsets.UTF_8))
+
+        fun unwrap(text: String): String? = runCatching { String(unpacking.decode(text), Charsets.UTF_8) }
             .getOrNull()?.takeIf { it.startsWith("http://", true) || it.startsWith("https://", true) }
 
         fun parameter(query: String, name: String): String? {

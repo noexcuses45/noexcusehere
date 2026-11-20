@@ -38,7 +38,7 @@ object M3u {
         var lineNumber = 0
         while (true) {
             var line = reader.readLine() ?: break
-            if (lineNumber++ == 0) line = line.removePrefix("﻿")
+            if (lineNumber++ == 0) line = line.removePrefix("\uFEFF")
             line = line.trim()
             if (line.isEmpty()) continue
             when {

@@ -14,7 +14,7 @@ android {
 
     defaultConfig {
         applicationId = "com.noexcusehere.mashwave"
-        minSdk = 26
+        minSdk = 25
         targetSdk = 35
         // Minutes since 2026-01-01, so a newer build always installs over an older one
         // no matter where it was built (this PC, GitHub, ...).
