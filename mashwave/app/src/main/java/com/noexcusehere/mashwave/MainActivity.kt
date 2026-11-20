@@ -1,10 +1,5 @@
 package com.noexcusehere.mashwave
 
-import com.noexcusehere.mashwave.ui.tv.TvUnlock
-import com.noexcusehere.mashwave.ui.UnlockScreen
-import com.noexcusehere.mashwave.licence.Lock
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import androidx.compose.runtime.getValue
 import android.app.PendingIntent
 import android.app.PictureInPictureParams
 import android.app.RemoteAction
@@ -12,6 +7,7 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.content.pm.ActivityInfo
 import android.content.pm.PackageManager
 import android.content.res.Configuration
 import android.graphics.Color
@@ -23,27 +19,31 @@ import android.os.PowerManager
 import android.os.SystemClock
 import android.util.Rational
 import androidx.activity.ComponentActivity
-import androidx.annotation.RequiresApi
 import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.annotation.RequiresApi
+import androidx.compose.runtime.getValue
 import androidx.core.content.ContextCompat
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.noexcusehere.mashwave.data.describeUri
 import com.noexcusehere.mashwave.iptv.isLiveTv
 import com.noexcusehere.mashwave.iptv.zap
+import com.noexcusehere.mashwave.licence.Lock
 import com.noexcusehere.mashwave.ui.AppRoot
 import com.noexcusehere.mashwave.ui.FloatingWindow
 import com.noexcusehere.mashwave.ui.LibraryTabs
 import com.noexcusehere.mashwave.ui.Routes
 import com.noexcusehere.mashwave.ui.UiState
+import com.noexcusehere.mashwave.ui.UnlockScreen
 import com.noexcusehere.mashwave.ui.theme.MashwaveTheme
-import android.content.pm.ActivityInfo
-import androidx.core.view.WindowCompat
-import androidx.core.view.WindowInsetsCompat
-import androidx.core.view.WindowInsetsControllerCompat
 import com.noexcusehere.mashwave.ui.tv.TvMode
 import com.noexcusehere.mashwave.ui.tv.TvRoot
+import com.noexcusehere.mashwave.ui.tv.TvUnlock
 
 class MainActivity : ComponentActivity() {
     private val ui = UiState()

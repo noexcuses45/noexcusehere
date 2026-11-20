@@ -44,13 +44,15 @@ object ThisComputer {
     internal fun lineAfter(text: String?, marker: String): String? =
         text?.lineSequence()?.firstOrNull { it.contains(marker) }?.substringAfter(marker)?.trim()?.takeIf { it.isNotEmpty() }
 
+    /** What a small system program prints, or null if it takes more than a few seconds (it never should). */
     private fun run(vararg command: String): String? {
         val process = ProcessBuilder(*command).redirectErrorStream(true).start()
-        val text = process.inputStream.bufferedReader().use { it.readText() }
+        runCatching { process.outputStream.close() }
+        // The answer is a line or two, so it fits in the pipe and can be read once the program has ended.
         if (!process.waitFor(5, TimeUnit.SECONDS)) {
             process.destroyForcibly()
             return null
         }
-        return text
+        return process.inputStream.bufferedReader().use { it.readText() }
     }
 }
