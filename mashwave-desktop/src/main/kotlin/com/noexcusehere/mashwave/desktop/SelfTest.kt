@@ -74,6 +74,8 @@ class SelfTest(private val clip: String, val out: File, private val service: Lis
     suspend fun run(desk: Desk, window: Window): Int {
         report.writeText("")
         note("os: ${System.getProperty("os.name")} ${System.getProperty("os.arch")}, java ${System.getProperty("java.version")}")
+        // Unlock codes are tied to the computer; this says whether it could be recognised.
+        note("computer: " + if (ThisComputer.usedItsOwn) "recognised by its own name" else "gave no name of its own, so one was made up and kept")
         waitFor(20) { !desk.lookingForVlc }
         val player = desk.player
         note("vlc: " + if (player != null) "${player.version} in ${desk.vlcFolder}" + (if (player.builtIn) " (packed with the app)" else " (installed on this computer)") else "missing - ${desk.vlcProblem}")

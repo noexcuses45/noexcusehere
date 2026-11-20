@@ -49,6 +49,8 @@ import androidx.compose.ui.window.WindowPlacement
 import androidx.compose.ui.window.WindowPosition
 import androidx.compose.ui.window.application
 import androidx.compose.ui.window.rememberWindowState
+import com.noexcusehere.mashwave.licence.Lock
+import com.noexcusehere.mashwave.desktop.ui.UnlockScreen
 import com.noexcusehere.mashwave.desktop.ui.AppLogo
 import com.noexcusehere.mashwave.desktop.ui.DeskTheme
 import com.noexcusehere.mashwave.desktop.ui.DetailsPage
@@ -101,7 +103,7 @@ fun main(args: Array<String>) {
     Pictures.keepIn(File(dataDir, "pictures"))
 
     application {
-        val desk = remember { Desk(CoroutineScope(SupervisorJob() + Dispatchers.Main), dataDir, vlcArgs) }
+        val desk = remember { Desk(CoroutineScope(SupervisorJob() + Dispatchers.Main), dataDir, vlcArgs, asksForCode = selfTest == null) }
         val saved = remember { desk.store.saved }
         // The room there is on this screen once the taskbar is taken off. A small laptop screen
         // is smaller than the window would like to be: then it simply fills the screen.
@@ -150,7 +152,11 @@ fun main(args: Array<String>) {
             onPreviewKeyEvent = { handleKey(desk, it) },
         ) {
             LaunchedEffect(Unit) { window.minimumSize = Dimension(minOf(SMALLEST_WIDTH, roomWidth), minOf(SMALLEST_HEIGHT, roomHeight)) }
-            DeskTheme { AppBody(desk) }
+            DeskTheme {
+                // Until a code has been put in, the unlock screen is all there is.
+                val lock by desk.licence.state.collectAsState()
+                if (lock == Lock.LOCKED) UnlockScreen(desk) else AppBody(desk)
+            }
             if (selfTest != null) {
                 LaunchedEffect(Unit) {
                     val code = selfTest.run(desk, window)

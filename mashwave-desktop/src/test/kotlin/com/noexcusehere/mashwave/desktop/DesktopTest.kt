@@ -119,4 +119,42 @@ class DesktopTest {
             out.deleteRecursively()
         }
     }
+
+    /** Windows gives the computer's own number in a line of a longer answer; this is how it is picked out. */
+    @Test
+    fun theComputersOwnNameIsPickedOutOfWhatWindowsSays() {
+        val answer = "\r\nHKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Cryptography\r\n    MachineGuid    REG_SZ    1b2c3d4e-aaaa-bbbb-cccc-0123456789ab\r\n\r\n"
+        assertEquals("1b2c3d4e-aaaa-bbbb-cccc-0123456789ab", ThisComputer.lineAfter(answer, "REG_SZ"))
+        assertEquals(null, ThisComputer.lineAfter("ERROR: The system was unable to find the specified registry key or value.", "REG_SZ"))
+        assertEquals(null, ThisComputer.lineAfter(null, "REG_SZ"))
+        // Whatever the computer, there is always a name, and it is the same the next time.
+        val folder = Files.createTempDirectory("umm-name").toFile()
+        try {
+            val first = ThisComputer.name(folder)
+            assertTrue(first.length >= 8)
+            assertEquals(first, ThisComputer.name(folder))
+        } finally {
+            folder.deleteRecursively()
+        }
+        assertTrue(ThisComputer.platform() in setOf("windows", "mac", "linux"))
+    }
+
+    /** The self-check plays its clips without a code; a normal start asks for one only when there is a code service. */
+    @Test
+    fun theSelfCheckIsNeverAskedForACode() {
+        val folder = Files.createTempDirectory("umm-lock").toFile()
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
+        try {
+            val checking = Desk(scope, folder, asksForCode = false)
+            assertEquals(com.noexcusehere.mashwave.licence.Lock.NOT_NEEDED, checking.licence.state.value)
+            checking.shutDown()
+            val normal = Desk(scope, folder)
+            val expected = if (com.noexcusehere.mashwave.licence.LicenceConfig.ENDPOINT.isEmpty()) com.noexcusehere.mashwave.licence.Lock.NOT_NEEDED else com.noexcusehere.mashwave.licence.Lock.LOCKED
+            assertEquals(expected, normal.licence.state.value)
+            normal.shutDown()
+        } finally {
+            scope.cancel()
+            folder.deleteRecursively()
+        }
+    }
 }

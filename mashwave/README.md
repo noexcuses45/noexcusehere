@@ -264,6 +264,20 @@ Copy the APK to the phone, tap it, and allow "install unknown apps" when asked â
 apps outside the Play Store. Needs Android 7.1 or newer. On first launch tap
 **Allow access to music, photos & videos**.
 
+## Unlock codes
+
+The app can be given to anyone; what is sold is a code. With the code service switched on
+(see `../licence-service/README.md`), the app asks for a code the first time it is opened,
+on a phone, a TV stick and the computer app alike. The code is checked over the internet
+once and the device stays unlocked after that, online or not. A code unlocks a set number
+of devices, so one code cannot be passed around.
+
+What is sent for the check: the code, the app's version, the kind of device, and an
+anonymous fingerprint of the device. Nothing else, and nothing about the person.
+
+Until the service's address is filled in (`licence/Licence.kt`, `LicenceConfig`), there is
+no lock and the app opens for everyone.
+
 ## On a TV stick or box
 
 The same APK also runs on **Amazon Fire TV sticks** (Fire OS 6 and newer) and on
@@ -347,6 +361,9 @@ app/src/main/java/com/noexcusehere/mashwave/
   iptv/TvRepository.kt, TvStore.kt      services, lists kept on the phone, favourites, what plays
   iptv/TvRegions.kt, TvSearch.kt        country buttons and search
   iptv/TvPairing.kt                     the little web page for signing a TV in from a phone
+  licence/Licence.kt                    unlock codes: reading one, checking the signed answer,
+                                        remembering that this device is unlocked
+  ui/UnlockScreen.kt, ui/tv/TvUnlock.kt the screen that asks for the code (touch, and TV remote)
   ui/tv/TvMode.kt                       decides between the phone layout and the TV-remote layout
   ui/tv/TvParts.kt                      buttons, rows and text boxes worked with a remote
   ui/tv/TvRoot.kt, TvBrowse.kt          the TV layout: side menu, lists, pages, search
@@ -362,14 +379,15 @@ app/src/main/java/com/noexcusehere/mashwave/
 app/src/test/                           unit tests (tempo and beat detection, the auto-mixer, saved data,
                                         editing rules, the media server, TV control, TV-service
                                         answers and playlists, country detection, the pass-through,
-                                        the TV-stick layout choice and sign-in from a phone)
+                                        the TV-stick layout choice and sign-in from a phone,
+                                        unlock codes)
 ```
 
 User data (playlists, likes, history, mashups, video projects, sound settings) is stored as
-JSON in the app's private storage. The app itself sends nothing to the internet; the network is
-only used for streams you open yourself, for the TV service you signed in to, and, while
-casting, to talk to the TV on your own Wi-Fi (the TV fetches the song or video straight from
-the phone).
+JSON in the app's private storage. The network is only used for streams you open yourself,
+for the TV service you signed in to, while casting, to talk to the TV on your own Wi-Fi (the
+TV fetches the song or video straight from the phone), and - once unlock codes are switched
+on - to check the code (see "Unlock codes" above for exactly what that sends).
 
 TV logins are kept in a folder of the app's private storage that Android leaves out of cloud
 backups. They are sent to that TV service only - the same requests any IPTV player makes:

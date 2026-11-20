@@ -357,6 +357,9 @@ fun SettingsScreen(desk: Desk) {
             Heading("About")
             Text("${AppFolders.NAME} for computers, version ${System.getProperty("jpackage.app-version") ?: "1.0"}", style = MaterialTheme.typography.bodyMedium, color = TextMid)
             Text("Sign-ins, favourites and lists are kept on this computer only.", style = MaterialTheme.typography.bodySmall, color = TextLow)
+            if (desk.licence.hint.isNotEmpty()) {
+                Text("Unlocked with the code ending in ${desk.licence.hint}.", style = MaterialTheme.typography.bodySmall, color = TextLow)
+            }
             Spacer(Modifier.height(8.dp))
             Quiet("Open the folder they are kept in", { runCatching { Desktop.getDesktop().open(desk.dataDir) } }, icon = Icons.Rounded.FolderOpen)
             val notices = remember(player) { if (player?.builtIn == true) File(desk.vlcFolder, "NOTICE.txt").takeIf { it.isFile } else null }

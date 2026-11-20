@@ -31,6 +31,7 @@ val copyShared by tasks.registering(Sync::class) {
             "iptv/TvStore.kt",
             "iptv/TvRepository.kt",
             "data/Resume.kt",
+            "licence/Licence.kt",
         )
     }
     into(sharedSources.map { it.dir("com/noexcusehere/mashwave") })

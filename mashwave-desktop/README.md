@@ -19,6 +19,15 @@ watch its channels, movies and shows. The app has no channels, logins or playlis
 
 Not in this version: music, mashups, the photo and video editors, and sending to a TV.
 
+## Unlock codes
+
+Like the phone app, this one can be given to anyone and is unlocked with a code: asked for
+on first opening, checked over the internet once, and the computer stays unlocked after
+that. The check sends the code, the app's version and an anonymous fingerprint of the
+computer - nothing else. It is the same code (`licence/Licence.kt`, shared with the phone
+app) and the same service; see `../licence-service/README.md`. Until the service's address
+is filled in there is no lock.
+
 ## The player inside it
 
 The picture and sound are played by the VLC engine (libVLC, from VideoLAN). On Windows it is

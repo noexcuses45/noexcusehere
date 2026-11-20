@@ -8,6 +8,7 @@ on:
       - "mashwave-desktop/**"
       - "mashwave/app/src/main/java/com/noexcusehere/mashwave/iptv/**"
       - "mashwave/app/src/main/java/com/noexcusehere/mashwave/data/Resume.kt"
+      - "mashwave/app/src/main/java/com/noexcusehere/mashwave/licence/**"
       - ".github/workflows/build-desktop.yml"
   workflow_dispatch:
 

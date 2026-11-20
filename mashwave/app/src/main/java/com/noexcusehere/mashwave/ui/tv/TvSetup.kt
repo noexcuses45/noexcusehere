@@ -278,6 +278,8 @@ fun TvSettings(ui: TvUi) {
             val version = remember { runCatching { context.packageManager.getPackageInfo(context.packageName, 0).versionName }.getOrNull().orEmpty() }
             Text("$APP_NAME $version", style = MaterialTheme.typography.bodyMedium, color = TextLow, modifier = Modifier.padding(top = 18.dp))
             Text("Sign-ins, favourites and lists are kept on this device only.", style = MaterialTheme.typography.bodySmall, color = TextLow)
+            val code = app.licence.hint
+            if (code.isNotEmpty()) Text("Unlocked with the code ending in $code.", style = MaterialTheme.typography.bodySmall, color = TextLow)
         }
     }
 }

@@ -18,13 +18,16 @@ import com.noexcusehere.mashwave.iptv.TvNet
 import com.noexcusehere.mashwave.iptv.TvRepository
 import com.noexcusehere.mashwave.iptv.TvSection
 import com.noexcusehere.mashwave.iptv.TvStore
+import com.noexcusehere.mashwave.licence.LicenceConfig
+import com.noexcusehere.mashwave.licence.LicenceDevice
+import com.noexcusehere.mashwave.licence.LicenceManager
+import java.io.File
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import java.io.File
 
 enum class Tab(val title: String) {
     LIVE("Live TV"),
@@ -50,9 +53,26 @@ class SignIn(val editing: TvAccount?)
  * Everything the screens share: the TV services (the same code the phone app runs), the player,
  * which screen is open, and the handful of things that are remembered between visits.
  */
-class Desk(private val scope: CoroutineScope, val dataDir: File, private val vlcArgs: List<String> = emptyList()) : PlayerHost {
+class Desk(
+    private val scope: CoroutineScope,
+    val dataDir: File,
+    private val vlcArgs: List<String> = emptyList(),
+    /** False for the self-check, which plays its test clips and closes again. */
+    asksForCode: Boolean = true,
+) : PlayerHost {
     val store = DeskStore(dataDir, scope)
     val tv: TvRepository
+
+    /** Whether this computer has been unlocked with a code. */
+    val licence = LicenceManager(
+        endpoint = if (asksForCode) LicenceConfig.ENDPOINT else "",
+        publicKey = if (asksForCode) LicenceConfig.PUBLIC_KEY else "",
+        file = File(dataDir, "licence.json"),
+        device = LicenceDevice.fingerprint(ThisComputer.name(dataDir)),
+        platform = ThisComputer.platform(),
+        version = System.getProperty("jpackage.app-version") ?: "1.0",
+        scope = scope,
+    )
 
     var player by mutableStateOf<VlcPlayer?>(null)
         private set
@@ -90,6 +110,7 @@ class Desk(private val scope: CoroutineScope, val dataDir: File, private val vlc
         TvNet.userAgent = TvNet.VLC_AGENT
         tv = TvRepository(TvStore(File(dataDir, "tv")), scope) { System.err.println(it) }
         findVlc()
+        licence.lookAgainIfDue()
     }
 
     /** Looks for the VLC on this computer and starts the player with it. */

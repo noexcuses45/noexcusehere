@@ -1,5 +1,10 @@
 package com.noexcusehere.mashwave
 
+import com.noexcusehere.mashwave.ui.tv.TvUnlock
+import com.noexcusehere.mashwave.ui.UnlockScreen
+import com.noexcusehere.mashwave.licence.Lock
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.compose.runtime.getValue
 import android.app.PendingIntent
 import android.app.PictureInPictureParams
 import android.app.RemoteAction
@@ -66,7 +71,13 @@ class MainActivity : ComponentActivity() {
         }
         setContent {
             MashwaveTheme {
-                if (tvLayout) TvRoot() else AppRoot(ui)
+                // Until a code has been put in, the unlock screen is all there is.
+                val lock by app.licence.state.collectAsStateWithLifecycle()
+                when {
+                    lock == Lock.LOCKED -> if (tvLayout) TvUnlock() else UnlockScreen()
+                    tvLayout -> TvRoot()
+                    else -> AppRoot(ui)
+                }
             }
         }
     }
@@ -88,6 +99,7 @@ class MainActivity : ComponentActivity() {
     override fun onStart() {
         super.onStart()
         app.player.connect()
+        app.licence.lookAgainIfDue()
     }
 
     // ---- the small floating video window ("picture in picture") --------------------------------
@@ -215,6 +227,8 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun handleIntent(intent: Intent?) {
+        // Nothing is opened or played from outside while the app is waiting for its code.
+        if (app.licence.state.value == Lock.LOCKED) return
         when (intent?.action) {
             ACTION_SHOW_PLAYER -> ui.nowPlayingOpen = true
             ACTION_SHOW_MASHUP -> {
