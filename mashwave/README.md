@@ -374,6 +374,8 @@ app/src/main/java/com/noexcusehere/mashwave/
   cast/Dlna.kt                          finding and controlling smart TVs (UPnP / DLNA)
   cast/Chromecast.kt                    Chromecast through Google Play services
   cast/CastController.kt                the queue that plays on the TV
+  cast/CastParts.kt                     the parts of casting shared with the computer app: what a TV
+                                        can be asked, why something did not start, how to say so
   KeepAliveService.kt                   keeps a save or a cast session alive in the background
   ui/                                   Compose screens, sheets, theme and components
 app/src/test/                           unit tests (tempo and beat detection, the auto-mixer, saved data,

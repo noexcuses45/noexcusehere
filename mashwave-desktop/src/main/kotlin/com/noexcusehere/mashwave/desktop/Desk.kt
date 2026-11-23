@@ -126,6 +126,12 @@ class Desk(
     /** The app's window, for the boxes that ask for a file or a folder. */
     var window: java.awt.Frame? = null
 
+    /** Playing on a smart TV instead of on this computer. */
+    val cast = DeskCast(this, scope)
+
+    /** True while the "play on a TV" box is open. */
+    var castOpen by mutableStateOf(false)
+
     init {
         // The pictures and sound are fetched by VLC, so that is the name services are given.
         TvNet.userAgent = TvNet.VLC_AGENT
@@ -187,6 +193,13 @@ class Desk(
 
     fun placeOf(entry: MediaEntry?): ResumePoint? = entry?.let { resume[it.uri] }
 
+    /** Forgets where [entry] was stopped, so that it starts from its beginning. */
+    fun forgetPlace(entry: MediaEntry) {
+        if (entry.uri !in resume) return
+        resume = resume - entry.uri
+        store.edit { it.copy(resume = resume) }
+    }
+
     // ---- playing ----------------------------------------------------------------------------
 
     private fun ready(): VlcPlayer? {
@@ -199,6 +212,11 @@ class Desk(
 
     /** Starts the channel at [index] of [list]; [fill] opens it over the whole window. */
     fun playChannel(list: List<TvItem>, index: Int, fill: Boolean = false) {
+        // Connected to a TV: what is picked plays there, not here.
+        if (cast.connected) {
+            tv.tune(list, index)?.let { cast.play(listOf(it), 0) }
+            return
+        }
         val p = ready() ?: return
         val item = list.getOrNull(index) ?: return
         // Already on: a second click only makes it big.
@@ -212,6 +230,13 @@ class Desk(
     }
 
     fun playMovie(item: TvItem, fromStart: Boolean = false) {
+        if (cast.connected) {
+            val entry = tv.entry(item) ?: return
+            tv.watched(item)
+            if (fromStart) forgetPlace(entry)
+            cast.play(listOf(entry), 0)
+            return
+        }
         val p = ready() ?: return
         val entry = tv.entry(item) ?: return
         tv.watched(item)
@@ -224,12 +249,18 @@ class Desk(
     fun episodeQueue(show: TvItem, details: TvDetails): List<MediaEntry> = details.seasons.flatMap { tv.episodes(show, details, it) }
 
     fun playEpisode(show: TvItem, details: TvDetails, episode: TvEpisode, fromStart: Boolean = false) {
-        val p = ready() ?: return
         val queue = episodeQueue(show, details)
         // The queue is built season by season in the same order as this list.
         val ordered = details.seasons.flatMap { season -> details.episodes.filter { it.season == season } }
         val at = ordered.indexOfFirst { it.id == episode.id }
         if (queue.isEmpty() || at !in queue.indices) return
+        if (cast.connected) {
+            tv.watched(show)
+            if (fromStart) forgetPlace(queue[at])
+            cast.play(queue, at)
+            return
+        }
+        val p = ready() ?: return
         tv.watched(show)
         p.repeat = Repeat.OFF
         p.play(queue, at, if (fromStart) 0L else null)
@@ -247,6 +278,10 @@ class Desk(
 
     /** The next (1) or previous (-1) channel. False when there is nowhere to go. */
     fun step(delta: Int): Boolean {
+        if (cast.connected) {
+            if (delta > 0) cast.next() else cast.previous()
+            return true
+        }
         val p = player ?: return false
         val next = tv.step(p.current, delta) ?: return false
         p.repeat = Repeat.OFF
@@ -261,9 +296,13 @@ class Desk(
 
     /** Plays [list] from the song at [index]. With shuffle on, the rest follow in a mixed-up order. */
     fun playSongs(list: List<LocalFile>, index: Int) {
-        val p = ready() ?: return
         val first = list.getOrNull(index) ?: return
         val entries = list.map { it.entry() }
+        if (cast.connected) {
+            if (shuffle) cast.play(listOf(first.entry()) + entries.filterIndexed { i, _ -> i != index }.shuffled(), 0) else cast.play(entries, index)
+            return
+        }
+        val p = ready() ?: return
         watching = false
         fullscreen = false
         p.repeat = repeat
@@ -277,8 +316,14 @@ class Desk(
 
     /** Plays [list] from the video at [index], over the whole window. */
     fun playVideos(list: List<LocalFile>, index: Int, fromStart: Boolean = false) {
-        val p = ready() ?: return
         if (index !in list.indices) return
+        if (cast.connected) {
+            val entries = list.map { it.entry() }
+            if (fromStart) forgetPlace(entries[index])
+            cast.play(entries, index)
+            return
+        }
+        val p = ready() ?: return
         p.repeat = Repeat.OFF
         p.play(list.map { it.entry() }, index, if (fromStart) 0L else null)
         watching = true
@@ -366,6 +411,7 @@ class Desk(
 
     /** The app is closing: write everything down and let VLC go. */
     fun shutDown() {
+        cast.shutDown()
         rememberSound()
         player?.release()
         store.flush()

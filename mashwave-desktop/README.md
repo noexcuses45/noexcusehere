@@ -27,7 +27,18 @@ channels, logins or playlists of its own.
 - The folders looked through (your Music and Videos folders to begin with) are chosen in Settings.
   Song details are read once and remembered; "Look again" finds what is new.
 
-Not in this version: mashups, the photo and video editors, and sending to a TV.
+- **Play on a TV**: songs, videos and TV channels can be played on a smart TV on the home network
+  instead of on the computer ("Play on a TV" in the side menu). The TV is found by itself, or added
+  by its address. Whatever is started after that plays there, with a bar along the bottom to pause,
+  skip, jump about, change channel and set the TV's loudness. What the computer was playing
+  carries on on the TV from the same place. Files are fetched by the TV from the computer; a
+  channel or film from a TV service reaches the TV through the computer, so the address that holds
+  the login never leaves it. If something will not start, the app says why in plain words.
+  The first time, Windows asks whether to let the app through its firewall: the TV cannot
+  collect anything unless the answer is yes.
+
+Not in this version: mashups, the photo and video editors, and Chromecast (smart TVs that take
+"DLNA" are what works).
 
 ## Unlock codes
 

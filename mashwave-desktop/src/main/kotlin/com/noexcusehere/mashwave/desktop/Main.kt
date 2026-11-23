@@ -52,6 +52,9 @@ import androidx.compose.ui.window.WindowPosition
 import androidx.compose.ui.window.application
 import androidx.compose.ui.window.rememberWindowState
 import com.noexcusehere.mashwave.desktop.ui.AppLogo
+import com.noexcusehere.mashwave.desktop.ui.CastBar
+import com.noexcusehere.mashwave.desktop.ui.CastButton
+import com.noexcusehere.mashwave.desktop.ui.CastSheet
 import com.noexcusehere.mashwave.desktop.ui.DeskTheme
 import com.noexcusehere.mashwave.desktop.ui.DetailsPage
 import com.noexcusehere.mashwave.desktop.ui.Ink
@@ -267,12 +270,13 @@ private fun AppBody(desk: Desk) {
                 }
             }
         }
-        // While a song plays, its controls sit along the bottom whatever screen is open.
-        if (player != null && desk.playingMusic) MusicBar(desk, player)
+        // Connected to a TV: its controls sit along the bottom. Otherwise, while a song plays here, the song's do.
+        if (desk.cast.connected) CastBar(desk) else if (player != null && desk.playingMusic) MusicBar(desk, player)
       }
 
         if (desk.watching && player != null && !desk.playingMusic) PlayerScreen(desk, player)
         desk.signIn?.let { SignInSheet(desk, it) }
+        if (desk.castOpen) CastSheet(desk)
 
         if (desk.notice.isNotEmpty()) {
             Text(
@@ -318,6 +322,7 @@ private fun Rail(desk: Desk, state: TvState) {
             NowPlaying(desk, player)
             Spacer(Modifier.height(10.dp))
         }
+        CastButton(desk)
         RailButton(desk, Tab.SETTINGS, Icons.Rounded.Settings)
         state.active?.let { account ->
             Text(
