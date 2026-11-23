@@ -107,6 +107,18 @@ fun handleKey(desk: Desk, event: KeyEvent): Boolean {
     val player = desk.player
     if (!desk.watching || player == null) {
         return when {
+            player != null && desk.playingMusic && event.key == Key.MediaPlayPause -> {
+                player.toggle()
+                true
+            }
+            player != null && desk.playingMusic && event.key == Key.MediaNext -> {
+                player.next()
+                true
+            }
+            player != null && desk.playingMusic && event.key == Key.MediaPrevious -> {
+                desk.previousSong()
+                true
+            }
             event.key == Key.Escape && desk.signIn != null -> false
             event.key == Key.Escape && desk.page != null -> {
                 desk.page = null

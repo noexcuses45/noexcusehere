@@ -146,6 +146,9 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-swing:1.10.2")
     // Talks to the VLC installed on the computer, which does the actual playing.
     implementation("net.java.dev.jna:jna:5.19.1")
+    // Reads the title, artist, album and cover picture out of music files. LGPL: it stays a
+    // separate file in the app (see engine/notices) so that it can be swapped for another build.
+    implementation("net.jthink:jaudiotagger:3.0.1")
 
     testImplementation(kotlin("test"))
 }

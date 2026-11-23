@@ -1,8 +1,9 @@
 # Ultimate Media Manager for computers
 
-The TV side of Ultimate Media Manager as a program for Windows (it also runs on Linux, which is
-where it is tried out while being built). Sign in with the details from your own TV service and
-watch its channels, movies and shows. The app has no channels, logins or playlists of its own.
+Ultimate Media Manager as a program for Windows (it also runs on Linux, which is where it is
+tried out while being built). Sign in with the details from your own TV service and watch its
+channels, movies and shows - and play the music and videos kept on the computer. The app has no
+channels, logins or playlists of its own.
 
 ## What it does
 
@@ -17,7 +18,16 @@ watch its channels, movies and shows. The app has no channels, logins or playlis
   full screen. Keys: space (pause), F (full screen), arrows (skip, loudness), Page Up/Down or N
   (channel or episode), M (sound off), Esc (back).
 
-Not in this version: music, mashups, the photo and video editors, and sending to a TV.
+- **Music** on this computer: every song, or by album or artist, with the cover pictures; a box
+  to find one; shuffle and repeat; and a bar along the bottom with what is playing, whatever
+  screen is open. The keyboard's own play, next and previous buttons work.
+- **My videos**: the video files on this computer, folder by folder, picked up where they were
+  stopped.
+- **Any file**: "Open a file", or drop music or video files onto the window.
+- The folders looked through (your Music and Videos folders to begin with) are chosen in Settings.
+  Song details are read once and remembered; "Look again" finds what is new.
+
+Not in this version: mashups, the photo and video editors, and sending to a TV.
 
 ## Unlock codes
 

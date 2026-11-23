@@ -8,6 +8,7 @@ import com.noexcusehere.mashwave.data.ResumePoint
 import com.noexcusehere.mashwave.data.ResumeRules
 import com.noexcusehere.mashwave.desktop.vlc.PlayStatus
 import com.noexcusehere.mashwave.desktop.vlc.PlayerHost
+import com.noexcusehere.mashwave.desktop.vlc.Repeat
 import com.noexcusehere.mashwave.desktop.vlc.VlcFinder
 import com.noexcusehere.mashwave.desktop.vlc.VlcPlayer
 import com.noexcusehere.mashwave.iptv.TvAccount
@@ -35,7 +36,13 @@ enum class Tab(val title: String) {
     SHOWS("Shows"),
     SEARCH("Search"),
     SAVED("Favourites"),
+    MUSIC("Music"),
+    VIDEOS("My videos"),
     SETTINGS("Settings"),
+    ;
+
+    /** True for the screens that show what a TV service offers, and so need one signed in. */
+    val needsService: Boolean get() = this == LIVE || this == MOVIES || this == SHOWS || this == SEARCH || this == SAVED
 }
 
 /** How the picture is fitted into the space it has. */
@@ -105,12 +112,27 @@ class Desk(
     var resume by mutableStateOf(store.saved.resume)
         private set
 
+    /** The music and videos kept on this computer. */
+    val library = Library(dataDir, scope)
+
+    /** The folders looked through for them. */
+    var folders by mutableStateOf(store.saved.folders ?: MediaKinds.usualFolders())
+        private set
+    var shuffle by mutableStateOf(store.saved.shuffle)
+        private set
+    var repeat by mutableStateOf(runCatching { Repeat.valueOf(store.saved.repeat) }.getOrDefault(Repeat.OFF))
+        private set
+
+    /** The app's window, for the boxes that ask for a file or a folder. */
+    var window: java.awt.Frame? = null
+
     init {
         // The pictures and sound are fetched by VLC, so that is the name services are given.
         TvNet.userAgent = TvNet.VLC_AGENT
         tv = TvRepository(TvStore(File(dataDir, "tv")), scope) { System.err.println(it) }
         findVlc()
         licence.lookAgainIfDue()
+        library.open(folders)
     }
 
     /** Looks for the VLC on this computer and starts the player with it. */
@@ -152,9 +174,11 @@ class Desk(
 
     override fun reserveMs(): Int = TvNet.cushion.startMs
 
-    override fun startAt(entry: MediaEntry): Long = ResumeRules.startFrom(resume[entry.uri])
+    // A song always starts at its beginning; only videos are picked up where they were left.
+    override fun startAt(entry: MediaEntry): Long = if (entry.isSong) 0 else ResumeRules.startFrom(resume[entry.uri])
 
     override fun place(entry: MediaEntry, positionMs: Long, durationMs: Long) {
+        if (entry.isSong) return
         val next = ResumeRules.updated(resume, entry.uri, positionMs, durationMs, System.currentTimeMillis())
         if (next === resume) return
         resume = next
@@ -181,6 +205,7 @@ class Desk(
         val same = p.current?.let { tv.itemOf(it) }?.let { it.id == item.id && it.section == item.section } == true
         if (!same || p.status == PlayStatus.FAILED) {
             val entry = tv.tune(list, index) ?: return
+            p.repeat = Repeat.OFF
             p.play(listOf(entry), 0)
         }
         if (fill) watching = true
@@ -190,6 +215,7 @@ class Desk(
         val p = ready() ?: return
         val entry = tv.entry(item) ?: return
         tv.watched(item)
+        p.repeat = Repeat.OFF
         p.play(listOf(entry), 0, if (fromStart) 0L else null)
         watching = true
     }
@@ -205,6 +231,7 @@ class Desk(
         val at = ordered.indexOfFirst { it.id == episode.id }
         if (queue.isEmpty() || at !in queue.indices) return
         tv.watched(show)
+        p.repeat = Repeat.OFF
         p.play(queue, at, if (fromStart) 0L else null)
         watching = true
     }
@@ -222,9 +249,104 @@ class Desk(
     fun step(delta: Int): Boolean {
         val p = player ?: return false
         val next = tv.step(p.current, delta) ?: return false
+        p.repeat = Repeat.OFF
         p.play(listOf(next), 0)
         return true
     }
+
+    // ---- music and videos on this computer -------------------------------------------------
+
+    /** True while a song (rather than a video or a channel) is what is playing. */
+    val playingMusic: Boolean get() = player?.current?.isSong == true
+
+    /** Plays [list] from the song at [index]. With shuffle on, the rest follow in a mixed-up order. */
+    fun playSongs(list: List<LocalFile>, index: Int) {
+        val p = ready() ?: return
+        val first = list.getOrNull(index) ?: return
+        val entries = list.map { it.entry() }
+        watching = false
+        fullscreen = false
+        p.repeat = repeat
+        if (shuffle) {
+            val rest = entries.filterIndexed { i, _ -> i != index }.shuffled()
+            p.play(listOf(first.entry()) + rest, 0, 0L)
+        } else {
+            p.play(entries, index, 0L)
+        }
+    }
+
+    /** Plays [list] from the video at [index], over the whole window. */
+    fun playVideos(list: List<LocalFile>, index: Int, fromStart: Boolean = false) {
+        val p = ready() ?: return
+        if (index !in list.indices) return
+        p.repeat = Repeat.OFF
+        p.play(list.map { it.entry() }, index, if (fromStart) 0L else null)
+        watching = true
+    }
+
+    /** Plays files picked in the "open" box or dropped on the window, whatever folder they are in. */
+    fun openFiles(files: List<File>) {
+        val known = (library.songs + library.videos).associateBy { it.path }
+        val picked = files.filter { it.isFile }.mapNotNull { file ->
+            val video = MediaKinds.isVideo(file.name) ?: return@mapNotNull null
+            known[file.absolutePath] ?: LocalFile(path = file.absolutePath, video = video, title = Library.tidyName(file.nameWithoutExtension))
+        }
+        when {
+            picked.isEmpty() -> say("That is not a music or video file the app knows how to play.")
+            picked.first().video -> playVideos(picked.filter { it.video }, 0)
+            else -> playSongs(picked.filter { !it.video }, 0)
+        }
+    }
+
+    fun toggleShuffle() {
+        shuffle = !shuffle
+        store.edit { it.copy(shuffle = shuffle) }
+        // What is still to come is put in the new order straight away; the song playing carries on.
+        val p = player ?: return
+        val now = p.current ?: return
+        if (!now.isSong || p.queue.size < 2) return
+        val others = p.queue.filterIndexed { i, _ -> i != p.index }
+        if (shuffle) {
+            p.reorder(listOf(now) + others.shuffled(), 0)
+        } else {
+            val ordered = library.songs.map { it.path }.withIndex().associate { it.value to it.index }
+            val sorted = p.queue.sortedBy { ordered[it.uri] ?: Int.MAX_VALUE }
+            p.reorder(sorted, sorted.indexOfFirst { it.uri == now.uri })
+        }
+    }
+
+    fun nextRepeat() {
+        repeat = when (repeat) {
+            Repeat.OFF -> Repeat.ALL
+            Repeat.ALL -> Repeat.ONE
+            Repeat.ONE -> Repeat.OFF
+        }
+        store.edit { it.copy(repeat = repeat.name) }
+        if (playingMusic) player?.repeat = repeat
+    }
+
+    /** The previous song - or, a few seconds into this one, this one again from its start. */
+    fun previousSong() {
+        val p = player ?: return
+        if (p.positionMs > 3000 || !p.hasPrevious) p.seekTo(0) else p.previous()
+    }
+
+    fun addFolder(folder: File) {
+        val path = folder.absolutePath
+        if (!folder.isDirectory || path in folders) return
+        folders = folders + path
+        store.edit { it.copy(folders = folders) }
+        library.lookAgain(folders)
+    }
+
+    fun removeFolder(path: String) {
+        if (path !in folders) return
+        folders = folders - path
+        store.edit { it.copy(folders = folders) }
+        library.lookAgain(folders)
+    }
+
+    fun lookForMediaAgain() = library.lookAgain(folders)
 
     fun stopPlaying() {
         watching = false
@@ -249,3 +371,7 @@ class Desk(
         store.flush()
     }
 }
+
+/** A song on this computer, as opposed to a video or anything from a TV service. */
+val MediaEntry.isSong: Boolean get() = !isVideo && tv.isEmpty()
+

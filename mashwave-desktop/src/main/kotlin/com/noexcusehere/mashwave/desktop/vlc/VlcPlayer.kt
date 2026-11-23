@@ -28,6 +28,9 @@ import kotlin.math.min
 
 enum class PlayStatus { IDLE, LOADING, PLAYING, PAUSED, ENDED, FAILED }
 
+/** What happens when the end of the list is reached, or of each thing in it. */
+enum class Repeat { OFF, ALL, ONE }
+
 /** A sound track or a set of subtitles the viewer can choose. */
 data class TrackChoice(val id: Int, val name: String)
 
@@ -142,6 +145,10 @@ class VlcPlayer(private val found: VlcFinder.Found, private val host: PlayerHost
     var frameTick by mutableIntStateOf(0)
         private set
     val frames = FrameHolder()
+
+    /** Set by whoever starts something playing; music uses it, films and channels leave it off. */
+    @Volatile
+    var repeat = Repeat.OFF
 
     val hasNext: Boolean
         get() = index < queue.lastIndex
@@ -350,6 +357,17 @@ class VlcPlayer(private val found: VlcFinder.Found, private val host: PlayerHost
         if (!hasNext) return false
         play(queue, index + 1)
         return true
+    }
+
+    /**
+     * Puts what is waiting to be played in a new order without disturbing what is playing now:
+     * [entries] must still hold the current one, at [at].
+     */
+    fun reorder(entries: List<MediaEntry>, at: Int) {
+        val playingNow = current ?: return
+        if (entries.getOrNull(at)?.uri != playingNow.uri) return
+        queue = entries
+        index = at
     }
 
     fun previous(): Boolean {
@@ -695,7 +713,12 @@ class VlcPlayer(private val found: VlcFinder.Found, private val host: PlayerHost
             // Watched to the end: nothing to carry on from next time.
             host.place(entry, length, length)
             if (current?.uri != entry.uri) return@post
-            if (hasNext) next() else status = PlayStatus.ENDED
+            when {
+                repeat == Repeat.ONE -> play(queue, index, 0L)
+                hasNext -> next()
+                repeat == Repeat.ALL -> play(queue, 0, 0L)
+                else -> status = PlayStatus.ENDED
+            }
         }
     }
 

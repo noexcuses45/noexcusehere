@@ -157,4 +157,64 @@ class DesktopTest {
             folder.deleteRecursively()
         }
     }
+
+    /** The music library: which files count, what is read from them, and the order they are shown in. */
+    @Test
+    fun musicIsFoundAndItsDetailsRead() {
+        val folder = Files.createTempDirectory("umm-library").toFile()
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
+        try {
+            val library = Library(folder, scope)
+            val music = listOf(File("selftest/music"))
+            val found = kotlinx.coroutines.runBlocking { library.scan(music, emptyMap()) }
+            // Six songs; the text file beside them is not music.
+            assertEquals(6, found.size)
+            assertTrue(found.none { it.video })
+            val first = found.first { it.path.endsWith(".mp3") }
+            assertEquals("First Song", first.title)
+            assertEquals("Test Band", first.artist)
+            assertEquals("Test Album", first.album)
+            assertEquals(1, first.track)
+            assertTrue(first.durationMs in 2000..4500, "length read as ${first.durationMs}")
+            // The picture inside the song was put among the app's own files.
+            assertTrue(File(first.cover).isFile && File(first.cover).length() > 0)
+            assertEquals("Second Song", found.first { it.path.endsWith(".flac") }.title)
+            assertEquals(3, found.first { it.path.endsWith(".m4a") }.track)
+            assertEquals("Someone Else", found.first { it.path.endsWith(".ogg") }.artist)
+            // A file that says nothing about itself goes by its name, tidied up.
+            assertEquals("no details here", found.first { it.path.endsWith(".opus") }.title)
+            // Shown like a record collection: by artist, album, then the order on the album; the nameless last.
+            assertEquals(
+                listOf("Loose Song", "First Song", "Second Song", "Third Song", "no details here", "voice note"),
+                found.sortedWith(Library.songOrder).map { it.title },
+            )
+            // Looking again does not read unchanged files a second time.
+            val again = kotlinx.coroutines.runBlocking { library.scan(music, found.associateBy { it.path }) }
+            assertTrue(again.size == found.size && again.zip(found).all { (now, before) -> now === before })
+            // What the player is handed for a song.
+            val entry = first.entry()
+            assertTrue(entry.isSong)
+            assertEquals(first.path, entry.uri)
+        } finally {
+            scope.cancel()
+            folder.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun filesAreSortedIntoMusicVideoAndNeither() {
+        assertEquals(false, MediaKinds.isVideo("Song.MP3"))
+        assertEquals(false, MediaKinds.isVideo("a.b.flac"))
+        assertEquals(true, MediaKinds.isVideo("Holiday.mkv"))
+        assertEquals(true, MediaKinds.isVideo("clip.MP4"))
+        assertEquals(null, MediaKinds.isVideo("notes.txt"))
+        assertEquals(null, MediaKinds.isVideo("no ending"))
+        assertEquals("01 my song", Library.tidyName("01_my__song"))
+        val song = LocalFile(path = "/m/x.mp3", title = "Paper Boats", artist = "Mira Vale", album = "Singles")
+        assertTrue(com.noexcusehere.mashwave.desktop.ui.songMatches(song, "vale paper"))
+        assertTrue(com.noexcusehere.mashwave.desktop.ui.songMatches(song, ""))
+        assertTrue(!com.noexcusehere.mashwave.desktop.ui.songMatches(song, "paper planes"))
+        // A song starts at its beginning; a video on this computer is not a song.
+        assertTrue(!LocalFile(path = "/v/x.mkv", video = true, title = "x").entry().isSong)
+    }
 }

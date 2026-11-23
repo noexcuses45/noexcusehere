@@ -2,6 +2,7 @@ package com.noexcusehere.mashwave.desktop
 
 import com.noexcusehere.mashwave.data.MediaEntry
 import com.noexcusehere.mashwave.desktop.vlc.PlayStatus
+import com.noexcusehere.mashwave.desktop.vlc.Repeat
 import com.noexcusehere.mashwave.iptv.TvAccount
 import com.noexcusehere.mashwave.iptv.TvRef
 import com.noexcusehere.mashwave.iptv.TvSection
@@ -119,12 +120,50 @@ class SelfTest(private val clip: String, val out: File, private val service: Lis
             }
         }
 
+        // Music kept on the computer: looked through like a music folder, then every kind of file is played.
+        var musicOk = true
+        val songs = File(folder, "music")
+        if (songs.isDirectory) musicOk = music(desk, songs)
+
         var tourOk = true
         if (service.size == 3) tourOk = tour(desk, window)
 
-        val ok = played && pausedOk && streamsOk && tourOk
+        val ok = played && pausedOk && streamsOk && musicOk && tourOk
         note(if (ok) "RESULT: PASSED" else "RESULT: FAILED")
         return if (ok) 0 else 1
+    }
+
+    /** Reads the details of the test songs, plays each kind, and lets an album run on by itself. */
+    private suspend fun music(desk: Desk, folder: File): Boolean {
+        val player = desk.player ?: return false
+        val found = desk.library.scan(listOf(folder), emptyMap()).filter { !it.video }.sortedWith(Library.songOrder)
+        val first = found.firstOrNull { it.path.endsWith(".mp3") }
+        val detailsOk = found.size == 6 && first != null && first.title == "First Song" && first.artist == "Test Band" && first.album == "Test Album" &&
+            first.track == 1 && first.durationMs in 2000..4500 && first.cover.isNotEmpty() && File(first.cover).length() > 0
+        note(
+            "music: found=${found.size} first=\"${first?.title}\" by \"${first?.artist}\" on \"${first?.album}\" track=${first?.track} " +
+                "length=${first?.durationMs}ms cover=${first?.cover?.isNotEmpty()} with details=${found.count { it.artist.isNotEmpty() }}",
+        )
+        var allPlayed = true
+        for (song in found) {
+            player.repeat = Repeat.OFF
+            player.play(listOf(song.entry()), 0, 0L)
+            val started = waitFor(12) { player.status == PlayStatus.PLAYING && player.positionMs > 300 }
+            val counts = player.counts()
+            val sound = (counts?.soundDecoded ?: 0) > 0
+            note("song ${File(song.path).extension}: status=${player.status} position=${player.positionMs}ms length=${player.durationMs}ms sound decoded=${counts?.soundDecoded} problem=${player.problem}")
+            allPlayed = allPlayed && started && sound
+            desk.stopPlaying()
+            delay(300)
+        }
+        // An album plays through: the second song starts when the first one ends.
+        val album = found.filter { it.album == "Test Album" }
+        desk.playSongs(album, 0)
+        val moved = album.size >= 2 && waitFor(15) { player.current?.uri == album[1].path && player.status == PlayStatus.PLAYING }
+        note("album: second song started by itself=$moved bar for music=${desk.playingMusic}")
+        desk.stopPlaying()
+        delay(300)
+        return detailsOk && allPlayed && moved
     }
 
     /** Plays one stream and notes whether pictures and sound came out of it. */

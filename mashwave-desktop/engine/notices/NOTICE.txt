@@ -30,3 +30,12 @@ The engine is kept separate from the app on purpose. You may replace the files i
 with another build of libVLC 3 (for example one you built yourself from the source above), and
 the app will use it. You may also study how the app works with the engine in order to make such
 a replacement work.
+
+
+Also in this app: the reader of music details
+---------------------------------------------
+To show a song's title, artist, album and cover picture, the app uses Jaudiotagger 3.0.1
+(https://www.jthink.net/jaudiotagger/, source at https://bitbucket.org/ijabz/jaudiotagger),
+which is free software under the same licence, the GNU Lesser General Public License 2.1 or
+later. It is the file whose name begins "jaudiotagger" in the app's own folder, unchanged, and
+may likewise be replaced with another build.

@@ -66,14 +66,20 @@ object Pictures {
     fun ready(url: String, side: Int): ImageBitmap? = synchronized(memory) { memory["$side|$url"] }
 
     suspend fun load(url: String, side: Int): ImageBitmap? {
-        if (url.isBlank() || !url.startsWith("http", ignoreCase = true)) return null
+        if (url.isBlank()) return null
+        // A web address, or a picture file on this computer (an album's cover).
+        val onWeb = url.startsWith("http", ignoreCase = true)
+        if (!onWeb && url.contains("://")) return null
         val key = "$side|$url"
         synchronized(memory) { memory[key] }?.let { return it }
         if (url in hopeless) return null
         return gate.withPermit {
             withContext(Dispatchers.IO) {
                 synchronized(memory) { memory[key] }?.let { return@withContext it }
-                val bytes = runCatching { fromDisk(url) ?: fetch(url)?.also { toDisk(url, it) } }.getOrNull()
+                val bytes = runCatching {
+                    if (onWeb) fromDisk(url) ?: fetch(url)?.also { toDisk(url, it) }
+                    else File(url).takeIf { it.isFile && it.length() in 1..MAX_BYTES }?.readBytes()
+                }.getOrNull()
                 val picture = bytes?.let { runCatching { shrink(it, side) }.getOrNull() }
                 if (picture == null) hopeless += url else synchronized(memory) { memory[key] = picture }
                 picture
@@ -171,7 +177,9 @@ fun Picture(
     fallback: @Composable () -> Unit = {},
 ) {
     val picture by produceState(Pictures.ready(url, side), url, side) {
-        if (value == null) value = Pictures.load(url, side)
+        // Set afresh each time: the same spot on screen may be asked to show a different picture
+        // (the song changed), and must not keep showing the last one.
+        value = Pictures.ready(url, side) ?: Pictures.load(url, side)
     }
     Box(modifier, contentAlignment = Alignment.Center) {
         val shown = picture

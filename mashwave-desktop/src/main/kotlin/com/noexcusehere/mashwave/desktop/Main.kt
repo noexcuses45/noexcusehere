@@ -23,8 +23,10 @@ import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Favorite
 import androidx.compose.material.icons.rounded.LiveTv
 import androidx.compose.material.icons.rounded.Movie
+import androidx.compose.material.icons.rounded.MusicNote
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Settings
+import androidx.compose.material.icons.rounded.VideoFile
 import androidx.compose.material.icons.rounded.VideoLibrary
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -49,13 +51,14 @@ import androidx.compose.ui.window.WindowPlacement
 import androidx.compose.ui.window.WindowPosition
 import androidx.compose.ui.window.application
 import androidx.compose.ui.window.rememberWindowState
-import com.noexcusehere.mashwave.licence.Lock
-import com.noexcusehere.mashwave.desktop.ui.UnlockScreen
 import com.noexcusehere.mashwave.desktop.ui.AppLogo
 import com.noexcusehere.mashwave.desktop.ui.DeskTheme
 import com.noexcusehere.mashwave.desktop.ui.DetailsPage
 import com.noexcusehere.mashwave.desktop.ui.Ink
 import com.noexcusehere.mashwave.desktop.ui.LiveScreen
+import com.noexcusehere.mashwave.desktop.ui.MusicBar
+import com.noexcusehere.mashwave.desktop.ui.MusicScreen
+import com.noexcusehere.mashwave.desktop.ui.MyVideosScreen
 import com.noexcusehere.mashwave.desktop.ui.Outline
 import com.noexcusehere.mashwave.desktop.ui.Pictures
 import com.noexcusehere.mashwave.desktop.ui.Pink
@@ -70,6 +73,7 @@ import com.noexcusehere.mashwave.desktop.ui.Surface3
 import com.noexcusehere.mashwave.desktop.ui.TextHi
 import com.noexcusehere.mashwave.desktop.ui.TextLow
 import com.noexcusehere.mashwave.desktop.ui.TextMid
+import com.noexcusehere.mashwave.desktop.ui.UnlockScreen
 import com.noexcusehere.mashwave.desktop.ui.VideoPicture
 import com.noexcusehere.mashwave.desktop.ui.Violet
 import com.noexcusehere.mashwave.desktop.ui.VlcNeeded
@@ -80,17 +84,22 @@ import com.noexcusehere.mashwave.desktop.vlc.VlcPlayer
 import com.noexcusehere.mashwave.iptv.TvSection
 import com.noexcusehere.mashwave.iptv.TvState
 import com.noexcusehere.mashwave.iptv.isLiveTv
+import com.noexcusehere.mashwave.licence.Lock
 import com.sun.jna.Library
 import com.sun.jna.Native
 import com.sun.jna.Platform
 import com.sun.jna.Pointer
+import java.awt.Dimension
+import java.awt.GraphicsEnvironment
+import java.awt.datatransfer.DataFlavor
+import java.awt.dnd.DnDConstants
+import java.awt.dnd.DropTarget
+import java.awt.dnd.DropTargetDropEvent
+import java.io.File
+import kotlin.system.exitProcess
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
-import java.awt.Dimension
-import java.awt.GraphicsEnvironment
-import java.io.File
-import kotlin.system.exitProcess
 
 private const val SMALLEST_WIDTH = 1040
 private const val SMALLEST_HEIGHT = 640
@@ -151,7 +160,24 @@ fun main(args: Array<String>) {
             icon = remember { AppLogo?.let { BitmapPainter(it) } },
             onPreviewKeyEvent = { handleKey(desk, it) },
         ) {
-            LaunchedEffect(Unit) { window.minimumSize = Dimension(minOf(SMALLEST_WIDTH, roomWidth), minOf(SMALLEST_HEIGHT, roomHeight)) }
+            LaunchedEffect(Unit) {
+                window.minimumSize = Dimension(minOf(SMALLEST_WIDTH, roomWidth), minOf(SMALLEST_HEIGHT, roomHeight))
+                desk.window = window
+                // Music and video files dropped anywhere on the window are played.
+                runCatching {
+                    window.contentPane.dropTarget = object : DropTarget() {
+                        @Synchronized
+                        override fun drop(event: DropTargetDropEvent) {
+                            runCatching {
+                                event.acceptDrop(DnDConstants.ACTION_COPY)
+                                val dropped = (event.transferable.getTransferData(DataFlavor.javaFileListFlavor) as? List<*>).orEmpty().filterIsInstance<File>()
+                                event.dropComplete(true)
+                                if (dropped.isNotEmpty() && desk.licence.state.value != Lock.LOCKED) desk.openFiles(dropped)
+                            }.onFailure { runCatching { event.dropComplete(false) } }
+                        }
+                    }
+                }
+            }
             DeskTheme {
                 // Until a code has been put in, the unlock screen is all there is.
                 val lock by desk.licence.state.collectAsState()
@@ -205,15 +231,17 @@ private fun AppBody(desk: Desk) {
     val player = desk.player
     val keeper = rememberSaveableStateHolder()
     Box(Modifier.fillMaxSize().background(Ink)) {
-        Row(Modifier.fillMaxSize()) {
+      Column(Modifier.fillMaxSize()) {
+        Row(Modifier.weight(1f).fillMaxWidth()) {
             Rail(desk, state)
             Box(Modifier.weight(1f).fillMaxHeight()) {
                 Column(Modifier.fillMaxSize()) {
-                    if (player == null && !desk.lookingForVlc && desk.tab != Tab.SETTINGS && state.active != null) {
+                    // Music and videos on this computer need the player too, service or no service.
+                    if (player == null && !desk.lookingForVlc && desk.tab != Tab.SETTINGS && (state.active != null || !desk.tab.needsService)) {
                         VlcNeeded(desk, Modifier.padding(start = 16.dp, end = 16.dp, top = 12.dp).fillMaxWidth())
                     }
                     Box(Modifier.weight(1f)) {
-                        if (state.active == null && desk.tab != Tab.SETTINGS) {
+                        if (state.active == null && desk.tab.needsService) {
                             Welcome(desk)
                         } else {
                             // Each screen keeps its place (the group chosen, how far it was scrolled) while another is open.
@@ -224,6 +252,8 @@ private fun AppBody(desk: Desk) {
                                     Tab.SHOWS -> VodScreen(desk, TvSection.SHOWS)
                                     Tab.SEARCH -> SearchScreen(desk)
                                     Tab.SAVED -> SavedScreen(desk)
+                                    Tab.MUSIC -> MusicScreen(desk)
+                                    Tab.VIDEOS -> MyVideosScreen(desk)
                                     Tab.SETTINGS -> SettingsScreen(desk)
                                 }
                             }
@@ -237,8 +267,11 @@ private fun AppBody(desk: Desk) {
                 }
             }
         }
+        // While a song plays, its controls sit along the bottom whatever screen is open.
+        if (player != null && desk.playingMusic) MusicBar(desk, player)
+      }
 
-        if (desk.watching && player != null) PlayerScreen(desk, player)
+        if (desk.watching && player != null && !desk.playingMusic) PlayerScreen(desk, player)
         desk.signIn?.let { SignInSheet(desk, it) }
 
         if (desk.notice.isNotEmpty()) {
@@ -273,11 +306,15 @@ private fun Rail(desk: Desk, state: TvState) {
         RailButton(desk, Tab.SHOWS, Icons.Rounded.VideoLibrary)
         RailButton(desk, Tab.SEARCH, Icons.Rounded.Search)
         RailButton(desk, Tab.SAVED, Icons.Rounded.Favorite)
+        Spacer(Modifier.height(10.dp))
+        Text("ON THIS COMPUTER", style = MaterialTheme.typography.labelSmall, color = TextLow, modifier = Modifier.padding(start = 22.dp, bottom = 4.dp))
+        RailButton(desk, Tab.MUSIC, Icons.Rounded.MusicNote)
+        RailButton(desk, Tab.VIDEOS, Icons.Rounded.VideoFile)
         Spacer(Modifier.weight(1f))
         val player = desk.player
         val entry = player?.current
-        // On the Live TV screen the channel already has its own picture.
-        if (player != null && entry != null && !desk.watching && !(desk.tab == Tab.LIVE && entry.isLiveTv && desk.page == null)) {
+        // On the Live TV screen the channel already has its own picture; a song has its own bar along the bottom.
+        if (player != null && entry != null && !entry.isSong && !desk.watching && !(desk.tab == Tab.LIVE && entry.isLiveTv && desk.page == null)) {
             NowPlaying(desk, player)
             Spacer(Modifier.height(10.dp))
         }

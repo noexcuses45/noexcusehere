@@ -27,9 +27,11 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.CheckCircle
+import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.ContentPaste
 import androidx.compose.material.icons.rounded.Favorite
 import androidx.compose.material.icons.rounded.FavoriteBorder
+import androidx.compose.material.icons.rounded.Folder
 import androidx.compose.material.icons.rounded.FolderOpen
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Search
@@ -66,10 +68,6 @@ import com.noexcusehere.mashwave.iptv.TvItem
 import com.noexcusehere.mashwave.iptv.TvSearch
 import com.noexcusehere.mashwave.iptv.TvSection
 import com.noexcusehere.mashwave.iptv.Xtream
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import java.awt.Desktop
 import java.awt.Toolkit
 import java.awt.datatransfer.DataFlavor
@@ -78,6 +76,10 @@ import java.net.URI
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /** First visit: nothing is signed in yet. */
 @Composable
@@ -320,6 +322,35 @@ fun SettingsScreen(desk: Desk) {
                         desk.say("Fetching the newest lists...")
                     }, icon = Icons.Rounded.Refresh)
                 }
+            }
+
+            Heading("Music and videos on this computer")
+            Text("These folders, and the folders inside them, are looked through for music and videos.", style = MaterialTheme.typography.bodyMedium, color = TextMid)
+            Spacer(Modifier.height(6.dp))
+            if (desk.folders.isEmpty()) Text("No folder chosen yet.", style = MaterialTheme.typography.bodyMedium, color = TextLow)
+            for (folder in desk.folders) {
+                Row(
+                    Modifier.padding(vertical = 3.dp).fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(Surface1).border(1.dp, Outline, RoundedCornerShape(10.dp)).padding(start = 12.dp, end = 4.dp, top = 4.dp, bottom = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(Icons.Rounded.Folder, contentDescription = null, tint = TextMid, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(10.dp))
+                    Text(folder, style = MaterialTheme.typography.bodyMedium, color = TextHi, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                    Quiet("Remove", { desk.removeFolder(folder) }, icon = Icons.Rounded.Close, tint = TextMid)
+                }
+            }
+            Spacer(Modifier.height(6.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Quiet("Add a folder", { Choosers.folder(desk.window)?.let { desk.addFolder(it) } }, icon = Icons.Rounded.Add)
+                Spacer(Modifier.width(6.dp))
+                Quiet("Look again", { desk.lookForMediaAgain() }, icon = Icons.Rounded.Refresh, enabled = !desk.library.looking)
+                Spacer(Modifier.width(12.dp))
+                Text(
+                    if (desk.library.looking) "Looking... ${desk.library.foundSoFar} files so far"
+                    else "${desk.library.songs.size} songs and ${desk.library.videos.size} videos found",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = TextLow,
+                )
             }
 
             Heading("Live TV")

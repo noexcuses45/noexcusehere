@@ -39,6 +39,10 @@ data class DeskSaved(
     val windowWidth: Int = 1280,
     val windowHeight: Int = 800,
     val maximised: Boolean = false,
+    /** Folders looked through for music and videos; null until the user changes the usual ones. */
+    val folders: List<String>? = null,
+    val shuffle: Boolean = false,
+    val repeat: String = "OFF",
 )
 
 class DeskStore(dir: File, scope: CoroutineScope) {
