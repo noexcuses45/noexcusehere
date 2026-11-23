@@ -36,6 +36,8 @@ data class LocalFile(
     val size: Long = 0,
     val changed: Long = 0,
     val video: Boolean = false,
+    /** True for a photo (then it is neither a song nor a video). */
+    val picture: Boolean = false,
     val title: String = "",
     val artist: String = "",
     val album: String = "",
@@ -77,11 +79,14 @@ object MediaKinds {
         }
     }
 
-    /** Where music and videos are usually kept on this computer. */
+    /** True for a photo the photo editor can open. */
+    fun isPicture(name: String): Boolean = PhotoFiles.isPicture(name)
+
+    /** Where music, videos and photos are usually kept on this computer. */
     fun usualFolders(): List<String> {
         val home = File(System.getProperty("user.home").orEmpty())
         val mac = System.getProperty("os.name").orEmpty().lowercase(Locale.ROOT).contains("mac")
-        return listOf("Music", if (mac) "Movies" else "Videos").map { File(home, it) }.filter { it.isDirectory }.map { it.absolutePath }
+        return listOf("Music", if (mac) "Movies" else "Videos", "Pictures").map { File(home, it) }.filter { it.isDirectory }.map { it.absolutePath }
     }
 }
 
@@ -120,7 +125,7 @@ object Tags {
 }
 
 /**
- * The music and videos on this computer: found by looking through the folders it is given,
+ * The music, videos and photos on this computer: found by looking through the folders it is given,
  * remembered between visits, and looked through again when asked.
  */
 class Library(private val dataDir: File, private val scope: CoroutineScope) {
@@ -130,6 +135,10 @@ class Library(private val dataDir: File, private val scope: CoroutineScope) {
     var songs by mutableStateOf(emptyList<LocalFile>())
         private set
     var videos by mutableStateOf(emptyList<LocalFile>())
+        private set
+
+    /** Photos, newest first. */
+    var photos by mutableStateOf(emptyList<LocalFile>())
         private set
 
     /** True while the folders are being looked through. */
@@ -165,7 +174,7 @@ class Library(private val dataDir: File, private val scope: CoroutineScope) {
         looking = true
         foundSoFar = 0
         try {
-            val known = (songs + videos).associateBy { it.path }
+            val known = (songs + videos + photos).associateBy { it.path }
             val found = withContext(Dispatchers.IO) { scan(folders.map { File(it) }, known) }
             show(found)
             withContext(Dispatchers.IO) {
@@ -181,8 +190,9 @@ class Library(private val dataDir: File, private val scope: CoroutineScope) {
     }
 
     private fun show(files: List<LocalFile>) {
-        songs = files.filter { !it.video }.sortedWith(songOrder)
+        songs = files.filter { !it.video && !it.picture }.sortedWith(songOrder)
         videos = files.filter { it.video }.sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.title })
+        photos = files.filter { it.picture }.sortedByDescending { it.changed }
     }
 
     /** Every music and video file under [folders]. Files in [known] that have not changed keep what was read from them. */
@@ -203,14 +213,19 @@ class Library(private val dataDir: File, private val scope: CoroutineScope) {
                     override fun visitFile(path: Path, attrs: BasicFileAttributes): FileVisitResult {
                         if (found.size >= MOST_FILES) return FileVisitResult.TERMINATE
                         val name = path.fileName?.toString().orEmpty()
-                        val video = MediaKinds.isVideo(name) ?: return FileVisitResult.CONTINUE
+                        val picture = MediaKinds.isPicture(name)
+                        val video = if (picture) false else MediaKinds.isVideo(name) ?: return FileVisitResult.CONTINUE
                         if (!attrs.isRegularFile || name.startsWith("._")) return FileVisitResult.CONTINUE
+                        val size = attrs.size()
+                        // Album covers and the little pictures programs keep for themselves are not anybody's photos.
+                        if (picture && (size < SMALLEST_PHOTO || name.substringBeforeLast('.').lowercase(Locale.ROOT) in notPhotos)) return FileVisitResult.CONTINUE
                         val full = path.toAbsolutePath().toString()
                         val old = known[full]
-                        val size = attrs.size()
                         val changed = attrs.lastModifiedTime().toMillis()
                         found[full] = if (old != null && old.size == size && old.changed == changed && (old.cover.isEmpty() || File(old.cover).isFile)) {
                             old
+                        } else if (picture) {
+                            LocalFile(path = full, size = size, changed = changed, picture = true, title = tidyName(path.toFile().nameWithoutExtension))
                         } else {
                             describe(path.toFile(), size, changed, video)
                         }
@@ -267,6 +282,8 @@ class Library(private val dataDir: File, private val scope: CoroutineScope) {
         private const val DEEPEST = 12
         private const val MOST_FILES = 60_000
         private val besideNames = listOf("cover", "folder", "front", "album", "Cover", "Folder", "Front", "AlbumArt")
+        private val notPhotos = setOf("cover", "folder", "front", "back", "album", "albumart", "albumartsmall", "thumb", "thumbnail", "icon", "poster", "fanart", "banner", "logo")
+        private const val SMALLEST_PHOTO = 20 * 1024L
 
         /** Songs in the order of a record collection: by artist, then album, then the order on the album. */
         val songOrder: Comparator<LocalFile> = compareBy<LocalFile, String>(String.CASE_INSENSITIVE_ORDER) { it.artist.ifEmpty { "￿" } }

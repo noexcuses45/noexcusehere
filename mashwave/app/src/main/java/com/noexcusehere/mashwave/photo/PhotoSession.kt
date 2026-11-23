@@ -254,22 +254,3 @@ object PhotoFiles {
         }
     }
 }
-
-// ---- small helpers shared by the tools ---------------------------------------------------------
-
-/** Every pixel of the picture, row by row. */
-fun Bitmap.pixels(): IntArray {
-    val out = IntArray(width * height)
-    getPixels(out, 0, width, 0, 0, width, height)
-    return out
-}
-
-fun bitmapOf(pixels: IntArray, width: Int, height: Int): Bitmap = Bitmap.createBitmap(pixels, width, height, Bitmap.Config.ARGB_8888)
-
-/** A copy no longer than [side] on its longest side (the picture itself when it is already small enough). */
-fun Bitmap.fitWithin(side: Int): Bitmap {
-    val longest = max(width, height)
-    if (longest <= side) return this
-    val scale = side.toFloat() / longest
-    return Bitmap.createScaledBitmap(this, (width * scale).roundToInt().coerceAtLeast(1), (height * scale).roundToInt().coerceAtLeast(1), true)
-}

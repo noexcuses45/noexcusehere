@@ -103,6 +103,8 @@ fun leavePlayer(desk: Desk) {
 
 /** The keys that work while the player fills the window, and the few that work elsewhere. True when the key was used. */
 fun handleKey(desk: Desk, event: KeyEvent): Boolean {
+    // The photo editor covers the window and has keys of its own.
+    desk.editing?.let { return it.key(event) }
     if (event.type != KeyEventType.KeyDown) return false
     val player = desk.player
     if (!desk.watching || player == null) {

@@ -41,6 +41,8 @@ val copyShared by tasks.registering(Sync::class) {
             "automash/MixPlanner.kt",
             "automash/Mixer.kt",
             "playback/BpmMaths.kt",
+            "photo/PhotoOps.kt",
+            "photo/PhotoTools.kt",
         )
     }
     into(sharedSources.map { it.dir("com/noexcusehere/mashwave") })

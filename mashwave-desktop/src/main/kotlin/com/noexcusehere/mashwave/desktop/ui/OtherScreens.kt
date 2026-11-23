@@ -324,8 +324,8 @@ fun SettingsScreen(desk: Desk) {
                 }
             }
 
-            Heading("Music and videos on this computer")
-            Text("These folders, and the folders inside them, are looked through for music and videos.", style = MaterialTheme.typography.bodyMedium, color = TextMid)
+            Heading("Music, videos and photos on this computer")
+            Text("These folders, and the folders inside them, are looked through for music, videos and photos.", style = MaterialTheme.typography.bodyMedium, color = TextMid)
             Spacer(Modifier.height(6.dp))
             if (desk.folders.isEmpty()) Text("No folder chosen yet.", style = MaterialTheme.typography.bodyMedium, color = TextLow)
             for (folder in desk.folders) {

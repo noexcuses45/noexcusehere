@@ -6,6 +6,14 @@ import com.noexcusehere.mashwave.desktop.vlc.Repeat
 import com.noexcusehere.mashwave.iptv.TvAccount
 import com.noexcusehere.mashwave.iptv.TvRef
 import com.noexcusehere.mashwave.iptv.TvSection
+import android.graphics.Bitmap
+import com.noexcusehere.mashwave.photo.CropTool
+import com.noexcusehere.mashwave.photo.DrawTool
+import com.noexcusehere.mashwave.photo.FocusTool
+import com.noexcusehere.mashwave.photo.PhotoOps
+import com.noexcusehere.mashwave.photo.PhotoTool
+import com.noexcusehere.mashwave.photo.ToneTool
+import com.noexcusehere.mashwave.photo.pixels
 import kotlinx.coroutines.delay
 import java.awt.Rectangle
 import java.awt.RenderingHints
@@ -17,6 +25,7 @@ import java.net.InetAddress
 import java.net.ServerSocket
 import java.net.Socket
 import javax.imageio.ImageIO
+import kotlin.math.abs
 
 /**
  * A check the app can run on itself: start, find VLC, play a short video file and note whether
@@ -130,10 +139,15 @@ class SelfTest(private val clip: String, val out: File, private val service: Lis
         val steady = File(folder, "mashup")
         if (steady.isDirectory) mashupOk = mashup(desk, steady)
 
+        // The photo editor: a photo stored lying on its side is opened, every tool is used on it, and a copy is saved.
+        var photoOk = true
+        val pictures = File(folder, "photo")
+        if (pictures.isDirectory) photoOk = photo(desk, window, pictures)
+
         var tourOk = true
         if (service.size == 3) tourOk = tour(desk, window)
 
-        val ok = played && pausedOk && streamsOk && musicOk && mashupOk && tourOk
+        val ok = played && pausedOk && streamsOk && musicOk && mashupOk && photoOk && tourOk
         note(if (ok) "RESULT: PASSED" else "RESULT: FAILED")
         return if (ok) 0 else 1
     }
@@ -203,6 +217,151 @@ class SelfTest(private val clip: String, val out: File, private val service: Lis
         if (made != null) maker.delete(made)
         delay(300)
         return finished && made != null && maker.error == null && file != null && length in 40_000..90_000 && plays
+    }
+
+    /** True when [a] and [b] are plainly not the same picture. */
+    private fun differ(a: Bitmap, b: Bitmap): Boolean {
+        if (a.width != b.width || a.height != b.height) return true
+        val one = a.pixels()
+        val two = b.pixels()
+        var changed = 0
+        for (i in one.indices step 3) {
+            val p = one[i]
+            val q = two[i]
+            if (abs(((p shr 16) and 0xFF) - ((q shr 16) and 0xFF)) > 6 || abs(((p shr 8) and 0xFF) - ((q shr 8) and 0xFF)) > 6 || abs((p and 0xFF) - (q and 0xFF)) > 6) changed++
+        }
+        return changed > 40
+    }
+
+    /**
+     * Opens the test photo in the photo editor, uses every tool on it the way a mouse would,
+     * keeps each change, goes back and forward a step, and saves a copy. A snapshot is taken with
+     * each tool open, so the pictures can be looked at afterwards.
+     */
+    private suspend fun photo(desk: Desk, window: Window, folder: File): Boolean {
+        val file = folder.listFiles { f -> PhotoFiles.isPicture(f.name) }.orEmpty().minByOrNull { it.name }
+        if (file == null) {
+            note("photo: the test photo is missing")
+            return false
+        }
+        val untouched = file.length()
+        desk.openPhoto(file)
+        val editing = desk.editing ?: return false
+        editing.saveInto = File(out, "photo")
+        val opened = waitFor(40) { !editing.busy && editing.session.picture != null }
+        val first = editing.session.picture
+        // The test photo is stored lying down with a camera's note to turn it: upright it is 1200 across and 1600 tall.
+        note("photo: opened=$opened size=${first?.width}x${first?.height}")
+        if (!opened || first == null) {
+            desk.closePhoto()
+            return false
+        }
+        var allOk = first.width == 1200 && first.height == 1600
+        delay(700)
+        val colours = snap(window, "photo-1-opened")
+        note("photo: on screen with $colours colours")
+
+        suspend fun use(kind: PhotoKind, act: suspend (PhotoTool) -> Unit = {}): Boolean {
+            val was = editing.session.picture ?: return false
+            editing.open(kind)
+            if (kind != PhotoKind.AUTO) {
+                val tool = editing.tool
+                if (tool == null) {
+                    note("photo ${kind.label}: did not open")
+                    return false
+                }
+                waitFor(90) { !tool.working }
+                runCatching { act(tool) }.onFailure { note("photo ${kind.label}: ${it.javaClass.simpleName} ${it.message}") }
+                waitFor(90) { !tool.working }
+                delay(450)
+                snap(window, "photo-tool-${kind.name.lowercase()}")
+                editing.apply()
+            }
+            val kept = waitFor(90) { !editing.busy && editing.tool == null }
+            val now = editing.session.picture
+            val changed = now != null && now !== was && differ(was, now)
+            note("photo ${kind.label}: kept=$kept changed=$changed size=${now?.width}x${now?.height}")
+            return kept && changed
+        }
+
+        suspend fun stroke(tool: PhotoTool, fromX: Float, fromY: Float, toX: Float, toY: Float) {
+            tool.down(fromX, fromY, 1f)
+            for (i in 1..12) {
+                tool.move(fromX + (toX - fromX) * i / 12f, fromY + (toY - fromY) * i / 12f, 1f)
+                delay(15)
+            }
+            tool.up()
+        }
+
+        allOk = use(PhotoKind.AUTO) && allOk
+        allOk = use(PhotoKind.ADJUST) { (it as ToneTool).set(PhotoOps.Adjust(brightness = 0.2f, contrast = 0.25f, vignette = 0.5f)) } && allOk
+        allOk = use(PhotoKind.LOOKS) { (it as ToneTool).set(PhotoOps.Look.GOLDEN.recipe) } && allOk
+        allOk = use(PhotoKind.SMOOTH) {
+            it.size = 60f
+            stroke(it, 330f, 760f, 880f, 1000f)
+        } && allOk
+        // one of the spots on the cheek
+        allOk = use(PhotoKind.HEAL) {
+            it.size = 22f
+            stroke(it, 358f, 878f, 362f, 882f)
+        } && allOk
+        // along the teeth
+        allOk = use(PhotoKind.WHITEN) {
+            it.size = 24f
+            stroke(it, 510f, 1093f, 690f, 1093f)
+        } && allOk
+        // across the eyes
+        allOk = use(PhotoKind.DETAILS) {
+            it.size = 50f
+            stroke(it, 380f, 685f, 820f, 685f)
+        } && allOk
+        allOk = use(PhotoKind.LIGHTEN) {
+            it.size = 90f
+            stroke(it, 200f, 1400f, 1000f, 1450f)
+        } && allOk
+        allOk = use(PhotoKind.RESHAPE) {
+            it.size = 110f
+            stroke(it, 250f, 900f, 380f, 900f)
+            stroke(it, 950f, 900f, 820f, 900f)
+        } && allOk
+        allOk = use(PhotoKind.BLUR) {
+            (it as FocusTool).changeSpread(0.25f)
+            it.changeAmount(0.9f)
+        } && allOk
+        allOk = use(PhotoKind.DRAW) {
+            (it as DrawTool).colour = 0xFFFF3B30.toInt()
+            it.size = 14f
+            stroke(it, 200f, 1500f, 1000f, 1530f)
+        } && allOk
+        allOk = use(PhotoKind.CROP) {
+            (it as CropTool).turn()
+            it.choose("Square", 1f)
+        } && allOk
+        val cut = editing.session.picture
+        val square = cut != null && cut.width == 1200 && cut.height == 1200
+        note("photo: after a quarter turn and a square cut it is ${cut?.width}x${cut?.height}")
+
+        // A step back (the cut is undone) and forward again.
+        editing.stepBack()
+        delay(300)
+        val back = waitFor(30) { editing.session.canRedo && editing.session.picture?.height == 1600 }
+        editing.stepForward()
+        delay(300)
+        val forward = waitFor(30) { !editing.session.canRedo && editing.session.picture?.height == 1200 }
+        note("photo: step back=$back and forward again=$forward")
+        delay(400)
+        snap(window, "photo-2-edited")
+
+        // Save a copy; the editor closes and the Photos page says where it went.
+        editing.done()
+        val closed = waitFor(40) { desk.editing == null }
+        val saved = desk.savedPhoto
+        val reread = saved?.let { runCatching { PhotoFiles.read(it) }.getOrNull() }
+        note("photo: saved=${saved?.name} bytes=${saved?.length()} reads back as ${reread?.width}x${reread?.height}; the original is untouched=${file.length() == untouched}")
+        delay(500)
+        snap(window, "photo-3-saved")
+        desk.savedPhoto = null
+        return allOk && square && back && forward && closed && saved != null && reread != null && reread.width == 1200 && reread.height == 1200 && file.length() == untouched
     }
 
     /** Plays one stream and notes whether pictures and sound came out of it. */

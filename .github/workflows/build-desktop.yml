@@ -12,6 +12,7 @@ on:
       - "mashwave/app/src/main/java/com/noexcusehere/mashwave/cast/**"
       - "mashwave/app/src/main/java/com/noexcusehere/mashwave/automash/**"
       - "mashwave/app/src/main/java/com/noexcusehere/mashwave/playback/BpmMaths.kt"
+      - "mashwave/app/src/main/java/com/noexcusehere/mashwave/photo/**"
       - ".github/workflows/build-desktop.yml"
   workflow_dispatch:
 

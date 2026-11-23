@@ -354,7 +354,8 @@ app/src/main/java/com/noexcusehere/mashwave/
   editor/EditorSession.kt               the open project (undo / redo) and the live preview
   editor/ExportManager.kt               saving the finished MP4 into the phone's library
   photo/PhotoOps.kt                     the picture maths: adjust, looks, blur, smooth, heal, crop, reshape
-  photo/PhotoTools.kt                   one class per photo tool (what it shows, what a finger does)
+  photo/PhotoTools.kt                   one class per photo tool (what it shows, what a finger does);
+                                        both of these also run, unchanged, in the computer app
   photo/PhotoSession.kt                 the open photo: undo steps, reading it upright, saving the copy
   ui/screens/PhotoEditorScreen.kt       the photo editor's screen
   iptv/Xtream.kt, M3u.kt                reading a TV service's answers and playlist files

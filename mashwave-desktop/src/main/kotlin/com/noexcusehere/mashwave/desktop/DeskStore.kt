@@ -27,6 +27,23 @@ object AppFolders {
         }
         return File(base, NAME).apply { mkdirs() }
     }
+
+    /**
+     * A file in [folder] called [name] with [ending] that is not taken yet: letters a file's name
+     * may not have are left out, and "(2)", "(3)"... is added while the name is in use.
+     */
+    fun freeFile(folder: File, name: String, ending: String, fallback: String): File {
+        var clean = name.replace(Regex("[\\\\/:*?\"<>|\\p{Cntrl}]"), " ").replace(Regex("\\s+"), " ").trim().trimEnd('.').ifEmpty { fallback }
+        // A computer set up for plain English letters only cannot have every character in a file's
+        // name; there the name is spelled with the letters it does have.
+        if (runCatching { File(folder, "$clean.$ending").toPath() }.isFailure) {
+            clean = clean.replace('\u00D7', 'x').replace(Regex("[^\\x20-\\x7E]"), "").replace(Regex("\\s+"), " ").trim().ifEmpty { fallback }
+        }
+        var target = File(folder, "$clean.$ending")
+        var n = 2
+        while (target.exists()) target = File(folder, "$clean ($n).$ending").also { n++ }
+        return target
+    }
 }
 
 /** The app's own small settings and the places videos were stopped at. */
@@ -39,10 +56,12 @@ data class DeskSaved(
     val windowWidth: Int = 1280,
     val windowHeight: Int = 800,
     val maximised: Boolean = false,
-    /** Folders looked through for music and videos; null until the user changes the usual ones. */
+    /** Folders looked through for music, videos and photos; null until the user changes the usual ones. */
     val folders: List<String>? = null,
     val shuffle: Boolean = false,
     val repeat: String = "OFF",
+    /** Set once the pictures folder has been added to a list of folders saved before the app had a photo editor. */
+    val photosAdded: Boolean = false,
 )
 
 class DeskStore(dir: File, scope: CoroutineScope) {

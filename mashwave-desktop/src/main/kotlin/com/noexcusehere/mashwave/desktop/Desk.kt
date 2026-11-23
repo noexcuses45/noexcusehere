@@ -26,6 +26,7 @@ import java.io.File
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -38,6 +39,7 @@ enum class Tab(val title: String) {
     SAVED("Favourites"),
     MUSIC("Music"),
     VIDEOS("My videos"),
+    PHOTOS("Photo editor"),
     SETTINGS("Settings"),
     ;
 
@@ -117,7 +119,7 @@ class Desk(
     var resume by mutableStateOf(store.saved.resume)
         private set
 
-    /** The music and videos kept on this computer. */
+    /** The music, videos and photos kept on this computer. */
     val library = Library(dataDir, scope)
 
     /** The folders looked through for them. */
@@ -140,12 +142,29 @@ class Desk(
     /** True while the "play on a TV" box is open. */
     var castOpen by mutableStateOf(false)
 
+    /** The photo editor, which covers the window while a photo is open in it; null when it is closed. */
+    var editing by mutableStateOf<PhotoEditing?>(null)
+        private set
+
+    /** The edited copy saved last, for the Photos page to say where it went. */
+    var savedPhoto by mutableStateOf<File?>(null)
+
     init {
         // The pictures and sound are fetched by VLC, so that is the name services are given.
         TvNet.userAgent = TvNet.VLC_AGENT
         tv = TvRepository(TvStore(File(dataDir, "tv")), scope) { System.err.println(it) }
         findVlc()
         licence.lookAgainIfDue()
+        // A list of folders saved before the app had a photo editor gets the pictures folder added, once.
+        if (!store.saved.photosAdded) {
+            val saved = store.saved.folders
+            if (saved != null) {
+                val pictures = PhotoFiles.picturesFolder().takeIf { it.name == "Pictures" }?.absolutePath
+                if (pictures != null && pictures !in saved) folders = saved + pictures
+            }
+            store.edit { it.copy(folders = if (saved == null) null else folders, photosAdded = true) }
+        }
+        PhotoThumbs.keepIn(File(dataDir, "thumbs"))
         library.open(folders)
     }
 
@@ -340,15 +359,45 @@ class Desk(
 
     /** Plays files picked in the "open" box or dropped on the window, whatever folder they are in. */
     fun openFiles(files: List<File>) {
+        // A photo goes to the photo editor.
+        files.firstOrNull { it.isFile && MediaKinds.isPicture(it.name) }?.let {
+            openPhoto(it)
+            return
+        }
         val known = (library.songs + library.videos).associateBy { it.path }
         val picked = files.filter { it.isFile }.mapNotNull { file ->
             val video = MediaKinds.isVideo(file.name) ?: return@mapNotNull null
             known[file.absolutePath] ?: LocalFile(path = file.absolutePath, video = video, title = Library.tidyName(file.nameWithoutExtension))
         }
         when {
-            picked.isEmpty() -> say("That is not a music or video file the app knows how to play.")
+            picked.isEmpty() -> say("That is not a music, video or picture file the app knows how to open.")
             picked.first().video -> playVideos(picked.filter { it.video }, 0)
             else -> playSongs(picked.filter { !it.video }, 0)
+        }
+    }
+
+    /** Opens [file] in the photo editor. */
+    fun openPhoto(file: File) {
+        if (editing != null) {
+            say("Finish with the photo that is open first.")
+            return
+        }
+        watching = false
+        fullscreen = false
+        page = null
+        tab = Tab.PHOTOS
+        savedPhoto = null
+        // Its own strand of work, cut off when the editor closes.
+        editing = PhotoEditing(this, file, CoroutineScope(scope.coroutineContext + SupervisorJob(scope.coroutineContext[Job])))
+    }
+
+    /** Closes the photo editor. [saved] is the edited copy, when one was saved. */
+    fun closePhoto(saved: File? = null) {
+        editing?.close()
+        editing = null
+        if (saved != null) {
+            savedPhoto = saved
+            lookForMediaAgain()
         }
     }
 

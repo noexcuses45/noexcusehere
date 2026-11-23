@@ -430,15 +430,7 @@ class DeskMashup(private val desk: Desk, private val scope: CoroutineScope, priv
     }
 
     private fun moveInto(file: File, folder: File, name: String, ending: String): File {
-        var clean = name.replace(Regex("[\\\\/:*?\"<>|]"), " ").replace(Regex("\\s+"), " ").trim().trimEnd('.').ifEmpty { "Mashup" }
-        // A computer set up for plain English letters only cannot have every character in a file's
-        // name; there the name is spelled with the letters it does have.
-        if (runCatching { File(folder, "$clean.$ending").toPath() }.isFailure) {
-            clean = clean.replace('\u00D7', 'x').replace(Regex("[^\\x20-\\x7E]"), "").replace(Regex("\\s+"), " ").trim().ifEmpty { "Mashup" }
-        }
-        var target = File(folder, "$clean.$ending")
-        var n = 2
-        while (target.exists()) target = File(folder, "$clean ($n).$ending").also { n++ }
+        val target = AppFolders.freeFile(folder, name, ending, "Mashup")
         try {
             Files.move(file.toPath(), target.toPath(), StandardCopyOption.REPLACE_EXISTING)
         } catch (e: IOException) {

@@ -24,6 +24,7 @@ import androidx.compose.material.icons.rounded.Favorite
 import androidx.compose.material.icons.rounded.LiveTv
 import androidx.compose.material.icons.rounded.Movie
 import androidx.compose.material.icons.rounded.MusicNote
+import androidx.compose.material.icons.rounded.PhotoFilter
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.VideoFile
@@ -35,6 +36,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.ui.Alignment
@@ -82,6 +84,8 @@ import com.noexcusehere.mashwave.desktop.ui.Violet
 import com.noexcusehere.mashwave.desktop.ui.VlcNeeded
 import com.noexcusehere.mashwave.desktop.ui.VodScreen
 import com.noexcusehere.mashwave.desktop.ui.Welcome
+import com.noexcusehere.mashwave.desktop.ui.PhotoEditor
+import com.noexcusehere.mashwave.desktop.ui.PhotosScreen
 import com.noexcusehere.mashwave.desktop.ui.handleKey
 import com.noexcusehere.mashwave.desktop.vlc.VlcPlayer
 import com.noexcusehere.mashwave.iptv.TvSection
@@ -239,8 +243,8 @@ private fun AppBody(desk: Desk) {
             Rail(desk, state)
             Box(Modifier.weight(1f).fillMaxHeight()) {
                 Column(Modifier.fillMaxSize()) {
-                    // Music and videos on this computer need the player too, service or no service.
-                    if (player == null && !desk.lookingForVlc && desk.tab != Tab.SETTINGS && (state.active != null || !desk.tab.needsService)) {
+                    // Music and videos on this computer need the player too, service or no service. Photos do not.
+                    if (player == null && !desk.lookingForVlc && desk.tab != Tab.SETTINGS && desk.tab != Tab.PHOTOS && (state.active != null || !desk.tab.needsService)) {
                         VlcNeeded(desk, Modifier.padding(start = 16.dp, end = 16.dp, top = 12.dp).fillMaxWidth())
                     }
                     Box(Modifier.weight(1f)) {
@@ -257,6 +261,7 @@ private fun AppBody(desk: Desk) {
                                     Tab.SAVED -> SavedScreen(desk)
                                     Tab.MUSIC -> MusicScreen(desk)
                                     Tab.VIDEOS -> MyVideosScreen(desk)
+                                    Tab.PHOTOS -> PhotosScreen(desk)
                                     Tab.SETTINGS -> SettingsScreen(desk)
                                 }
                             }
@@ -275,6 +280,7 @@ private fun AppBody(desk: Desk) {
       }
 
         if (desk.watching && player != null && !desk.playingMusic) PlayerScreen(desk, player)
+        desk.editing?.let { editing -> key(editing) { PhotoEditor(editing) } }
         desk.signIn?.let { SignInSheet(desk, it) }
         if (desk.castOpen) CastSheet(desk)
 
@@ -314,6 +320,7 @@ private fun Rail(desk: Desk, state: TvState) {
         Text("ON THIS COMPUTER", style = MaterialTheme.typography.labelSmall, color = TextLow, modifier = Modifier.padding(start = 22.dp, bottom = 4.dp))
         RailButton(desk, Tab.MUSIC, Icons.Rounded.MusicNote)
         RailButton(desk, Tab.VIDEOS, Icons.Rounded.VideoFile)
+        RailButton(desk, Tab.PHOTOS, Icons.Rounded.PhotoFilter)
         Spacer(Modifier.weight(1f))
         val player = desk.player
         val entry = player?.current

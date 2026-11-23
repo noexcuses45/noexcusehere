@@ -47,8 +47,19 @@ channels, logins or playlists of its own.
   the same code as the phone app's; reading the songs and packing the result is done by the
   player engine, so nothing else needs installing.
 
-Not in this version yet: the two mashup decks worked by hand, the photo and video editors, and
-Chromecast (smart TVs that take "DLNA" are what works).
+- **Photo editor** ("Photo editor" in the side menu): the photos on this computer in one grid, or
+  any picture opened from a file or dropped on the window. The tools are the phone app's: crop
+  (with turn, mirror and set shapes), auto, adjust (brightness, contrast, colour, warmth,
+  highlights, shadows, sharpen, fade, vignette), looks, smooth, heal (spot remover), whiten,
+  details, lighten, reshape, background blur and draw. The mouse wheel zooms, the right button
+  moves the photo, "Before" shows it as it was while held, and every step can be undone
+  (Ctrl+Z) and redone (Ctrl+Y). "Save a copy" writes a new JPEG into Pictures > Ultimate Media
+  Manager; the original file is never changed. Photos up to 4096 dots on the longer side are
+  worked on whole (a phone camera's fit); bigger ones are brought down to that. JPEG, PNG, WebP,
+  BMP and GIF open; an iPhone's HEIC files do not.
+
+Not in this version yet: the two mashup decks worked by hand, the video editor, and Chromecast
+(smart TVs that take "DLNA" are what works).
 
 ## Unlock codes
 
@@ -95,8 +106,8 @@ Every change is built by GitHub Actions (`.github/workflows/build-desktop.yml`):
 
 The build also starts the app on a Windows machine that has no VLC installed (and on a Mac) and
 has it play a file, a TV-style stream with Dolby sound, a film with subtitles, a stream that
-comes in pieces and songs of every common kind, then make a mashup out of two test songs and
-play it. Snapshots of the window are kept, and a build that cannot do this never becomes a
+comes in pieces and songs of every common kind, make a mashup out of two test songs and play
+it, and open a test photo in the photo editor, use every tool on it and save a copy. Snapshots of the window are kept, and a build that cannot do this never becomes a
 download.
 
 ## Building it yourself
@@ -110,7 +121,15 @@ Needs a JDK 21. From this folder:
 
 The TV code (signing in, lists, countries, search) is not copied into this folder: the build takes
 it straight from the phone app (`../mashwave/app/src/main/java/.../iptv`), so a fix made there
-reaches both.
+reaches both. The same goes for playing on a TV, the mashup maker's working-out and the photo
+editor's tools (the list is in `build.gradle.kts`, under `copyShared`).
+
+The photo tools were written for Android's drawing classes (`android.graphics.Bitmap`, `Canvas`,
+`Paint`...). So that the very same file runs here,
+[`src/main/kotlin/android/graphics/Graphics.kt`](src/main/kotlin/android/graphics/Graphics.kt)
+provides stand-ins for the few of those classes the tools use, as thin wrappers over the engine
+this app already draws its windows with (Skia, which is also what Android draws with).
+`PhotoToolsTest` puts every tool through them and checks the dots that come out.
 
 Where things are kept: `%APPDATA%\Ultimate Media Manager` on Windows,
 `~/.local/share/Ultimate Media Manager` on Linux. Sign-ins stay on the computer.
