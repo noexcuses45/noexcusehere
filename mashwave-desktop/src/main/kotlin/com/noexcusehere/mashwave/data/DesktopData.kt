@@ -1,11 +1,13 @@
 package com.noexcusehere.mashwave.data
 
+import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 
 /**
  * Something the player can play. The phone app has a bigger version of this (songs, photos,
  * folders); the computer app only needs what the TV code fills in.
  */
+@Serializable
 data class MediaEntry(
     val uri: String,
     val title: String,

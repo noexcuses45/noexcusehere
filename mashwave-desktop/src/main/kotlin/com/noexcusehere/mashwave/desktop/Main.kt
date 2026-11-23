@@ -23,6 +23,7 @@ import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Favorite
 import androidx.compose.material.icons.rounded.LiveTv
 import androidx.compose.material.icons.rounded.Movie
+import androidx.compose.material.icons.rounded.MovieFilter
 import androidx.compose.material.icons.rounded.MusicNote
 import androidx.compose.material.icons.rounded.PhotoFilter
 import androidx.compose.material.icons.rounded.Search
@@ -86,6 +87,8 @@ import com.noexcusehere.mashwave.desktop.ui.VodScreen
 import com.noexcusehere.mashwave.desktop.ui.Welcome
 import com.noexcusehere.mashwave.desktop.ui.PhotoEditor
 import com.noexcusehere.mashwave.desktop.ui.PhotosScreen
+import com.noexcusehere.mashwave.desktop.ui.VideoEditor
+import com.noexcusehere.mashwave.desktop.ui.VideoHomeScreen
 import com.noexcusehere.mashwave.desktop.ui.handleKey
 import com.noexcusehere.mashwave.desktop.vlc.VlcPlayer
 import com.noexcusehere.mashwave.iptv.TvSection
@@ -244,7 +247,7 @@ private fun AppBody(desk: Desk) {
             Box(Modifier.weight(1f).fillMaxHeight()) {
                 Column(Modifier.fillMaxSize()) {
                     // Music and videos on this computer need the player too, service or no service. Photos do not.
-                    if (player == null && !desk.lookingForVlc && desk.tab != Tab.SETTINGS && desk.tab != Tab.PHOTOS && (state.active != null || !desk.tab.needsService)) {
+                    if (player == null && !desk.lookingForVlc && desk.tab != Tab.SETTINGS && desk.tab != Tab.PHOTOS && desk.tab != Tab.EDITOR && (state.active != null || !desk.tab.needsService)) {
                         VlcNeeded(desk, Modifier.padding(start = 16.dp, end = 16.dp, top = 12.dp).fillMaxWidth())
                     }
                     Box(Modifier.weight(1f)) {
@@ -262,6 +265,7 @@ private fun AppBody(desk: Desk) {
                                     Tab.MUSIC -> MusicScreen(desk)
                                     Tab.VIDEOS -> MyVideosScreen(desk)
                                     Tab.PHOTOS -> PhotosScreen(desk)
+                                    Tab.EDITOR -> VideoHomeScreen(desk)
                                     Tab.SETTINGS -> SettingsScreen(desk)
                                 }
                             }
@@ -281,6 +285,7 @@ private fun AppBody(desk: Desk) {
 
         if (desk.watching && player != null && !desk.playingMusic) PlayerScreen(desk, player)
         desk.editing?.let { editing -> key(editing) { PhotoEditor(editing) } }
+        desk.videoEditing?.let { editing -> key(editing) { VideoEditor(desk, editing) } }
         desk.signIn?.let { SignInSheet(desk, it) }
         if (desk.castOpen) CastSheet(desk)
 
@@ -321,6 +326,7 @@ private fun Rail(desk: Desk, state: TvState) {
         RailButton(desk, Tab.MUSIC, Icons.Rounded.MusicNote)
         RailButton(desk, Tab.VIDEOS, Icons.Rounded.VideoFile)
         RailButton(desk, Tab.PHOTOS, Icons.Rounded.PhotoFilter)
+        RailButton(desk, Tab.EDITOR, Icons.Rounded.MovieFilter)
         Spacer(Modifier.weight(1f))
         val player = desk.player
         val entry = player?.current

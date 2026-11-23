@@ -13,6 +13,7 @@ on:
       - "mashwave/app/src/main/java/com/noexcusehere/mashwave/automash/**"
       - "mashwave/app/src/main/java/com/noexcusehere/mashwave/playback/BpmMaths.kt"
       - "mashwave/app/src/main/java/com/noexcusehere/mashwave/photo/**"
+      - "mashwave/app/src/main/java/com/noexcusehere/mashwave/editor/**"
       - ".github/workflows/build-desktop.yml"
   workflow_dispatch:
 

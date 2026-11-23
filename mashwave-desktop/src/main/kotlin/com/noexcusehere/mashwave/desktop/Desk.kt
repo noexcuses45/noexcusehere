@@ -4,8 +4,10 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import com.noexcusehere.mashwave.data.MediaEntry
+import com.noexcusehere.mashwave.editor.EditProject
 import com.noexcusehere.mashwave.data.ResumePoint
 import com.noexcusehere.mashwave.data.ResumeRules
+import com.noexcusehere.mashwave.desktop.video.Ffmpeg
 import com.noexcusehere.mashwave.desktop.vlc.PlayStatus
 import com.noexcusehere.mashwave.desktop.vlc.PlayerHost
 import com.noexcusehere.mashwave.desktop.vlc.Repeat
@@ -40,6 +42,7 @@ enum class Tab(val title: String) {
     MUSIC("Music"),
     VIDEOS("My videos"),
     PHOTOS("Photo editor"),
+    EDITOR("Video editor"),
     SETTINGS("Settings"),
     ;
 
@@ -148,6 +151,16 @@ class Desk(
 
     /** The edited copy saved last, for the Photos page to say where it went. */
     var savedPhoto by mutableStateOf<File?>(null)
+
+    /** The video projects kept on this computer. */
+    val videos = VideoProjects(dataDir, scope)
+
+    /** The video editor's engine; null when this computer has none. Looked for the first time it is wanted. */
+    val videoEngine: Ffmpeg? by lazy { runCatching { Ffmpeg.find() }.getOrNull() }
+
+    /** The video editor, which covers the window while a project is open in it; null when it is closed. */
+    var videoEditing by mutableStateOf<VideoEditing?>(null)
+        private set
 
     init {
         // The pictures and sound are fetched by VLC, so that is the name services are given.
@@ -359,6 +372,11 @@ class Desk(
 
     /** Plays files picked in the "open" box or dropped on the window, whatever folder they are in. */
     fun openFiles(files: List<File>) {
+        // With the video editor open, whatever is dropped is added to the video.
+        videoEditing?.let {
+            it.addFiles(files.filter { file -> file.isFile })
+            return
+        }
         // A photo goes to the photo editor.
         files.firstOrNull { it.isFile && MediaKinds.isPicture(it.name) }?.let {
             openPhoto(it)
@@ -374,6 +392,43 @@ class Desk(
             picked.first().video -> playVideos(picked.filter { it.video }, 0)
             else -> playSongs(picked.filter { !it.video }, 0)
         }
+    }
+
+    /** Opens [project] in the video editor. */
+    fun openVideo(project: EditProject) {
+        if (videoEditing != null || editing != null) return
+        val engine = videoEngine
+        if (engine == null) {
+            say("The video editor's engine (FFmpeg) was not found on this computer.")
+            return
+        }
+        watching = false
+        fullscreen = false
+        page = null
+        tab = Tab.EDITOR
+        videos.keep(project)
+        videoEditing = VideoEditing(this, engine, project, CoroutineScope(scope.coroutineContext + SupervisorJob(scope.coroutineContext[Job])))
+    }
+
+    fun closeVideo() {
+        videoEditing?.close()
+        videoEditing = null
+    }
+
+    /** A second player, for the video editor's preview, so that whatever else is playing is left as it is. */
+    fun spareNewPlayer(): VlcPlayer? = engine?.let { found ->
+        runCatching {
+            VlcPlayer(
+                found,
+                object : PlayerHost {
+                    override fun agent(entry: MediaEntry): String? = null
+                    override fun reserveMs(): Int = 0
+                    override fun startAt(entry: MediaEntry): Long = 0
+                    override fun place(entry: MediaEntry, positionMs: Long, durationMs: Long) = Unit
+                },
+                vlcArgs,
+            )
+        }.getOrNull()
     }
 
     /** Opens [file] in the photo editor. */

@@ -66,6 +66,7 @@ import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEvent
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.isCtrlPressed
+import androidx.compose.ui.input.key.isMetaPressed
 import androidx.compose.ui.input.key.isShiftPressed
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.type
@@ -105,6 +106,15 @@ fun leavePlayer(desk: Desk) {
 fun handleKey(desk: Desk, event: KeyEvent): Boolean {
     // The photo editor covers the window and has keys of its own.
     desk.editing?.let { return it.key(event) }
+    desk.videoEditing?.let { editor ->
+        if (event.type != KeyEventType.KeyDown) return false
+        val letter = when (event.key) {
+            Key.Z -> 'z'
+            Key.Y -> 'y'
+            else -> null
+        }
+        return editor.key(event.isCtrlPressed || event.isMetaPressed, event.isShiftPressed, letter, event.key == Key.Escape)
+    }
     if (event.type != KeyEventType.KeyDown) return false
     val player = desk.player
     if (!desk.watching || player == null) {

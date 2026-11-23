@@ -58,8 +58,21 @@ channels, logins or playlists of its own.
   worked on whole (a phone camera's fit); bigger ones are brought down to that. JPEG, PNG, WebP,
   BMP and GIF open; an iPhone's HEIC files do not.
 
-Not in this version yet: the two mashup decks worked by hand, the video editor, and Chromecast
-(smart TVs that take "DLNA" are what works).
+- **Video editor** ("Video editor" in the side menu): start a video from any videos and photos
+  (more can be added later or dropped on the window), and they line up along the bottom, each as
+  wide as it is long. A clip can be cut in two at the line, trimmed at either end, moved, copied,
+  taken out, sped up or slowed down (its sound keeps its pitch), made louder or quieter, turned,
+  mirrored, given a look (Vivid, Warm, Cool, Fade, B&W, Noir, Sepia) and adjusted (brightness,
+  contrast, colour). The video's shape can be as the first clip, wide, tall, square or portrait,
+  with black or a soft copy of the clip beside clips of another shape. Words (smileys too) can be
+  laid over any stretch of it, anywhere on the picture, in any size and colour, and a song can
+  run under the whole thing. The big picture shows exactly how the video looks under the line;
+  Play makes a quick small copy and plays it. Every change is saved as it is made and can be
+  undone. "Save video" writes an MP4 (H.264 with AAC sound) in Full HD, HD or small into
+  Videos > Ultimate Media Manager.
+
+Not in this version yet: the two mashup decks worked by hand, and Chromecast (smart TVs that
+take "DLNA" are what works).
 
 ## Unlock codes
 
@@ -86,6 +99,21 @@ packed inside the app, so there is nothing else to install: one download, one pr
 - Where no engine is packed (Linux, or a build made without it), the app uses a VLC installed on
   the computer instead, and says so when there is none.
 
+### The video editor's engine
+
+Cutting, joining and writing video is done by FFmpeg, started as a separate program.
+
+- For Windows and Mac the build fetches a ready-made FFmpeg from Maven Central
+  (`org.bytedeco:ffmpeg`, a build without FFmpeg's "GPL" and "non-free" parts, so under the
+  LGPL version 3), checks it against a known fingerprint, and puts the programs and their own
+  libraries in `app/resources/ffmpeg` with the licence texts and a notice
+  ([`engine/ffmpeg-notices`](engine/ffmpeg-notices)). It adds about 25 MB to the download.
+- Finished videos are packed as H.264 by the Mac's own encoder on a Mac and by OpenH264 (Cisco's,
+  BSD licence) on Windows, with an older kind (MPEG-4) as the last resort; previews use whatever
+  is quickest.
+- On Linux, or in a build without it, the FFmpeg installed on the computer is used, and the
+  Video editor page says so when there is none.
+
 Before selling the app, have someone who knows licences look over this arrangement: the notices
 are written to meet the LGPL's terms, but this is not legal advice. Video formats such as H.264
 and HEVC also have patent licences of their own that can apply to whoever sells a player.
@@ -107,7 +135,8 @@ Every change is built by GitHub Actions (`.github/workflows/build-desktop.yml`):
 The build also starts the app on a Windows machine that has no VLC installed (and on a Mac) and
 has it play a file, a TV-style stream with Dolby sound, a film with subtitles, a stream that
 comes in pieces and songs of every common kind, make a mashup out of two test songs and play
-it, and open a test photo in the photo editor, use every tool on it and save a copy. Snapshots of the window are kept, and a build that cannot do this never becomes a
+it, open a test photo in the photo editor, use every tool on it and save a copy, and make a
+short film in the video editor (cut, speed, look, words, music), play its preview and save it. Snapshots of the window are kept, and a build that cannot do this never becomes a
 download.
 
 ## Building it yourself
@@ -121,8 +150,9 @@ Needs a JDK 21. From this folder:
 
 The TV code (signing in, lists, countries, search) is not copied into this folder: the build takes
 it straight from the phone app (`../mashwave/app/src/main/java/.../iptv`), so a fix made there
-reaches both. The same goes for playing on a TV, the mashup maker's working-out and the photo
-editor's tools (the list is in `build.gradle.kts`, under `copyShared`).
+reaches both. The same goes for playing on a TV, the mashup maker's working-out, the photo
+editor's tools and what a video project is made of (the list is in `build.gradle.kts`, under
+`copyShared`).
 
 The photo tools were written for Android's drawing classes (`android.graphics.Bitmap`, `Canvas`,
 `Paint`...). So that the very same file runs here,

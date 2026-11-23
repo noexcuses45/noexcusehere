@@ -629,7 +629,7 @@ private fun PhotoCanvas(picture: Bitmap, tool: PhotoTool?, compare: Bitmap?, vie
 
 /** A named line with a knob. [mark] (0 to 1) is where "no change" sits, for settings that go both ways. */
 @Composable
-private fun SliderRow(label: String, value: Float, shown: String, onChange: (Float) -> Unit, onDone: (() -> Unit)? = null, mark: Float = -1f) {
+internal fun SliderRow(label: String, value: Float, shown: String, onChange: (Float) -> Unit, onDone: (() -> Unit)? = null, mark: Float = -1f) {
     Column(Modifier.padding(horizontal = 18.dp, vertical = 3.dp)) {
         Row {
             Text(label, style = MaterialTheme.typography.labelLarge, color = TextMid, modifier = Modifier.weight(1f))
@@ -669,7 +669,7 @@ private fun SliderRow(label: String, value: Float, shown: String, onChange: (Flo
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun ActionRow(content: @Composable () -> Unit) {
+internal fun ActionRow(content: @Composable () -> Unit) {
     FlowRow(
         Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 6.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp),

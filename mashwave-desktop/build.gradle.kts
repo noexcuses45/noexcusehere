@@ -43,6 +43,8 @@ val copyShared by tasks.registering(Sync::class) {
             "playback/BpmMaths.kt",
             "photo/PhotoOps.kt",
             "photo/PhotoTools.kt",
+            "editor/EditorModels.kt",
+            "editor/EditorOps.kt",
         )
     }
     into(sharedSources.map { it.dir("com/noexcusehere/mashwave") })
@@ -134,6 +136,84 @@ val fetchEngine by tasks.registering {
         check(File(target, "libvlc.dll").isFile && File(target, "libvlccore.dll").isFile) { "The player engine itself is missing from the package" }
     }
 }
+
+// ---- the video editor's engine, packed with the Windows and Mac apps ---------------------------
+//
+// The video editor cuts, joins and writes video with FFmpeg, started as a separate program. The
+// files come from a build published on Maven Central (org.bytedeco:ffmpeg) that leaves out
+// FFmpeg's "GPL" and "non-free" parts, so it is under the LGPL. Each download is checked against
+// a known fingerprint before use. On Linux the FFmpeg installed on the computer is used instead.
+val ffmpegPackage = "7.1.1-1.5.12"
+val ffmpegBuilds = mapOf(
+    // the app's folder for the kind of computer, to the package's name for it and the fingerprint of that file
+    "windows-x64" to ("windows-x86_64" to "6a393c77e158d2d32aff3f985c4a8d2e7650cea7cc425cce703f90b3b3cf6cd5"),
+    "macos-arm64" to ("macosx-arm64" to "77261ee565fdd9dbc691a8912f6d5c14457cca6ae162a4666cacdb6756a273b0"),
+    "macos-x64" to ("macosx-x86_64" to "6494ead60e210b038071f3f5403bfd08b62fb10eab9fb6cabc4fce944ab6e38c"),
+)
+val ffmpegFor: String? = (findProperty("ffmpegKind") as String?) ?: run {
+    val os = OperatingSystem.current()
+    val arm = System.getProperty("os.arch").orEmpty().let { it == "aarch64" || it == "arm64" }
+    when {
+        os.isWindows -> "windows-x64"
+        os.isMacOsX -> if (arm) "macos-arm64" else "macos-x64"
+        else -> null
+    }
+}
+
+val fetchFfmpeg by tasks.registering {
+    val kind = ffmpegFor
+    val notices = file("engine/ffmpeg-notices")
+    inputs.property("package", ffmpegPackage)
+    inputs.property("kind", kind ?: "none")
+    inputs.dir(notices)
+    if (kind != null) outputs.dir(engineResources.map { it.dir("$kind/ffmpeg") })
+    onlyIf { kind != null }
+    doLast {
+        val (platform, wanted) = ffmpegBuilds.getValue(kind!!)
+        fun fingerprint(of: File): String {
+            val digest = MessageDigest.getInstance("SHA-256")
+            of.inputStream().use { input ->
+                val chunk = ByteArray(1 shl 16)
+                while (true) {
+                    val n = input.read(chunk)
+                    if (n < 0) break
+                    digest.update(chunk, 0, n)
+                }
+            }
+            return digest.digest().joinToString("") { "%02x".format(it) }
+        }
+        val archive = layout.buildDirectory.file("downloads/ffmpeg-$ffmpegPackage-$platform.jar").get().asFile
+        if (!archive.isFile || fingerprint(archive) != wanted) {
+            archive.parentFile.mkdirs()
+            val address = "https://repo1.maven.org/maven2/org/bytedeco/ffmpeg/$ffmpegPackage/ffmpeg-$ffmpegPackage-$platform.jar"
+            URI(address).toURL().openStream().use { input -> archive.outputStream().use { input.copyTo(it) } }
+        }
+        check(fingerprint(archive) == wanted) { "The video engine that was downloaded is not the expected file" }
+
+        val inside = "org/bytedeco/ffmpeg/$platform/"
+        val target = engineResources.get().dir("$kind/ffmpeg").asFile
+        delete(target)
+        copy {
+            from(zipTree(archive)) {
+                // The programs and their own libraries; the parts that tie them to Java are not needed.
+                include { it.isDirectory || (it.path.startsWith(inside) && !it.name.startsWith("jni") && !it.name.startsWith("libjni")) }
+                eachFile { path = path.removePrefix(inside) }
+                includeEmptyDirs = false
+            }
+            into(target)
+        }
+        copy {
+            from(notices)
+            into(target)
+            filter { it.replace("@VERSION@", ffmpegPackage.substringBefore('-')).replace("@PACKAGE@", ffmpegPackage) }
+        }
+        val program = File(target, if (kind.startsWith("windows")) "ffmpeg.exe" else "ffmpeg")
+        check(program.isFile) { "The video engine itself is missing from the package" }
+        // Files taken out of a package lose their "may be run" mark.
+        target.listFiles { f -> f.name == "ffmpeg" || f.name == "ffprobe" }?.forEach { it.setExecutable(true, false) }
+    }
+}
+tasks.matching { it.name == "prepareAppResources" }.configureEach { dependsOn(fetchFfmpeg) }
 
 // The packaging step that gathers the app's extra files must wait for the engine to be there.
 tasks.matching { it.name == "prepareAppResources" }.configureEach { dependsOn(fetchEngine) }

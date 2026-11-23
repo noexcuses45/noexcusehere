@@ -1,6 +1,7 @@
 package com.noexcusehere.mashwave.desktop
 
 import com.noexcusehere.mashwave.data.MediaEntry
+import com.noexcusehere.mashwave.desktop.video.VideoMaths
 import com.noexcusehere.mashwave.desktop.vlc.PlayStatus
 import com.noexcusehere.mashwave.desktop.vlc.Repeat
 import com.noexcusehere.mashwave.iptv.TvAccount
@@ -144,10 +145,13 @@ class SelfTest(private val clip: String, val out: File, private val service: Lis
         val pictures = File(folder, "photo")
         if (pictures.isDirectory) photoOk = photo(desk, window, pictures)
 
+        // The video editor: clips are read in, cut, sped up and coloured, words and a song are added, and the video is made.
+        val videoOk = video(desk, window, folder)
+
         var tourOk = true
         if (service.size == 3) tourOk = tour(desk, window)
 
-        val ok = played && pausedOk && streamsOk && musicOk && mashupOk && photoOk && tourOk
+        val ok = played && pausedOk && streamsOk && musicOk && mashupOk && photoOk && videoOk && tourOk
         note(if (ok) "RESULT: PASSED" else "RESULT: FAILED")
         return if (ok) 0 else 1
     }
@@ -362,6 +366,97 @@ class SelfTest(private val clip: String, val out: File, private val service: Lis
         snap(window, "photo-3-saved")
         desk.savedPhoto = null
         return allOk && square && back && forward && closed && saved != null && reread != null && reread.width == 1200 && reread.height == 1200 && file.length() == untouched
+    }
+
+    /**
+     * Makes a short film in the video editor out of the test clip and the test photo: reads them
+     * in, cuts the clip in two and speeds one half up, gives the photo a look, sets a wide shape
+     * with a soft background, adds words and a song, plays the preview and saves the video. The
+     * saved file is then looked into: right size, right length, picture and sound.
+     */
+    private suspend fun video(desk: Desk, window: Window, folder: File): Boolean {
+        val engine = desk.videoEngine
+        note("video engine: ${engine?.version} packed=${engine?.packed} ways of packing=${engine?.videoEncoders()}")
+        if (engine == null) return false
+        val clipFile = File(folder, "clip.mp4")
+        val photo = File(folder, "photo").listFiles { f -> PhotoFiles.isPicture(f.name) }.orEmpty().minByOrNull { it.name }
+        val song = File(folder, "mashup").listFiles { f -> f.name.endsWith(".mp3") }.orEmpty().minByOrNull { it.name }
+        if (!clipFile.isFile || photo == null || song == null) {
+            note("video: the test files are missing")
+            return false
+        }
+        desk.openVideo(VideoEditing.fresh("Self-check film"))
+        val editing = desk.videoEditing ?: return false
+        try {
+            editing.addFiles(listOf(clipFile, photo))
+            val read = waitFor(60) { !editing.adding && editing.project.clips.size == 2 }
+            val first = editing.project.clips.firstOrNull()
+            val second = editing.project.clips.getOrNull(1)
+            note("video: read=$read clip=${first?.width}x${first?.height} ${first?.sourceDurationMs}ms photo=${second?.width}x${second?.height} shows ${second?.endMs}ms")
+            if (!read || first == null || second == null) return false
+            // The photo is stored lying down with a note to turn it: the engine must see it upright, 1200 by 1600.
+            val upright = second.isImage && second.width == 1200 && second.height == 1600
+
+            // Cut the clip two seconds in; the second piece runs at double speed.
+            editing.seek(2000)
+            editing.split()
+            val pieces = editing.project.clips
+            val cut = pieces.size == 3 && pieces[0].endMs == 2000L && pieces[1].startMs == 2000L
+            if (cut) editing.update(pieces[1].id) { it.copy(speed = 2f, volume = 0.5f) }
+            editing.update(second.id) { it.copy(filter = "SEPIA", brightness = 0.2f) }
+            editing.trim(second.id, 0, 2000, "length")
+            editing.settle()
+            editing.change(editing.project.copy(ratio = "16:9", background = "BLUR"))
+            editing.addText()
+            editing.selectedText?.let { id -> editing.updateText(id) { it.copy(text = "Self-check \uD83D\uDE00", startMs = 0, endMs = 3000, y = 0.6f) } }
+            editing.chooseMusic(song)
+            val sung = waitFor(30) { editing.project.music != null }
+            // 2 s + 4 s at double speed + 2 s of photo
+            val total = editing.project.durationMs
+            note("video: cut=$cut pieces=${editing.project.clips.size} words=${editing.project.texts.size} song=$sung length=${total}ms can undo=${editing.canUndo}")
+
+            // The frame under the playhead, as the finished video will look there.
+            editing.seek(4500)
+            val shown = waitFor(40) { editing.frame != null }
+            delay(1500)
+            val colours = snap(window, "video-1-editor")
+            note("video: frame under the line shown=$shown, window has $colours colours")
+
+            // The preview: a quick small copy is made and played.
+            editing.seek(0)
+            editing.play()
+            val began = waitFor(120) { editing.playing && editing.playhead > 500 }
+            snap(window, "video-2-playing")
+            editing.pause()
+            note("video: preview played=$began to ${editing.playhead}ms")
+
+            // A step back and forward again leaves the project as it was.
+            val before = editing.project.copy(updatedAt = 0)
+            editing.undo()
+            val wentBack = editing.project.music == null
+            editing.redo()
+            val same = editing.project.copy(updatedAt = 0) == before
+            note("video: undo took the song out=$wentBack, redo put everything back=$same")
+
+            // The finished video.
+            val began2 = System.currentTimeMillis()
+            editing.make(480, File(out, "video"))
+            val finished = waitFor(400) { editing.export?.done != null || editing.export?.problem?.isNotEmpty() == true }
+            val file = editing.export?.done
+            val facts = file?.let { engine.facts(it) }
+            note(
+                "video: made=$finished in ${(System.currentTimeMillis() - began2) / 1000}s problem=\"${editing.export?.problem.orEmpty()}\" file=${file?.name} bytes=${file?.length()} " +
+                    "size=${facts?.width}x${facts?.height} length=${facts?.durationMs}ms picture=${facts?.hasPicture} sound=${facts?.hasSound}",
+            )
+            editing.export = null
+            val (wide, tall) = VideoMaths.outputSize(editing.project, 480)
+            val right = facts != null && facts.width == wide && facts.height == tall && facts.hasPicture && facts.hasSound && abs(facts.durationMs - total) < 400
+            return upright && cut && sung && total == 6000L && shown && began && wentBack && same && finished && right
+        } finally {
+            val id = editing.project.id
+            desk.closeVideo()
+            desk.videos.remove(id)
+        }
     }
 
     /** Plays one stream and notes whether pictures and sound came out of it. */

@@ -501,6 +501,22 @@ object PhotoFiles {
         }
     }
 
+    /** True when the photo in [file] is stored lying down or mirrored, with a camera's note saying how to hold it. */
+    fun isTurned(file: File): Boolean = runCatching {
+        if (!file.isFile || file.length() !in 1..MOST_BYTES) return false
+        val data = Data.makeFromBytes(file.readBytes())
+        try {
+            val codec = Codec.makeFromData(data)
+            try {
+                codec.encodedOrigin != EncodedOrigin.TOP_LEFT && codec.encodedOrigin != EncodedOrigin.UNUSED
+            } finally {
+                codec.close()
+            }
+        } finally {
+            data.close()
+        }
+    }.getOrDefault(false)
+
     /** Where pictures are usually kept on this computer. */
     fun picturesFolder(): File {
         val home = File(System.getProperty("user.home").orEmpty())

@@ -1,0 +1,41 @@
+The video editor's engine inside Ultimate Media Manager
+=======================================================
+
+This folder holds FFmpeg version @VERSION@, made by the FFmpeg developers. Ultimate Media
+Manager starts it as a separate program to read, cut, join and write video for the video
+editor. Ultimate Media Manager is not made, endorsed or supported by the FFmpeg project.
+
+FFmpeg is free software. This build may be passed on and changed under the terms of the GNU
+Lesser General Public License, version 3 or (at your choice) any later version. The full text
+is in the file LGPL-3.0.txt next to this one; that licence adds to the GNU General Public
+License version 3, whose text is in GPL-3.0.txt. It comes with no warranty.
+
+What is here
+------------
+The program files "ffmpeg" and "ffprobe" and the library files beside them (names beginning
+"avcodec", "avformat", "avfilter", "avutil", "avdevice", "swscale" and "swresample") are
+unchanged copies taken from the package "org.bytedeco:ffmpeg" @PACKAGE@, published on Maven
+Central by the Bytedeco project (https://github.com/bytedeco/javacpp-presets/tree/master/ffmpeg).
+That build was made without FFmpeg's "GPL" and "non-free" parts.
+
+It contains other free libraries, each under its own licence, among them: OpenH264 (BSD
+2-Clause, Cisco), LAME (LGPL), libvpx (BSD), Opus (BSD), FreeType (FreeType licence), and
+others listed in the build script named below.
+
+The source code
+---------------
+The source code of this version of FFmpeg is published at https://ffmpeg.org/releases/ . The
+script that built these files, and the changes it makes, are at
+https://github.com/bytedeco/javacpp-presets/tree/master/ffmpeg (see "cppbuild.sh").
+
+Using your own copy
+-------------------
+The engine is kept separate from the app on purpose. You may replace the files in this folder
+with another build of FFmpeg (for example one you built yourself from the source above), and
+the app will use it. You may also study how the app works with the engine in order to make
+such a replacement work.
+
+About video formats
+-------------------
+Videos are saved as H.264 with AAC sound. Those formats are covered by patents in some
+countries, and whoever sells a program that makes such files may need licences of their own.
