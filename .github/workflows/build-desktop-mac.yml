@@ -1,0 +1,101 @@
+name: Build Ultimate Media Manager for Mac
+
+# Builds the computer version of Ultimate Media Manager for Macs, on one of GitHub's Macs.
+# It is the same app as the Windows one. On a Mac it uses the VLC installed on the computer
+# (the player is not packed inside it yet), so the check below installs VLC first.
+on:
+  push:
+    paths:
+      - "mashwave-desktop/**"
+      - "mashwave/app/src/main/java/com/noexcusehere/mashwave/iptv/**"
+      - "mashwave/app/src/main/java/com/noexcusehere/mashwave/data/Resume.kt"
+      - "mashwave/app/src/main/java/com/noexcusehere/mashwave/licence/**"
+      - "mashwave/app/src/main/java/com/noexcusehere/mashwave/cast/**"
+      - ".github/workflows/build-desktop-mac.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  mac:
+    runs-on: macos-latest
+    defaults:
+      run:
+        working-directory: mashwave-desktop
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Which Mac this is
+        run: |
+          sw_vers
+          uname -m
+
+      - name: Run checks
+        run: ./gradlew test
+
+      - name: Build the app
+        run: ./gradlew createDistributable "-PappVersionName=1.0.${{ github.run_number }}"
+
+      - name: Install VLC (the app uses the one on the computer)
+        run: |
+          brew install --cask vlc
+          ls /Applications/VLC.app/Contents/MacOS/lib | head -5
+          file /Applications/VLC.app/Contents/MacOS/lib/libvlc.dylib
+
+      # The app is started for real on this Mac: it has to find VLC, show its window, and play a
+      # file, a TV-style stream, a film with subtitles, a stream that comes in pieces and the
+      # test songs. The machine has no speakers, so the sound is sent nowhere ("adummy") - that
+      # way it is still decoded and can be counted.
+      - name: "Self-check: start the app and play the test clips"
+        env:
+          UMM_VLC_ARGS: "--aout=adummy"
+        run: |
+          APP="$PWD/build/compose/binaries/main/app/Ultimate Media Manager.app/Contents/MacOS/Ultimate Media Manager"
+          OUT="$RUNNER_TEMP/selfcheck"
+          mkdir -p "$OUT"
+          "$APP" --self-test "$PWD/selftest/clip.mp4" "$OUT" > "$OUT/output.txt" 2>&1 &
+          PID=$!
+          for i in $(seq 1 300); do
+            kill -0 $PID 2>/dev/null || break
+            sleep 1
+          done
+          if kill -0 $PID 2>/dev/null; then
+            echo "The app did not finish within five minutes"
+            kill -9 $PID
+          fi
+          CODE=0
+          wait $PID || CODE=$?
+          echo "---- what the app wrote down ----"
+          cat "$OUT/result.txt" 2>/dev/null || echo "(nothing)"
+          echo "---- what it printed (last lines) ----"
+          tail -25 "$OUT/output.txt" || true
+          echo "---- exit code: $CODE ----"
+          exit $CODE
+
+      - name: Upload the self-check
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: self-check-mac
+          path: ${{ runner.temp }}/selfcheck
+          if-no-files-found: ignore
+
+      - name: Build the disk image
+        run: |
+          ./gradlew packageDmg "-PappVersionName=1.0.${{ github.run_number }}"
+          cp build/compose/binaries/main/dmg/*.dmg UltimateMediaManager-Mac.dmg
+          ls -la UltimateMediaManager-Mac.dmg
+
+      - name: Upload the disk image
+        uses: actions/upload-artifact@v4
+        with:
+          name: ultimate-media-manager-mac
+          path: mashwave-desktop/UltimateMediaManager-Mac.dmg

@@ -167,7 +167,7 @@ compose.desktop {
         mainClass = "com.noexcusehere.mashwave.desktop.MainKt"
 
         nativeDistributions {
-            targetFormats(TargetFormat.Msi, TargetFormat.Deb)
+            targetFormats(TargetFormat.Msi, TargetFormat.Deb, TargetFormat.Dmg)
             packageName = "Ultimate Media Manager"
             // Installers only accept plain numbers here.
             packageVersion = project.version.toString()
@@ -186,6 +186,11 @@ compose.desktop {
                 perUserInstall = true
                 // Stays the same for every version, so a new installer replaces the old app.
                 upgradeUuid = "6f0c7c4e-5d0b-4c1e-9a55-2b7d7f6b9d11"
+            }
+            macOS {
+                iconFile.set(project.file("icons/icon.icns"))
+                bundleID = "com.noexcusehere.mashwave.desktop"
+                dockName = "Ultimate Media Manager"
             }
             linux {
                 iconFile.set(project.file("icons/icon.png"))
