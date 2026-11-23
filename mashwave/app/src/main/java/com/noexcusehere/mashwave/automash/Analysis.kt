@@ -1,6 +1,6 @@
 package com.noexcusehere.mashwave.automash
 
-import com.noexcusehere.mashwave.playback.BpmAnalyzer
+import com.noexcusehere.mashwave.playback.BpmMaths
 import kotlin.math.PI
 import kotlin.math.abs
 import kotlin.math.cos
@@ -236,11 +236,11 @@ object SongAnalyzer {
         // Tempo from the middle of the song, where the beat is steadiest.
         val span = min(n, (rate * 150).toInt())
         val from = (n - span) / 2
-        val bpm = BpmAnalyzer.estimate(full.copyOfRange(from, from + span), low.copyOfRange(from, from + span), rate) ?: return null
+        val bpm = BpmMaths.estimate(full.copyOfRange(from, from + span), low.copyOfRange(from, from + span), rate) ?: return null
 
-        val riseFull = BpmAnalyzer.rise(full, rate)
-        val riseLow = BpmAnalyzer.rise(low, rate)
-        val riseMid = BpmAnalyzer.rise(mid, rate)
+        val riseFull = BpmMaths.rise(full, rate)
+        val riseLow = BpmMaths.rise(low, rate)
+        val riseMid = BpmMaths.rise(mid, rate)
         val onset = FloatArray(n) { riseFull[it] + riseLow[it] }
 
         var beatIndex = BeatTracker.track(onset, 60f / bpm * rate)

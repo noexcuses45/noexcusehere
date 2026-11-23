@@ -37,8 +37,18 @@ channels, logins or playlists of its own.
   The first time, Windows asks whether to let the app through its firewall: the TV cannot
   collect anything unless the answer is yes.
 
-Not in this version: mashups, the photo and video editors, and Chromecast (smart TVs that take
-"DLNA" are what works).
+- **Mashups** (Music, then "Mashups"): pick two to six songs and the app makes one new song out of
+  them. It finds each song's beat and key, brings them to one tempo, plans the mix the way a DJ
+  would (one song comes in over the other's beat, drops, a fade at the end), and saves the result
+  as a music file in an "Ultimate Media Manager" folder inside the Music folder, where it shows up
+  with the other songs and starts playing. The length can be left to the app or set from one to
+  seven minutes; "Try another version" arranges the same songs differently; "See how it was
+  mixed" gives the running order. Songs with a clear, steady beat work best. The working-out is
+  the same code as the phone app's; reading the songs and packing the result is done by the
+  player engine, so nothing else needs installing.
+
+Not in this version yet: the two mashup decks worked by hand, the photo and video editors, and
+Chromecast (smart TVs that take "DLNA" are what works).
 
 ## Unlock codes
 
@@ -57,7 +67,7 @@ packed inside the app, so there is nothing else to install: one download, one pr
 - The build fetches VideoLAN's own package for use inside other programs
   (`VideoLAN.LibVLC.Windows`, under the LGPL), checks it against a known fingerprint, and takes
   only the plug-ins listed in [`engine/plugins.txt`](engine/plugins.txt) - what is needed to play
-  streams, films and subtitles. That keeps the download small and leaves out the parts with
+  streams, films and subtitles, and to read songs in and write a mashup out. That keeps the download small and leaves out the parts with
   stricter licences (a check in `DesktopTest` keeps them off the list).
 - The engine sits in its own folder inside the app (`app/resources/vlc`) with its licence and a
   notice saying what it is and where its source code is ([`engine/notices`](engine/notices)).
@@ -78,9 +88,15 @@ Every change is built by GitHub Actions (`.github/workflows/build-desktop.yml`):
 - **UltimateMediaManager-Windows.zip** - the same app without an installer: unzip it anywhere and
   run `Ultimate Media Manager.exe`.
 
-The build also starts the app on a Windows machine that has no VLC installed and has it play a
-file, a TV-style stream with Dolby sound, a film with subtitles and a stream that comes in
-pieces. Snapshots of the window are kept, and a build that cannot do this never becomes a
+- **UltimateMediaManager-Mac.dmg** (from `build-desktop-mac.yml`) - the Mac app, for Macs with an
+  Apple chip. It uses the VLC app installed on the Mac (free from videolan.org), and because it
+  is not signed with an Apple developer account, the Mac asks for it to be allowed the first time
+  (right-click the app, "Open").
+
+The build also starts the app on a Windows machine that has no VLC installed (and on a Mac) and
+has it play a file, a TV-style stream with Dolby sound, a film with subtitles, a stream that
+comes in pieces and songs of every common kind, then make a mashup out of two test songs and
+play it. Snapshots of the window are kept, and a build that cannot do this never becomes a
 download.
 
 ## Building it yourself

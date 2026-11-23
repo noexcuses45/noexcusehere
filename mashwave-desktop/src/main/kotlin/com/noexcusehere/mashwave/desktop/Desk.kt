@@ -89,6 +89,11 @@ class Desk(
         private set
     var lookingForVlc by mutableStateOf(true)
         private set
+
+    /** VLC's engine, once found: the player uses it, and so does the making of mashups. */
+    @Volatile
+    var engine: VlcFinder.Found? = null
+        private set
     var vlcFolder by mutableStateOf("")
         private set
 
@@ -129,6 +134,9 @@ class Desk(
     /** Playing on a smart TV instead of on this computer. */
     val cast = DeskCast(this, scope)
 
+    /** Making a mashup out of a few songs. */
+    val mashup = DeskMashup(this, scope, dataDir)
+
     /** True while the "play on a TV" box is open. */
     var castOpen by mutableStateOf(false)
 
@@ -150,6 +158,7 @@ class Desk(
             val made = withContext(Dispatchers.IO) {
                 runCatching {
                     val found = VlcFinder.load() ?: return@runCatching null
+                    engine = found
                     VlcPlayer(found, this@Desk, vlcArgs) to found.folder
                 }
             }

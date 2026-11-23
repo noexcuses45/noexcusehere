@@ -344,7 +344,8 @@ app/src/main/java/com/noexcusehere/mashwave/
   automash/Mixer.kt                     time-stretching, band splitting and mixing
   automash/AudioIo.kt                   decoding songs and encoding the result (AAC)
   automash/AutoMashupMaker.kt           runs the whole thing and saves the file
-  playback/BpmAnalyzer.kt               tempo detection
+  playback/BpmAnalyzer.kt               tempo detection (reads a song through the phone's decoder)
+  playback/BpmMaths.kt                  the tempo arithmetic itself, shared with the computer app
   playback/AudioFx.kt                   equalizer / bass / surround
   data/MediaSources.kt                  works out where a file came from (WhatsApp, Camera, Drive ...)
   ui/Import.kt                          adding files from Google Drive, Google Photos and other apps

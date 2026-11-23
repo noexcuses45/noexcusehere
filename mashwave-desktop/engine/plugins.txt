@@ -103,6 +103,15 @@ audio_filter/scaletempo
 audio_filter/scaletempo_pitch
 audio_filter/gain
 
+# turning one kind of sound file into another (reading songs in for a mashup, saving the result)
+stream_out/stream_out_transcode
+stream_out/stream_out_standard
+access_output/access_output_file
+mux/mux_wav
+mux/mux_dummy
+mux/mux_mp4
+mux/mux_ogg
+
 # lets the engine say what it is doing, when someone asks it to (for tracking down a fault)
 logger/console_logger
 

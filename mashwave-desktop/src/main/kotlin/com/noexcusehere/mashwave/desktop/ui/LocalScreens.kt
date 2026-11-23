@@ -208,9 +208,14 @@ fun MusicScreen(desk: Desk) {
                 view = "artists"
                 opened = ""
             })
+            Chip("Mashups", view == "mashups" && shelf == null, {
+                view = "mashups"
+                opened = ""
+            })
         }
         Spacer(Modifier.height(10.dp))
         when {
+            view == "mashups" && shelf == null -> MashupPanel(desk)
             songs.isEmpty() && library.looking -> Busy("Looking for music...")
             songs.isEmpty() -> Note(
                 Icons.Rounded.MusicNote,

@@ -37,6 +37,10 @@ val copyShared by tasks.registering(Sync::class) {
             "cast/Hls.kt",
             "cast/MediaServer.kt",
             "cast/StreamRelay.kt",
+            "automash/Analysis.kt",
+            "automash/MixPlanner.kt",
+            "automash/Mixer.kt",
+            "playback/BpmMaths.kt",
         )
     }
     into(sharedSources.map { it.dir("com/noexcusehere/mashwave") })

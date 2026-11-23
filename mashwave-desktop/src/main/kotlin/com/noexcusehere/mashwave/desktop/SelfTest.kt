@@ -125,10 +125,15 @@ class SelfTest(private val clip: String, val out: File, private val service: Lis
         val songs = File(folder, "music")
         if (songs.isDirectory) musicOk = music(desk, songs)
 
+        // A mashup: two songs with a steady beat are read in, mixed into one, saved and played.
+        var mashupOk = true
+        val steady = File(folder, "mashup")
+        if (steady.isDirectory) mashupOk = mashup(desk, steady)
+
         var tourOk = true
         if (service.size == 3) tourOk = tour(desk, window)
 
-        val ok = played && pausedOk && streamsOk && musicOk && tourOk
+        val ok = played && pausedOk && streamsOk && musicOk && mashupOk && tourOk
         note(if (ok) "RESULT: PASSED" else "RESULT: FAILED")
         return if (ok) 0 else 1
     }
@@ -164,6 +169,40 @@ class SelfTest(private val clip: String, val out: File, private val service: Lis
         desk.stopPlaying()
         delay(300)
         return detailsOk && allPlayed && moved
+    }
+
+    /** Makes a mashup of the two test songs and checks the result is a song of the right length that plays. */
+    private suspend fun mashup(desk: Desk, folder: File): Boolean {
+        val player = desk.player ?: return false
+        val files = folder.listFiles { f -> MediaKinds.isVideo(f.name) == false }.orEmpty().sortedBy { it.name }
+        if (files.size < 2) {
+            note("mashup: the test songs are missing")
+            return false
+        }
+        val maker = desk.mashup
+        files.take(2).forEach { maker.add(LocalFile(path = it.absolutePath, title = Library.tidyName(it.nameWithoutExtension))) }
+        maker.lengthSeconds = 60
+        val began = System.currentTimeMillis()
+        maker.create()
+        val finished = waitFor(300) { !maker.working }
+        val made = maker.result
+        val file = made?.let { File(it.path) }
+        val length = file?.let { Tags.read(it)?.durationMs } ?: 0
+        note(
+            "mashup: finished=$finished in ${(System.currentTimeMillis() - began) / 1000}s problem=${maker.error} kind=${file?.extension} size=${file?.length()} " +
+                "length=${length}ms summary=\"${made?.summary}\" moments=${made?.story?.size}",
+        )
+        made?.story?.take(3)?.forEach { note("  $it") }
+        // Making it also starts it playing.
+        val plays = made != null && waitFor(15) { player.current?.uri == made.path && player.status == PlayStatus.PLAYING && player.positionMs > 300 }
+        val counts = player.counts()
+        note("mashup plays: $plays sound decoded=${counts?.soundDecoded}")
+        desk.stopPlaying()
+        delay(300)
+        // Nothing is left behind in the music folder of whoever ran the check.
+        if (made != null) maker.delete(made)
+        delay(300)
+        return finished && made != null && maker.error == null && file != null && length in 40_000..90_000 && plays
     }
 
     /** Plays one stream and notes whether pictures and sound came out of it. */
