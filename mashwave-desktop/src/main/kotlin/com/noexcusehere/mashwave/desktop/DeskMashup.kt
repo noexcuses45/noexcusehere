@@ -189,6 +189,29 @@ class DeskMashup(private val desk: Desk, private val scope: CoroutineScope, priv
 
     private class MashupProblem(message: String) : Exception(message)
 
+    /** The beats a minute of the song at [path], going by its first couple of minutes; null when no steady beat is found. */
+    suspend fun tempoOf(path: String): Float? = withContext(Dispatchers.Default) {
+        synchronized(prepared) { prepared[path] }?.let { return@withContext it.analysis.bpm }
+        val found = desk.engine ?: return@withContext null
+        workDir.mkdirs()
+        val id = UUID.randomUUID().toString()
+        val wav = File(workDir, "tempo-$id.wav")
+        val pcm = File(workDir, "tempo-$id.pcm")
+        try {
+            if (!VlcConvert(found).toWav(File(path), wav, 150, { isActive }) { }) return@withContext null
+            val collector = FeatureCollector()
+            listenTo(wav, pcm, collector)
+            SongAnalyzer.analyze(collector)?.bpm
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            null
+        } finally {
+            wav.delete()
+            pcm.delete()
+        }
+    }
+
     private fun report(text: String, done: Float) {
         step = text
         progress = done.coerceIn(0f, 1f)

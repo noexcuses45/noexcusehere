@@ -41,6 +41,7 @@ interface LibVlc : Library {
     fun libvlc_media_player_set_time(player: Pointer, time: Long)
     fun libvlc_media_player_get_length(player: Pointer): Long
     fun libvlc_media_player_is_seekable(player: Pointer): Int
+    fun libvlc_media_player_set_rate(player: Pointer, rate: Float): Int
 
     fun libvlc_audio_set_volume(player: Pointer, volume: Int): Int
     fun libvlc_audio_set_mute(player: Pointer, mute: Int)

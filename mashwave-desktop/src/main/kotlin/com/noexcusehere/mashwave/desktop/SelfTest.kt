@@ -140,6 +140,10 @@ class SelfTest(private val clip: String, val out: File, private val service: Lis
         val steady = File(folder, "mashup")
         if (steady.isDirectory) mashupOk = mashup(desk, steady)
 
+        // The two decks: two songs at once, one brought onto the other's beat.
+        var decksOk = true
+        if (steady.isDirectory) decksOk = decks(desk, steady)
+
         // The photo editor: a photo stored lying on its side is opened, every tool is used on it, and a copy is saved.
         var photoOk = true
         val pictures = File(folder, "photo")
@@ -151,7 +155,7 @@ class SelfTest(private val clip: String, val out: File, private val service: Lis
         var tourOk = true
         if (service.size == 3) tourOk = tour(desk, window)
 
-        val ok = played && pausedOk && streamsOk && musicOk && mashupOk && photoOk && videoOk && tourOk
+        val ok = played && pausedOk && streamsOk && musicOk && mashupOk && decksOk && photoOk && videoOk && tourOk
         note(if (ok) "RESULT: PASSED" else "RESULT: FAILED")
         return if (ok) 0 else 1
     }
@@ -221,6 +225,42 @@ class SelfTest(private val clip: String, val out: File, private val service: Lis
         if (made != null) maker.delete(made)
         delay(300)
         return finished && made != null && maker.error == null && file != null && length in 40_000..90_000 && plays
+    }
+
+    /**
+     * Puts the two test songs on the two decks, plays both at once, brings the second onto the
+     * first one's beat, changes the first one's pitch while it plays, and keeps the mix.
+     */
+    private suspend fun decks(desk: Desk, folder: File): Boolean {
+        val files = folder.listFiles { f -> f.name.endsWith(".mp3") }.orEmpty().sortedBy { it.name }
+        if (files.size < 2) return false
+        val d = desk.decks
+        files.take(2).forEachIndexed { i, file ->
+            d.load(i, LocalFile(path = file.absolutePath, title = Library.tidyName(file.nameWithoutExtension), durationMs = Tags.read(file)?.durationMs ?: 0))
+        }
+        val listened = waitFor(90) { d.decks.none { it.analysing } }
+        val a = d.decks[0]
+        val b = d.decks[1]
+        // The test songs were made at 120 and 126 beats a minute.
+        val beats = abs(a.bpm - 120f) < 3f && abs(b.bpm - 126f) < 3f
+        d.playBoth()
+        val both = waitFor(30) { a.playing && b.playing && a.positionMs > 600 && b.positionMs > 600 }
+        val matched = d.matchTempo(1)
+        d.setPitch(0, 3f)
+        delay(400)
+        val carried = waitFor(30) { a.playing && a.positionMs > 800 }
+        d.changeCrossfade(0.8f)
+        val kept = d.save("Self-check mix")
+        note(
+            "decks: beats found=$listened A=${a.bpm} B=${b.bpm}; both playing=$both; B matched=$matched at speed ${b.tempo} (heard ${b.heardBpm}); " +
+                "A carried on after a pitch change=$carried; mix kept=${kept != null}",
+        )
+        d.pauseBoth()
+        val stopped = waitFor(10) { !d.anyPlaying }
+        kept?.let { d.delete(it) }
+        d.clear(0)
+        d.clear(1)
+        return listened && beats && both && matched && abs(b.heardBpm - a.bpm) < 0.5f && carried && kept != null && stopped
     }
 
     /** True when [a] and [b] are plainly not the same picture. */

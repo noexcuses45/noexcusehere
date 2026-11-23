@@ -376,6 +376,12 @@ class VlcPlayer(private val found: VlcFinder.Found, private val host: PlayerHost
         return true
     }
 
+    /** Plays faster or slower than normal (1 is normal); the engine keeps the pitch of the sound where it was. */
+    fun changeRate(rate: Float) {
+        val wanted = rate.coerceIn(0.25f, 4f)
+        control.execute { runCatching { lib.libvlc_media_player_set_rate(player, wanted) } }
+    }
+
     fun changeVolume(value: Int) {
         val v = value.coerceIn(0, 100)
         volume = v

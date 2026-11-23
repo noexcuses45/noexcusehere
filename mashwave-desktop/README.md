@@ -71,8 +71,15 @@ channels, logins or playlists of its own.
   undone. "Save video" writes an MP4 (H.264 with AAC sound) in Full HD, HD or small into
   Videos > Ultimate Media Manager.
 
-Not in this version yet: the two mashup decks worked by hand, and Chromecast (smart TVs that
-take "DLNA" are what works).
+- **Two decks** (Music, then "Two decks"): two songs playing at once, mixed by hand. Each deck
+  has its own speed (the pitch stays put), pitch, loudness and starting point, shows the song's
+  beats a minute (found by the app, or tapped in), can be nudged earlier or later, and can be
+  brought onto the other deck's beat with one button. A slider between them fades from one to
+  the other, with both at full in the middle. A mix (the two songs and every setting) can be
+  kept under a name and opened again.
+
+The phone app has all of the above too. Still only on the phone: Chromecast (on a computer,
+smart TVs that take "DLNA" are what works).
 
 ## Unlock codes
 
@@ -136,7 +143,8 @@ The build also starts the app on a Windows machine that has no VLC installed (an
 has it play a file, a TV-style stream with Dolby sound, a film with subtitles, a stream that
 comes in pieces and songs of every common kind, make a mashup out of two test songs and play
 it, open a test photo in the photo editor, use every tool on it and save a copy, and make a
-short film in the video editor (cut, speed, look, words, music), play its preview and save it. Snapshots of the window are kept, and a build that cannot do this never becomes a
+short film in the video editor (cut, speed, look, words, music), play its preview and save it;
+and it plays two songs at once on the two decks and brings one onto the other's beat. Snapshots of the window are kept, and a build that cannot do this never becomes a
 download.
 
 ## Building it yourself

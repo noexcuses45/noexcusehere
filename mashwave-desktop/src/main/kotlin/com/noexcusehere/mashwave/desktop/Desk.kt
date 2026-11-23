@@ -142,6 +142,9 @@ class Desk(
     /** Making a mashup out of a few songs. */
     val mashup = DeskMashup(this, scope, dataDir)
 
+    /** The two decks for mixing two songs by hand. */
+    val decks = DeskDecks(this, scope, dataDir)
+
     /** True while the "play on a TV" box is open. */
     var castOpen by mutableStateOf(false)
 
@@ -248,6 +251,8 @@ class Desk(
         if (p == null) {
             say(if (lookingForVlc) "The player is still starting. Try again in a moment." else "The video player is missing - see the note at the top.")
         }
+        // Whatever starts playing here takes over from the two decks.
+        decks.pauseBoth()
         return p
     }
 
@@ -416,7 +421,7 @@ class Desk(
     }
 
     /** A second player, for the video editor's preview, so that whatever else is playing is left as it is. */
-    fun spareNewPlayer(): VlcPlayer? = engine?.let { found ->
+    fun spareNewPlayer(extra: List<String> = emptyList()): VlcPlayer? = engine?.let { found ->
         runCatching {
             VlcPlayer(
                 found,
@@ -426,7 +431,7 @@ class Desk(
                     override fun startAt(entry: MediaEntry): Long = 0
                     override fun place(entry: MediaEntry, positionMs: Long, durationMs: Long) = Unit
                 },
-                vlcArgs,
+                vlcArgs + extra,
             )
         }.getOrNull()
     }
@@ -525,6 +530,8 @@ class Desk(
     /** The app is closing: write everything down and let VLC go. */
     fun shutDown() {
         cast.shutDown()
+        decks.close()
+        closeVideo()
         rememberSound()
         player?.release()
         store.flush()

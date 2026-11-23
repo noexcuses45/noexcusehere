@@ -217,4 +217,21 @@ class DesktopTest {
         // A song starts at its beginning; a video on this computer is not a song.
         assertTrue(!LocalFile(path = "/v/x.mkv", video = true, title = "x").entry().isSong)
     }
+
+    @Test
+    fun theDecksSumsMatchThePhoneApps() {
+        // The crossfader: both decks full in the middle, each fading only over its own half.
+        assertEquals(1f to 1f, DeckMaths.crossfadeGains(0.5f))
+        assertEquals(1f to 0f, DeckMaths.crossfadeGains(0f))
+        assertEquals(0f to 1f, DeckMaths.crossfadeGains(1f))
+        assertEquals(1f to 0.5f, DeckMaths.crossfadeGains(0.25f))
+        // Matching a beat: a small change when the songs are close, half or double time when that needs less stretching.
+        assertEquals(120f / 126f, DeckMaths.matching(126f, 120f)!!, 0.0001f)
+        assertEquals(1f, DeckMaths.matching(70f, 140f)!!, 0.0001f)
+        assertEquals(1f, DeckMaths.matching(140f, 70f)!!, 0.0001f)
+        assertEquals(null, DeckMaths.matching(0f, 120f))
+        // Tapping along once every half second is 120 beats a minute.
+        assertEquals(120f, DeckMaths.tapped(listOf(0L, 500L, 1000L, 1500L))!!, 0.01f)
+        assertEquals(null, DeckMaths.tapped(listOf(0L, 500L)))
+    }
 }
