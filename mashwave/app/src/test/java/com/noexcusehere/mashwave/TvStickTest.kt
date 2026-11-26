@@ -34,6 +34,9 @@ class TvStickTest {
         // A TV box that calls itself a tablet can be switched over by hand, and back.
         assertTrue(TvMode.decide(TvMode.TV, tvDevice = false))
         assertFalse(TvMode.decide(TvMode.PHONE, tvDevice = true))
+        // The TV app is the TV layout whatever the device calls itself and whatever was chosen before.
+        assertTrue(TvMode.decide(TvMode.AUTO, tvDevice = false, tvApp = true))
+        assertTrue(TvMode.decide(TvMode.PHONE, tvDevice = false, tvApp = true))
     }
 
     @Test

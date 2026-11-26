@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- The TV app has a name of its own, so the two can be told apart wherever both are listed. -->
+    <string name="app_name">Ultimate Media Manager TV</string>
+</resources>

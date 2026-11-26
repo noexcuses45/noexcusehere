@@ -1,5 +1,6 @@
 package com.noexcusehere.mashwave.ui.tv
 
+import com.noexcusehere.mashwave.BuildConfig
 import android.app.Activity
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
@@ -266,7 +267,8 @@ fun TvSettings(ui: TvUi) {
             }
         }
 
-        item(key = "screen") {
+        // Only in the phone app, when it finds itself on a TV device: the TV app has no other layout.
+        if (!BuildConfig.TV_APP) item(key = "screen") {
             Text("This screen", style = MaterialTheme.typography.titleLarge, color = TextHi, modifier = Modifier.padding(top = 18.dp))
             Text("This is the layout for a TV remote. On a phone or tablet the touch layout is the one to use.", style = MaterialTheme.typography.bodyMedium, color = TextMid, modifier = Modifier.padding(bottom = 8.dp))
             TvButton("Switch to the phone layout", {

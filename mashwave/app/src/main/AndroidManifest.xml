@@ -65,11 +65,6 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
-            <!-- Puts the app on the home screen of Fire TV and Android TV sticks and boxes -->
-            <intent-filter>
-                <action android:name="android.intent.action.MAIN" />
-                <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
-            </intent-filter>
 
             <!-- "Open with Ultimate Media Manager" from file managers, downloads, chat apps ... -->
             <intent-filter>

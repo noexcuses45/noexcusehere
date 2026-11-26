@@ -1,5 +1,6 @@
 package com.noexcusehere.mashwave.ui.tv
 
+import com.noexcusehere.mashwave.BuildConfig
 import android.app.UiModeManager
 import android.content.Context
 import android.content.Intent
@@ -8,8 +9,12 @@ import android.content.res.Configuration
 
 /**
  * Whether the app should show its TV layout - big, sideways, and worked entirely with a remote's
- * arrows, OK and Back - instead of the phone layout. Fire TV and Android TV sticks and boxes get
- * it by themselves; a plain Android box that calls itself a tablet can be switched over by hand.
+ * arrows, OK and Back - instead of the phone layout.
+ *
+ * There are two apps. The TV app (for Fire TV and Android TV sticks and boxes) is the TV layout
+ * and nothing else, whatever the device says it is - so it also suits plain Android boxes that
+ * call themselves tablets. The phone app is the phone layout; should it be put on a TV device
+ * all the same, it shows the TV layout there rather than something a remote cannot work.
  */
 object TvMode {
     private const val PREFS = "layout"
@@ -50,12 +55,14 @@ object TvMode {
             choose(context, if (intent.getBooleanExtra(EXTRA_FORCE, false)) TV else PHONE)
             intent.removeExtra(EXTRA_FORCE)
         }
-        return decide(choice(context), isTvDevice(context))
+        return decide(choice(context), isTvDevice(context), BuildConfig.TV_APP)
     }
 
-    fun decide(choice: String, tvDevice: Boolean): Boolean = when (choice) {
-        TV -> true
-        PHONE -> false
+    /** [tvApp] is true in the TV app, which never shows anything but the TV layout. */
+    fun decide(choice: String, tvDevice: Boolean, tvApp: Boolean = false): Boolean = when {
+        tvApp -> true
+        choice == TV -> true
+        choice == PHONE -> false
         else -> tvDevice
     }
 }

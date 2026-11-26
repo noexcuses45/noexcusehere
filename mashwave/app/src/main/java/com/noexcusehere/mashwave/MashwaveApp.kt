@@ -71,7 +71,7 @@ class MashwaveApp : Application() {
             // Kept out of cloud backups: a restored copy on a new phone has to be unlocked there.
             file = File(noBackupFilesDir, "licence.json"),
             device = LicenceDevice.fingerprint(deviceName()),
-            platform = if (TvMode.isTvDevice(this)) "androidtv" else "android",
+            platform = if (BuildConfig.TV_APP || TvMode.isTvDevice(this)) "androidtv" else "android",
             version = runCatching { packageManager.getPackageInfo(packageName, 0).versionName }.getOrNull().orEmpty(),
             scope = scope,
         )

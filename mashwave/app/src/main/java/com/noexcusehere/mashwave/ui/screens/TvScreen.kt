@@ -39,7 +39,6 @@ import androidx.compose.material.icons.rounded.LiveTv
 import androidx.compose.material.icons.rounded.Movie
 import androidx.compose.material.icons.rounded.RadioButtonUnchecked
 import androidx.compose.material.icons.rounded.Refresh
-import androidx.compose.material.icons.rounded.Tv
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.Star
@@ -106,7 +105,6 @@ import com.noexcusehere.mashwave.ui.components.RemoteImages
 import com.noexcusehere.mashwave.ui.components.ScreenHeader
 import com.noexcusehere.mashwave.ui.components.SheetAction
 import com.noexcusehere.mashwave.ui.components.WebPicture
-import com.noexcusehere.mashwave.ui.tv.TvMode
 import com.noexcusehere.mashwave.ui.theme.Amber
 import com.noexcusehere.mashwave.ui.theme.Outline
 import com.noexcusehere.mashwave.ui.theme.Pink
@@ -755,11 +753,6 @@ private fun TvServicesSheet(state: TvState, onAdd: () -> Unit, onEdit: (String) 
             app.tv.refresh()
             app.say("Getting the latest lists from your service")
             onDismiss()
-        })
-        SheetAction(Icons.Rounded.Tv, "Use the TV remote layout (for TV boxes)", {
-            TvMode.choose(context, TvMode.TV)
-            onDismiss()
-            (context as? android.app.Activity)?.recreate()
         })
         SheetAction(Icons.Rounded.Add, "Add another service", {
             onDismiss()

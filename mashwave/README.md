@@ -247,16 +247,28 @@ codecs (WMV, RealVideo, 10-bit H.264) may not play on every phone.
 
 **From GitHub (nothing to install):** every push that changes this folder runs the
 *Build Ultimate Media Manager APK* workflow. Open the run under the **Actions** tab and download
-**ultimate-media-manager-apk** (unzip it to get `UltimateMediaManager.apk`). Pushes to `main` also publish it under
-**Releases** as a pre-release, with a direct `.apk` download.
+**ultimate-media-manager-apk** (unzip it to get `UltimateMediaManager.apk`, the app for phones and tablets) or
+**ultimate-media-manager-tv-apk** (`UltimateMediaManagerTV.apk`, the app for TV sticks and boxes). Pushes to `main`
+also publish both under **Releases** as a pre-release, with direct `.apk` downloads.
 
 **On a PC:** install JDK 17+ and the Android SDK, then from this folder run
 
 ```
-./gradlew :app:assembleRelease
+./gradlew :app:assemblePhoneRelease :app:assembleTvRelease
 ```
 
-The APK appears at `app/build/outputs/apk/release/app-release.apk`.
+Two apps come out of the one set of code:
+
+- `app/build/outputs/apk/phone/release/app-phone-release.apk` - **Ultimate Media Manager**, for
+  Android phones and tablets: everything.
+- `app/build/outputs/apk/tv/release/app-tv-release.apk` - **Ultimate Media Manager TV**, for Fire
+  TV and Android TV sticks and boxes: the TV side only, worked with a remote.
+
+They are different apps to Android (`com.noexcusehere.mashwave` and `com.noexcusehere.mashwave.tv`),
+so one is never installed over the other and both can sit on one device. What differs is in
+`app/build.gradle.kts` (the two "flavors"), `app/src/tv/` (the TV app's name and its place on a
+TV's home screen) and `ui/tv/TvMode.kt` (which layout is shown). The checks are run with
+`./gradlew :app:testPhoneDebugUnitTest`.
 
 ## Installing on a phone
 
@@ -280,9 +292,12 @@ no lock and the app opens for everyone.
 
 ## On a TV stick or box
 
-The same APK also runs on **Amazon Fire TV sticks** (Fire OS 6 and newer) and on
-**Android TV / Google TV** sticks, boxes and TVs. There it shows only the TV side, in a
-layout made for the remote: arrows to move, OK to choose, Back to go back.
+There is a separate app for these: **Ultimate Media Manager TV** (`UltimateMediaManagerTV.apk`).
+It runs on **Amazon Fire TV sticks** (Fire OS 6 and newer) and on **Android TV / Google TV**
+sticks, boxes and TVs, and has only the TV side, in a layout made for the remote: arrows to
+move, OK to choose, Back to go back. It is that layout whatever the device calls itself, so it
+also suits plain Android boxes that say they are tablets. (The phone app, should it be put on a
+TV device all the same, shows the same layout there rather than one a remote cannot work.)
 
 - It appears among the stick's apps with its own banner. It is not for Roku, Apple TV, or
   the Fire sticks that run Amazon's newer non-Android system (those cannot install APKs).

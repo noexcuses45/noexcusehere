@@ -30,7 +30,7 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
 
       - name: Run unit tests
-        run: ./gradlew :app:testDebugUnitTest
+        run: ./gradlew :app:testPhoneDebugUnitTest
 
       # Optional: with the MASHWAVE_KEYSTORE_BASE64 and MASHWAVE_KEYSTORE_PASSWORD repository
       # secrets set, the APK is signed with your own key and installs over earlier versions.
@@ -47,19 +47,28 @@ jobs:
             echo "No signing key configured - using a throwaway debug key"
           fi
 
-      - name: Build release APK
+      # Two apps from the one set of code: one for phones and tablets, one for TV sticks and boxes.
+      - name: Build both release APKs
         env:
           MASHWAVE_KEYSTORE_PASSWORD: ${{ secrets.MASHWAVE_KEYSTORE_PASSWORD }}
-        run: ./gradlew :app:assembleRelease -PappVersionName=1.0.${{ github.run_number }}
+        run: ./gradlew :app:assemblePhoneRelease :app:assembleTvRelease -PappVersionName=1.0.${{ github.run_number }}
 
-      - name: Name the APK
-        run: cp app/build/outputs/apk/release/app-release.apk UltimateMediaManager.apk
+      - name: Name the APKs
+        run: |
+          cp app/build/outputs/apk/phone/release/app-phone-release.apk UltimateMediaManager.apk
+          cp app/build/outputs/apk/tv/release/app-tv-release.apk UltimateMediaManagerTV.apk
 
-      - name: Upload APK
+      - name: Upload the phone APK
         uses: actions/upload-artifact@v4
         with:
           name: ultimate-media-manager-apk
           path: mashwave/UltimateMediaManager.apk
+
+      - name: Upload the TV APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: ultimate-media-manager-tv-apk
+          path: mashwave/UltimateMediaManagerTV.apk
 
       # Published as a pre-release on purpose: the fitness app's updater reads this
       # repo's "latest release", and pre-releases never count as latest.
@@ -71,4 +80,6 @@ jobs:
           name: Ultimate Media Manager 1.0.${{ github.run_number }}
           prerelease: true
           make_latest: "false"
-          files: mashwave/UltimateMediaManager.apk
+          files: |
+            mashwave/UltimateMediaManager.apk
+            mashwave/UltimateMediaManagerTV.apk

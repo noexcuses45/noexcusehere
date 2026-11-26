@@ -23,6 +23,24 @@ android {
         versionName = (project.findProperty("appVersionName") as String?) ?: "1.0"
     }
 
+    // Two apps are built from this one set of code:
+    //  - "phone": for Android phones and tablets - everything (music, videos, TV, the editors, mashups).
+    //  - "tv":    for Fire TV and Android TV sticks and boxes - the TV part only, worked with a remote.
+    //             It has a name and an identity of its own, so it is a different app on the device
+    //             and one cannot be installed over the other.
+    flavorDimensions += "device"
+    productFlavors {
+        create("phone") {
+            dimension = "device"
+            buildConfigField("boolean", "TV_APP", "false")
+        }
+        create("tv") {
+            dimension = "device"
+            applicationIdSuffix = ".tv"
+            buildConfigField("boolean", "TV_APP", "true")
+        }
+    }
+
     // The signing key is NOT in the repo. It is picked up from keystore/mashwave-signing-key.jks
     // when that file exists, with its password from the MASHWAVE_KEYSTORE_PASSWORD environment
     // variable (GitHub) or from local.properties (a PC). Without it the build still works, signed
@@ -65,6 +83,7 @@ android {
 
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 
     packaging {
