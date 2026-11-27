@@ -1,0 +1,50 @@
+ULTIMATE MEDIA MANAGER - for Mac computers
+==========================================
+
+WHAT YOU NEED
+- A Mac with an Apple chip (M1, M2, M3 or newer - Macs sold since late
+  2020). It does not run on older Macs with an Intel chip.
+- The free VLC player, installed in your Applications folder. Get it
+  from videolan.org. Ultimate Media Manager uses it to play TV, music
+  and video.
+- For TV: the sign-in details from your TV provider. The app has no
+  channels of its own.
+
+HOW TO INSTALL
+1. Install VLC first if you do not have it (videolan.org).
+
+2. Double-click "UltimateMediaManager-Mac.dmg". A window opens.
+
+3. Drag "Ultimate Media Manager" onto the Applications folder in that
+   window.
+
+4. Open it from Applications. The first time, the Mac may say it
+   cannot check the app, or that it is from an unidentified developer.
+   This is shown for any app that is not from the App Store.
+   - Open System Settings > Privacy & Security, scroll down to the
+     line about Ultimate Media Manager, and click "Open Anyway".
+   - On older versions of macOS you can instead hold Control, click
+     the app, choose "Open", then "Open" again.
+   You only do this once.
+
+FIRST TIME YOU OPEN IT
+1. Click "Add your TV service".
+2. Type the server address, user name and password from your TV
+   provider - or a playlist link.
+   Quicker: copy the whole message your provider sent you, then click
+   "Paste" and the app fills the boxes in for you.
+3. Your channels, movies and shows appear after a moment.
+
+WHAT ELSE IT DOES
+Down the left side, under "On this computer":
+- Music: your songs, automatic mashups, and two decks for mixing.
+- My videos: the video files on this computer.
+- Photo editor: crop, adjust, looks, touch-up, blur, draw.
+- Video editor: join and cut clips, add words and music, save a video.
+- Play on a TV: send what is playing to a smart TV on your Wi-Fi.
+
+GOOD TO KNOW
+- Your sign-in, favourites and lists stay on your own computer.
+- To update, drag the new version into Applications and choose
+  "Replace". Your sign-in and favourites are kept.
+- To remove it, drag it from Applications to the Bin.

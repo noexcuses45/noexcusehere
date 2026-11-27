@@ -94,12 +94,16 @@ jobs:
         run: |
           ./gradlew packageMsi "-PappVersionName=1.0.${{ github.run_number }}"
           Copy-Item (Get-ChildItem "build\compose\binaries\main\msi\*.msi" | Select-Object -First 1).FullName UltimateMediaManager-Setup.msi
+          # The sheet that tells people how to install it travels with the installer.
+          Copy-Item "install\windows\How to install.txt" "How to install.txt"
 
       - name: Upload the installer
         uses: actions/upload-artifact@v4
         with:
           name: ultimate-media-manager-windows-installer
-          path: mashwave-desktop/UltimateMediaManager-Setup.msi
+          path: |
+            mashwave-desktop/UltimateMediaManager-Setup.msi
+            mashwave-desktop/How to install.txt
 
       # Published as a pre-release on purpose, like the phone app: the fitness app's updater
       # reads this repo's "latest release", and pre-releases never count as latest.

@@ -1,0 +1,43 @@
+ULTIMATE MEDIA MANAGER - for Windows computers
+==============================================
+
+WHAT YOU NEED
+- A computer with Windows 10 or Windows 11 (64-bit).
+- For TV: the sign-in details from your TV provider. The app has no
+  channels of its own.
+- Nothing else. The video player is built in.
+
+HOW TO INSTALL
+1. Double-click "UltimateMediaManager-Setup.msi".
+
+2. Windows may show a blue box that says "Windows protected your PC".
+   It shows this for programs it has not seen many times before.
+   Click "More info", then click "Run anyway".
+
+3. Follow the steps on screen. When it has finished you will find
+   "Ultimate Media Manager" on your desktop and in the Start menu.
+
+FIRST TIME YOU OPEN IT
+1. Click "Add your TV service".
+2. Type the server address, user name and password from your TV
+   provider - or a playlist link.
+   Quicker: copy the whole message your provider sent you, then click
+   "Paste" and the app fills the boxes in for you.
+3. Your channels, movies and shows appear after a moment.
+
+WHAT ELSE IT DOES
+Down the left side, under "On this computer":
+- Music: your songs, automatic mashups, and two decks for mixing.
+- My videos: the video files on this computer.
+- Photo editor: crop, adjust, looks, touch-up, blur, draw.
+- Video editor: join and cut clips, add words and music, save a video.
+- Play on a TV: send what is playing to a smart TV on your Wi-Fi.
+The first time you play something on a TV, Windows asks whether to
+let the app through its firewall. Choose "Allow".
+
+GOOD TO KNOW
+- Your sign-in, favourites and lists stay on your own computer.
+- To update, run the new installer. It replaces the old version and
+  keeps your sign-in and favourites.
+- To remove it: Windows Settings > Apps > Installed apps >
+  Ultimate Media Manager > Uninstall.

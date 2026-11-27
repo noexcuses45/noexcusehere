@@ -96,10 +96,14 @@ jobs:
         run: |
           ./gradlew packageDmg "-PappVersionName=1.0.${{ github.run_number }}"
           cp build/compose/binaries/main/dmg/*.dmg UltimateMediaManager-Mac.dmg
+          # The sheet that tells people how to install it travels with the disk image.
+          cp "install/mac/How to install.txt" "How to install.txt"
           ls -la UltimateMediaManager-Mac.dmg
 
       - name: Upload the disk image
         uses: actions/upload-artifact@v4
         with:
           name: ultimate-media-manager-mac
-          path: mashwave-desktop/UltimateMediaManager-Mac.dmg
+          path: |
+            mashwave-desktop/UltimateMediaManager-Mac.dmg
+            mashwave-desktop/How to install.txt
